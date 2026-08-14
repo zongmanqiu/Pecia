@@ -202,8 +202,9 @@ void InfoWindow::show() {
     while (dlg.shown()) Fl::wait();
 }
 
-InfoTitleBar *createInfoTitleBar(int X, int Y, int W, int H, const char *title, const Theme * /*theme*/, int /*fontSize*/) {
+InfoTitleBar *createInfoTitleBar(int X, int Y, int W, int H, const char *title, const Theme *theme, int fontSize) {
     InfoTitleBar *tb = new InfoTitleBar(X, Y, W, H, title);
+    tb->setTheme(theme, fontSize);
     return tb;
 }
 

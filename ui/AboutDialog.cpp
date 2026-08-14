@@ -135,7 +135,11 @@ void showAboutDialog(const Theme *theme, int uiFontSize) {
     dlg.set_modal();
     dlg.begin();
 
-    createInfoTitleBar(0, 0, W, TITLE_H, I18n::get("menu.help.about"), theme, fs);
+    InfoTitleBar *titleBar = createInfoTitleBar(0, 0, W, TITLE_H, I18n::get("menu.help.about"), theme, fs);
+    // Mirror the Options dialog: force the chrome background explicitly so
+    // the title bar matches SettingsDialog exactly even if a theme lacks the
+    // chrome color (same defensive line as SettingsDialog.cpp).
+    if (theme) ((Fl_Widget*)titleBar)->color(theme->colors().bgChrome);
 
     // ── Header: large app title + tagline ──
     Fl_Box *appTitle = new Fl_Box(0, TITLE_H + 20, W, 42);
