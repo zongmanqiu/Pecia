@@ -92,6 +92,11 @@ protected:
 protected:
     void draw() FL_OVERRIDE;
     int  handle(int event) FL_OVERRIDE;
+    // Keep the custom title bar spanning the full window width whenever the
+    // window resizes. Some dialogs (e.g. ParamDialog) compute their final
+    // width inside the constructor via size(); the title bar must track it,
+    // otherwise the close button lands outside the window.
+    void resize(int X, int Y, int W, int H) FL_OVERRIDE;
 
 private:
     // Common constructor body (set_modal/border/bg color shared by modes).

@@ -99,6 +99,14 @@ void DialogBase::finalizeShell() {
     } else {
         resizable(nullptr);   // fixed-size dialog
     }
+
+    // Finalize the title bar size to the current window width. Some dialogs
+    // resize the window (size()) after initShell() when computing an
+    // adaptive width; this guarantees the close button is never outside the
+    // window regardless of that ordering.
+    if (m_titleBar) {
+        m_titleBar->resize(0, 0, w(), TITLE_H);
+    }
 }
 
 void DialogBase::onCaptionMaximize() {
@@ -160,4 +168,16 @@ int DialogBase::handle(int event) {
         }
     }
     return Fl_Double_Window::handle(event);
+}
+
+void DialogBase::resize(int X, int Y, int W, int H) {
+    Fl_Double_Window::resize(X, Y, W, H);
+    // Keep the shared title bar covering the full window width. Dialogs
+    // that compute their width inside the constructor (e.g. ParamDialog)
+    // resize the window after initShell(); without this the title bar's
+    // close button would stay at the pre-resize width and stick out.
+    if (m_titleBar) {
+        m_titleBar->resize(0, 0, w(), TITLE_H);
+        m_titleBar->redraw();
+    }
 }
