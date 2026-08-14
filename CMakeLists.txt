@@ -170,6 +170,7 @@ ui/MatchHighlight.cpp
     ui/SettingsDialog.cpp
     ui/ShortcutDialog.cpp
     ui/InfoWindow.cpp
+    ui/AboutDialog.cpp
     ui/TitleBar.cpp
     ui/WindowFrame.cpp
     ui/ShortcutManager.cpp
@@ -405,6 +406,16 @@ add_custom_command(TARGET Pecia POST_BUILD
         "${CMAKE_SOURCE_DIR}/script/scripts"
         "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/script"
     COMMENT "Copying default Lua scripts"
+)
+
+# Copy the image assets (donation QR codes for the About dialog) next to the
+# executable so they load at runtime from build/image/ (relative to the exe,
+# no hardcoded paths). Replace main/image/donate_*.png to change the QR codes.
+add_custom_command(TARGET Pecia POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/image"
+        "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/image"
+    COMMENT "Copying image assets (About dialog QR codes)"
 )
 
 # ----------------------------------------------------------------------------

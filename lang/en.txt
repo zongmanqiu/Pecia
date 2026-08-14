@@ -275,4 +275,10 @@ error.out_of_memory = Not enough memory to open this file (%.0f MB).
 
 
 settings.cleanuptemp = Clean temp files older than 7 days
-settings.group_ui_sys = Interface & System
+settings.group_ui_sys = Interface & Systemabout.tagline = A lightweight text editor built with C++ & FLTK
+about.author = Author
+about.email = Email
+about.project = Project
+about.license = License
+about.ai = AI Tool
+about.donate = Support me & buy Tokens to keep improving

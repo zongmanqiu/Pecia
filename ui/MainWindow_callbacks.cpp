@@ -17,6 +17,7 @@
 #include "ui/ShortcutDialog.h"
 #include "ui/ConfirmDialog.h"
 #include "ui/InfoWindow.h"
+#include "ui/AboutDialog.h"
 #include "ui/ParamDialog.h"
 
 #include "core/Config.h"
@@ -557,18 +558,9 @@ void MainWindow::applySettings(Config &cfg) {
 }
 
 void MainWindow::cbAbout(Fl_Widget * /*w*/, void *data) {
-    (void)data;
-    // Use the FL_MAJOR_VERSION / FL_MINOR_VERSION / FL_PATCH_VERSION macros
-    // (defined in FL/Enumerations.H) instead of the deprecated Fl::version()
-    // double. Fl::api_version() returns an int like 10405 for 1.4.5.
-    char msg[256];
-    snprintf(msg, sizeof(msg),
-             "Pecia 1.0\n"
-             "A lightweight cross-platform text editor built with FLTK.\n\n"
-             "FLTK version: %d.%d.%d (API %d)",
-             FL_MAJOR_VERSION, FL_MINOR_VERSION, FL_PATCH_VERSION,
-             Fl::api_version());
-    fl_message("%s", msg);
+    MainWindow *self = static_cast<MainWindow *>(data);
+    showAboutDialog(self ? &self->m_theme : nullptr,
+                    self ? self->m_cfg->getUiFontSize() : 14);
 }
 
 // Help > Check for Updates - stub for future implementation.
