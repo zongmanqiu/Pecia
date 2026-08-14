@@ -123,9 +123,9 @@ LuaToolWindow::LuaToolWindow(Config *appCfg,
     m_helpBtn->callback(cbHelp, this);
     styleBtn(m_helpBtn);
 
-    // Auto-width right-aligned row: right-to-left = Run, ToAi, Clear, SaveAs,
-    // Help  =>  left-to-right [Help][SaveAs][Clear][ToAi][Run].
-    fitButtonRow({m_runBtn, m_toAiBtn, m_clearBtn, m_saveAsBtn, m_helpBtn},
+    // Auto-width right-aligned row: left-to-right
+    // [Help][SaveAs][Clear][ToAi][Run] (Run rightmost).
+    fitButtonRow({m_helpBtn, m_saveAsBtn, m_clearBtn, m_toAiBtn, m_runBtn},
                  w, btnY + BTN_H / 2, BTN_GAP, BTN_GAP);
 
     m_outBuf = new Fl_Text_Buffer();
@@ -169,7 +169,7 @@ void LuaToolWindow::refreshLabels() {
     // Re-fit the auto-width button row after labels change (translations
     // differ in length). Keep the row's vertical center.
     int rowCenter = m_runBtn ? m_runBtn->y() + m_runBtn->h() / 2 : 0;
-    fitButtonRow({m_runBtn, m_toAiBtn, m_clearBtn, m_saveAsBtn, m_helpBtn},
+    fitButtonRow({m_helpBtn, m_saveAsBtn, m_clearBtn, m_toAiBtn, m_runBtn},
                  w(), rowCenter, BTN_GAP, BTN_GAP);
 
     redraw();

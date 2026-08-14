@@ -144,7 +144,8 @@ AIChatWindow::AIChatWindow(Config *appCfg,
     m_clearBtn = new HoverButton(0, buttonY, 0, BTN_H, I18n::get("chat.clear"));
     m_clearBtn->callback(cbClear, this);
     styleBtn(m_clearBtn);
-    fitButtonRow({m_sendBtn, m_toDocBtn, m_toLuaBtn, m_clearBtn, m_settingsBtn},
+    // Left-to-right: [API][Clear][To Lua][To Pecia][Enter] (Enter rightmost).
+    fitButtonRow({m_settingsBtn, m_clearBtn, m_toLuaBtn, m_toDocBtn, m_sendBtn},
                  w, buttonY + BTN_H / 2, BTN_GAP, BTN_GAP);
 
     end();
@@ -191,7 +192,7 @@ void AIChatWindow::refreshLabels() {
     // differ in length). Buttons already carry their new labels above;
     // re-center on the row they already sit in.
     int rowCenter = m_sendBtn ? m_sendBtn->y() + m_sendBtn->h() / 2 : 0;
-    fitButtonRow({m_sendBtn, m_toDocBtn, m_toLuaBtn, m_clearBtn, m_settingsBtn},
+    fitButtonRow({m_settingsBtn, m_clearBtn, m_toLuaBtn, m_toDocBtn, m_sendBtn},
                  w(), rowCenter, BTN_GAP, BTN_GAP);
 
     redraw();
