@@ -1,4 +1,4 @@
-﻿// ConfirmDialog.cpp - custom modal confirmation dialog
+// ConfirmDialog.cpp - custom modal confirmation dialog
 #include "ui/ConfirmDialog.h"
 #include "ui/InfoWindow.h"   // createInfoTitleBar, createBorderOverlay
 #include "ui/ThemeWidgets.h"
@@ -81,7 +81,7 @@ ConfirmDialog::ConfirmDialog(const char *title, const char *message,
     int btnW[3] = { 0, 0, 0 };
     for (int i = 0; i < 3; ++i) {
         if (!labels[i]) { m_btn[i] = nullptr; continue; }
-        int bw = 0, bh = 0;
+        int bw = 0;
         fl_font(FL_HELVETICA, uiFontSize ? uiFontSize : 14);
         bw = (int)fl_width(labels[i]) + 24;
         if (bw < 60) bw = 60;

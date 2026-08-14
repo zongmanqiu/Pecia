@@ -207,14 +207,14 @@ litehtml::uint_ptr MyContainer::create_font(const litehtml::font_description& de
     }
 
     if (fm) {
-        fm->ascent     = fi->ascent;
-        fm->descent    = fi->descent;
-        fm->height     = fi->height;
-        fm->x_height   = fi->x_height;
+        fm->ascent     = (float)fi->ascent;
+        fm->descent    = (float)fi->descent;
+        fm->height     = (float)fi->height;
+        fm->x_height   = (float)fi->x_height;
         fm->draw_spaces = true;
         // 上下标偏移（行高的固定比例）
-        fm->super_shift  = fi->height / 3;
-        fm->sub_shift    = fi->height / 6;
+        fm->super_shift  = (float)(fi->height / 3);
+        fm->sub_shift    = (float)(fi->height / 6);
     }
     return (litehtml::uint_ptr)fi;
 }
@@ -888,14 +888,14 @@ void MyContainer::get_media_features(litehtml::media_features& media) const
 {
     memset(&media, 0, sizeof(media));
     media.type          = litehtml::media_type_screen;
-    media.width         = m_viewport_w;
-    media.height        = m_viewport_h;
-    media.device_width  = m_viewport_w;
-    media.device_height = m_viewport_h;
+    media.width         = (float)m_viewport_w;
+    media.height        = (float)m_viewport_h;
+    media.device_width  = (float)m_viewport_w;
+    media.device_height = (float)m_viewport_h;
     media.color         = 8;
     media.monochrome    = 0;
     media.color_index   = 256;
-    media.resolution    = (int)m_screen_dpi;
+    media.resolution    = (float)(int)m_screen_dpi;
 }
 
 void MyContainer::get_language(std::string& language, std::string& culture) const
@@ -1018,8 +1018,8 @@ void ViewWidget::draw()
 
         fl_push_clip(x(), y(), content_w, content_h);
         doc->draw((litehtml::uint_ptr)0,
-                  x() - m_scroll_x,
-                  y() - m_scroll_y,
+                  (float)(x() - m_scroll_x),
+                  (float)(y() - m_scroll_y),
                   &clip);
         fl_pop_clip();
 
@@ -1245,7 +1245,6 @@ void MyTile::move_intersection(int oldx, int oldy, int newx, int newy)
 {
     // 先钳制分割位置：垂直分割时 newx 不能超出 [20%, 80%] 区间
     if (children() >= 2) {
-        Fl_Widget* first = child(0);
         int min_x = x() + (int)(w() * 0.20f);
         int max_x = x() + (int)(w() * 0.80f);
         if (newx < min_x) newx = min_x;

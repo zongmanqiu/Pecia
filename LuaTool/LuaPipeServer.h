@@ -8,6 +8,7 @@
 #pragma once
 
 #include <string>
+#include <thread>
 
 class MainWindow;
 
@@ -15,7 +16,11 @@ class LuaPipeServer {
 public:
     // Starts the listener thread. `owner` executes the requests.
     explicit LuaPipeServer(MainWindow *owner);
+    // Stops the listener thread and joins it (safe teardown).
     ~LuaPipeServer();
+
+    LuaPipeServer(const LuaPipeServer &) = delete;
+    LuaPipeServer &operator=(const LuaPipeServer &) = delete;
 
     // Full pipe name the tools should connect to ("\\.\pipe\pecia-lua-<pid>").
     const char *pipeName() const { return m_pipeName.c_str(); }
@@ -28,4 +33,5 @@ private:
     MainWindow  *m_owner;
     std::string  m_pipeName;
     bool         m_ready = false;
+    std::thread  m_thread;
 };

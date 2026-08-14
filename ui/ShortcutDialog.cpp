@@ -1,4 +1,4 @@
-﻿// ShortcutDialog.cpp - modal dialog for customizing keyboard shortcuts.
+// ShortcutDialog.cpp - modal dialog for customizing keyboard shortcuts.
 #include "ui/ShortcutDialog.h"
 
 #include "core/Config.h"
@@ -239,7 +239,6 @@ ShortcutDialog::ShortcutDialog(int w, int h, const char *title, Config *cfg,
     color(theme ? theme->colors().bgEditor : FL_BACKGROUND2_COLOR);
 
     int margin = 12;
-    int rowH = 26;
     int btnH = gBtnH;
     // Bottom button bar (bgChrome, gBarH tall, flush against the filter
     // bar). The filter bar and button bar live at the bottom of the

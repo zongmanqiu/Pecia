@@ -10,6 +10,7 @@
 #include "ui/TitleBar.h"
 
 #include "script/LuaEngine.h"
+#include "LuaTool/LuaPipeServer.h"
 #include "core/Config.h"
 #include "core/Theme.h"
 #include "core/FileManager.h"

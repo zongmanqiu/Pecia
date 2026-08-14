@@ -21,7 +21,7 @@ namespace {
 
 // Apply the main window's scrollbar style (10px, no arrows, flat,
 // theme thumb/track) to one scrollbar.
-inline void styleToolScrollbar(Fl_Scrollbar *sb, int type,
+inline void styleToolScrollbar(Fl_Scrollbar *sb, uchar type,
                                const ThemeColors &tc) {
     if (!sb) return;
     sb->type(type);

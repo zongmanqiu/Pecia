@@ -50,7 +50,7 @@ bool activateByTitle(const char *title) {
     return false;
 }
 
-bool launchTool(MainWindow *self, const char *exeName, const char *mutexName,
+bool launchTool(const char *exeName, const char *mutexName,
                 const char *windowTitle, const char *pipeName, const char *langCode) {
     // Transient single-instance check: release the handle immediately so
     // the TOOL process owns the mutex (otherwise the tool's own check
@@ -108,7 +108,7 @@ void MainWindow::showLuaDialog() {
     if (!m_luaPipe) m_luaPipe = new LuaPipeServer(this);
     char langCode[16];
     m_cfg->getLang(langCode, sizeof(langCode), "en");
-    launchTool(this, "PeciaLua.exe", MUTEX_LUA_TOOL, I18n::get("lua.title"),
+    launchTool("PeciaLua.exe", MUTEX_LUA_TOOL, I18n::get("lua.title"),
                m_luaPipe->pipeName(), langCode);
 }
 
@@ -116,7 +116,7 @@ void MainWindow::showAIChat() {
     if (!m_luaPipe) m_luaPipe = new LuaPipeServer(this);
     char langCode[16];
     m_cfg->getLang(langCode, sizeof(langCode), "en");
-    launchTool(this, "PeciaAIChat.exe", MUTEX_AI_CHAT, I18n::get("chat.title"),
+    launchTool("PeciaAIChat.exe", MUTEX_AI_CHAT, I18n::get("chat.title"),
                m_luaPipe->pipeName(), langCode);
 }
 
@@ -354,7 +354,7 @@ bool MainWindow::getDocumentSnapshot(std::string *payload,
         return false;
     }
     int start = 0, end = 0;
-    bool hasSel = buf->selection_position(&start, &end);
+    buf->selection_position(&start, &end);   // out-params only; return not needed
     int cursor = t->editor->insert_position();
     std::string p;
     p.reserve(64 + strlen(txt));

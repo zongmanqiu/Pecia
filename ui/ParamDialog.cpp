@@ -133,10 +133,10 @@ ParamDialog::ParamDialog(const char *title,
             ch->textcolor(theme ? theme->colors().textPrimary : FL_BLACK);
             int defIdx = 0;
             for (size_t k = 0; k < prm.choices.size(); ++k) {
-                const std::string &label =
+                const std::string &choiceLabel =
                     (k < prm.choiceLabels.size() && !prm.choiceLabels[k].empty())
                         ? prm.choiceLabels[k] : prm.choices[k];
-                ch->add(label.c_str());
+                ch->add(choiceLabel.c_str());
                 if (prm.choices[k] == prm.defValue) defIdx = (int)k;
             }
             ch->value(defIdx);
@@ -188,7 +188,7 @@ ParamDialog::ParamDialog(const char *title,
     // Focus the first input, select its default text for easy overwrite.
     if (!m_inputs.empty()) {
         m_inputs[0]->take_focus();
-        m_inputs[0]->position(0, m_inputs[0]->size());
+        m_inputs[0]->insert_position(0, m_inputs[0]->size());   // 1.4.0 API
     } else if (!m_choices.empty()) {
         m_choices[0]->take_focus();
     } else if (!m_checks.empty()) {

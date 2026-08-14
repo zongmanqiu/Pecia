@@ -1,4 +1,4 @@
-﻿// AIChatSettingsDialog.cpp - modal AI configuration dialog.
+// AIChatSettingsDialog.cpp - modal AI configuration dialog.
 // Mirrors the SettingsDialog look & feel: info title bar on top, flat
 // content area, bottom chrome button bar with right-aligned auto-width
 // buttons, and a 1px outer border drawn on top of everything.
@@ -185,7 +185,7 @@ void AIChatSettingsDialog::cbOk(Fl_Widget *, void *data) {
     self->hide();
 }
 
-void AIChatSettingsDialog::cbGLM(Fl_Widget *, void *data) {
+void AIChatSettingsDialog::cbGLM(Fl_Widget *, void * /*data*/) {
     // Open the Zhipu GLM coding-plan page so the user can apply for an
     // API key. Title-bar close button replaces the old Cancel button.
     ShellExecuteA(nullptr, "open",

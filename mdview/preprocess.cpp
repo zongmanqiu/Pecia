@@ -1,4 +1,4 @@
-﻿#include "preprocess.h"
+#include "preprocess.h"
 #include <md4c-html.h>
 #include <cstdio>
 #include <cstdlib>
@@ -8,7 +8,9 @@
 #include <algorithm>
 #include <atomic>
 #include <thread>
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include "mmdr_ffi.h"
 #include "ratex_ffi.h"
@@ -596,14 +598,14 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
         if (!docBase.empty() && docBase.back() != '\\') docBase += '\\';
 
         std::string hay = html_str;
-        size_t pos = 0;
-        while ((pos = hay.find("<img", pos)) != std::string::npos) {
-            size_t srcPos = hay.find("src=\"", pos);
+        size_t imgPos = 0;
+        while ((imgPos = hay.find("<img", imgPos)) != std::string::npos) {
+            size_t srcPos = hay.find("src=\"", imgPos);
             if (srcPos == std::string::npos) break;
             size_t srcEnd = hay.find('"', srcPos + 5);
             if (srcEnd == std::string::npos) break;
             std::string src = hay.substr(srcPos + 5, srcEnd - srcPos - 5);
-            pos = srcEnd + 1;
+            imgPos = srcEnd + 1;
             // 跳过 URL / 绝对路径 / data: 引用
             if (src.find("://") != std::string::npos ||
                 src.find("data:") != std::string::npos ||
