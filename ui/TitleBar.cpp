@@ -54,8 +54,7 @@ void TitleBar::draw() {
     }
 #endif
 
-    int buttonsTotalW = m_btnW[BTN_PIN] + m_btnW[BTN_MIN] +
-                        m_btnW[BTN_MAX] + m_btnW[BTN_CLOSE];
+    int buttonsTotalW = enabledButtonsTotalW();
     int tabAreaX = x() + ICON_MARGIN + ICON_SZ + 8;
     int tabAreaW = (x() + w() - buttonsTotalW - 6) - tabAreaX;
 
@@ -72,14 +71,15 @@ void TitleBar::draw() {
         fl_pop_clip();
     }
 
-    int bx = x() + w() - m_btnW[BTN_CLOSE];
-    drawButton(bx, y(), m_btnW[BTN_CLOSE], h(), BTN_CLOSE);
-    bx -= m_btnW[BTN_MAX];
-    drawButton(bx, y(), m_btnW[BTN_MAX], h(), BTN_MAX);
-    bx -= m_btnW[BTN_MIN];
-    drawButton(bx, y(), m_btnW[BTN_MIN], h(), BTN_MIN);
-    bx -= m_btnW[BTN_PIN];
-    drawButton(bx, y(), m_btnW[BTN_PIN], h(), BTN_PIN);
+    // Draw the caption buttons right-to-left, skipping any hidden by the
+    // enabled-button mask (dialogs show only the close button).
+    int bx = x() + w();
+    for (int b = BTN_COUNT - 1; b >= 0; --b) {
+        Btn btn = (Btn)b;
+        if (!buttonEnabled(btn)) continue;
+        bx -= m_btnW[btn];
+        drawButton(bx, y(), m_btnW[btn], h(), btn);
+    }
 }
 
 void TitleBar::drawTabs() {
@@ -88,8 +88,7 @@ void TitleBar::drawTabs() {
     m_tabCount = n;
 
     const int ICON_MARGIN = 6, ICON_SZ = 16;
-    int buttonsTotalW = m_btnW[BTN_PIN] + m_btnW[BTN_MIN] +
-                        m_btnW[BTN_MAX] + m_btnW[BTN_CLOSE];
+    int buttonsTotalW = enabledButtonsTotalW();
     int areaX = x() + ICON_MARGIN + ICON_SZ + 8;
     int areaW = (x() + w() - buttonsTotalW - 6) - areaX;
 
@@ -190,22 +189,26 @@ void TitleBar::drawTabs() {
 
 // ---- Hit testing ---------------------------------------------------------
 
+int TitleBar::enabledButtonsTotalW() const {
+    int total = 0;
+    for (int b = 0; b < BTN_COUNT; ++b)
+        if (buttonEnabled((Btn)b)) total += m_btnW[b];
+    return total;
+}
+
 int TitleBar::hitTest(int mx, int my) const {
     if (my < y() || my > y() + h()) return BTN_NONE;
-    int bx = x() + w();
-    bx -= m_btnW[BTN_CLOSE];
-    if (mx >= bx && mx < bx + m_btnW[BTN_CLOSE]) return BTN_CLOSE;
-    bx -= m_btnW[BTN_MAX];
-    if (mx >= bx && mx < bx + m_btnW[BTN_MAX]) return BTN_MAX;
-    bx -= m_btnW[BTN_MIN];
-    if (mx >= bx && mx < bx + m_btnW[BTN_MIN]) return BTN_MIN;
-    bx -= m_btnW[BTN_PIN];
-    if (mx >= bx && mx < bx + m_btnW[BTN_PIN]) return BTN_PIN;
+    int lx = x() + w();
+    for (int b = BTN_COUNT - 1; b >= 0; --b) {
+        Btn btn = (Btn)b;
+        if (!buttonEnabled(btn)) continue;
+        lx -= m_btnW[btn];
+        if (mx >= lx && mx < lx + m_btnW[btn]) return btn;
+    }
 
     if (m_multiTab) {
         const int ICON_MARGIN = 6, ICON_SZ = 16;
-        int buttonsTotalW = m_btnW[BTN_PIN] + m_btnW[BTN_MIN] +
-                            m_btnW[BTN_MAX] + m_btnW[BTN_CLOSE];
+        int buttonsTotalW = enabledButtonsTotalW();
         int tabAreaX = x() + ICON_MARGIN + ICON_SZ + 8;
         int tabAreaW = (x() + w() - buttonsTotalW - 6) - tabAreaX;
         int availW = tabAreaW - h();

@@ -65,31 +65,11 @@ std::atomic<AIChatWindow *> AIChatWindow::s_active = nullptr;
 AIChatWindow::AIChatWindow(Config *appCfg,
                            const std::string &peciaPipe,
                            int w, int h, const char *title)
-    : Fl_Double_Window(w, h, title)
+    : DialogBase(appCfg, w, h, title, appCfg ? appCfg->getUiFontSize() : 16, ToolWindow)
     , m_appCfg(appCfg)
     , m_peciaPipe(peciaPipe) {
-    border(0);                      // draw our own title bar
-    m_theme = new Theme();
-    m_theme->load(*m_appCfg);
-    m_frame = new WindowFrame();
-
     begin();
-
-    // Custom title bar (single-tab mode shows the window title)
-    m_titleBar = new TitleBar(0, 0, w, TITLE_H);
-    m_titleBar->box(FL_FLAT_BOX);
-    m_titleBar->color(m_theme->colors().bgChrome);
-    m_titleBar->setTheme(m_theme);
-    m_titleBar->setFontSize(m_appCfg ? m_appCfg->getUiFontSize() : 16);
-    m_titleBar->setTabData({TitleBar::TabInfo{title}}, 0);
-    m_titleBar->setMultiTab(false);
-    m_titleBar->setOnTogglePin([this]() { togglePin(); });
-    m_titleBar->setOnMinimize([this]() { iconize(); });
-    m_titleBar->setOnToggleMaximize([this]() { toggleMaximize(); });
-    m_titleBar->setOnCloseWindow([this]() { cbClose(nullptr, this); });
-
-    // Shortcut dispatch registry (window ops + chat actions) from the
-    // shared shortcut.* config keys.
+    initShell(title);
     applyShortcuts();
 
     // Chat pane + input pane are edge-to-edge (x=0, full width) matching
@@ -193,6 +173,7 @@ AIChatWindow::AIChatWindow(Config *appCfg,
     end();
     resizable(m_chatDisp);
     color(tc.bgChrome);
+    finalizeShell();
     callback(cbClose, this);        // Alt+F4 / WM_CLOSE
 
     // Start the cursor blink timer (same cadence as the main window).
@@ -261,8 +242,6 @@ AIChatWindow::~AIChatWindow() {
     Fl::remove_timeout(cursorBlinkCb, this);
     Fl::remove_timeout(pushPollCb, this);   // cancel the pending push poll (dangling this otherwise)
     if (s_active.load() == this) s_active.store(nullptr);
-    delete m_theme;
-    delete m_frame;
 }
 
 int AIChatWindow::handle(int event) {
@@ -271,23 +250,9 @@ int AIChatWindow::handle(int event) {
     if (event == FL_KEYDOWN || event == FL_SHORTCUT) {
         if (dispatchShortcut()) return 1;
     }
-    if (event == FL_MOVE || event == FL_PUSH || event == FL_DRAG ||
-        event == FL_RELEASE || event == FL_LEAVE) {
-        int mx = Fl::event_x();
-        int my = Fl::event_y();
-        if (m_titleBar) {
-            if (event == FL_DRAG || event == FL_RELEASE) {
-                int ret = m_titleBar->handle(event);
-                if (ret) return ret;
-            } else if (my >= 0 && my < TITLE_H && mx >= 0 && mx < w()) {
-                int ret = m_titleBar->handle(event);
-                if (ret) return ret;
-            } else if (event == FL_MOVE) {
-                m_titleBar->handle(FL_LEAVE);
-            }
-        }
-    }
-    return Fl_Window::handle(event);
+    // Title-bar event forwarding and the outer border are handled by
+    // DialogBase (shared by every window).
+    return DialogBase::handle(event);
 }
 
 int AIChatWindow::dispatchShortcut() {
@@ -350,22 +315,9 @@ void AIChatWindow::minimizeWindow() {
 #endif
 }
 
-void AIChatWindow::togglePin() {
-#if defined(_WIN32)
-    HWND hwnd = fl_xid(this);
-    if (!hwnd) return;
-    m_pinned = !m_pinned;
-    SetWindowPos(hwnd, m_pinned ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
-                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-    if (m_titleBar) m_titleBar->setPinned(m_pinned);
-#endif
-}
-
-void AIChatWindow::toggleMaximize() {
-    if (!m_frame) return;
-    bool maxed = m_frame->toggleMaximize(this);
-    if (m_titleBar) m_titleBar->setMaximized(maxed);
-}
+// Pin/maximize are implemented in DialogBase (onCaptionTogglePin /
+// onCaptionMaximize); the header's togglePin()/toggleMaximize() wrappers
+// forward to them so the configurable win.* shortcut bindings work.
 
 // Push-channel poll: connect to the main process's push pipe (retrying
 // until it exists), then drain 4-byte-length-prefixed frames. A frame
@@ -463,7 +415,7 @@ void AIChatWindow::openDialog() {
     // Apply the native chrome (taskbar presence, corners, border, icon,
     // edge resize). The HWND exists after show(); waiting for expose
     // first means the window never shows unpainted.
-    setupToolChrome(this, m_theme);
+    applyToolChrome();
     if (m_inputEdit) {
         m_inputEdit->take_focus();
         m_inputEdit->insert_position(m_inputBuf->length());

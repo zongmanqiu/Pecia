@@ -5,7 +5,7 @@
 #include "core/Config.h"
 #include "core/Theme.h"
 #include "ui/ThemeWidgets.h"
-#include "ui/InfoWindow.h"     // createInfoTitleBar, createBorderOverlay
+#include "ui/DialogBase.h"
 #include "ui/Layout.h"
 #include "core/ShortcutCore.h"
 
@@ -40,11 +40,9 @@ static int dialogPad() {
 ParamDialog::ParamDialog(const char *title,
                          const std::vector<LuaParam> &params,
                          const Theme *theme, int uiFontSize)
-    : Fl_Double_Window(400, 0), m_theme(theme) {
-    set_modal();
-    border(0);
-    box(FL_FLAT_BOX);
-    color(theme ? theme->colors().bgEditor : FL_BACKGROUND2_COLOR);
+    : DialogBase(400, 0, title, theme, uiFontSize, ModalDialog), m_theme(theme) {
+    begin();
+    initShell(title);
 
     const int rows = (int)params.size();
     const int pad = dialogPad();
@@ -65,11 +63,6 @@ ParamDialog::ParamDialog(const char *title,
     int contentH = rows * ROW_H + (rows > 1 ? (rows - 1) * GAP : 0);
     int winH = TITLE_H + pad + contentH + pad + gBarH;
     size(winW, winH);
-
-    // Title bar (title + close button; X = cancel).
-    m_titleBar = createInfoTitleBar(0, 0, winW, TITLE_H, title, theme, uiFontSize);
-    if (theme) ((Fl_Widget *)m_titleBar)->color(theme->colors().bgChrome);
-    m_border = createBorderOverlay(0, TITLE_H, winW, winH - TITLE_H, theme);
 
     // Parameter rows: label + input (default pre-filled), top-down.
     int lblW = winW - 2 * MARGIN - IN_W - GAP;
@@ -183,7 +176,7 @@ ParamDialog::ParamDialog(const char *title,
 
     btnBar->end();
     end();
-    resizable(nullptr);
+    finalizeShell();
 
     // Focus the first input, select its default text for easy overwrite.
     if (!m_inputs.empty()) {
@@ -207,7 +200,7 @@ int ParamDialog::handle(int event) {
             return 1;
         }
     }
-    return Fl_Double_Window::handle(event);
+    return DialogBase::handle(event);
 }
 
 bool ParamDialog::run() {
@@ -277,12 +270,3 @@ void ParamDialog::cbKey(Fl_Widget *w, void *data) {
     if (w == self->m_inputs.back()) collectAndOk(self);
 }
 
-void ParamDialog::draw() {
-    Fl_Double_Window::draw();
-    Fl_Color bc = m_theme ? m_theme->colors().borderColor : fl_rgb_color(127, 127, 127);
-    ::fl_color(bc);
-    ::fl_rectf(0, 0, w(), 1);
-    ::fl_rectf(0, h() - 1, w(), 1);
-    ::fl_rectf(0, 0, 1, h());
-    ::fl_rectf(w() - 1, 0, 1, h());
-}

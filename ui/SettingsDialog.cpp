@@ -3,7 +3,6 @@
 #include "core/Theme.h"
 #include "core/I18n.h"
 #include "core/ShortcutCore.h"
-#include "ui/InfoWindow.h"
 #include "ui/ThemeWidgets.h"
 #include "core/Config.h"
 
@@ -377,11 +376,9 @@ static const int g_tabWidthCount = sizeof(g_tabWidths) / sizeof(g_tabWidths[0]);
 // Height of the custom-drawn title bar (mirrors InfoWindow / main window).
 SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *theme,
                        int uiFontSize, int pad)
-    : Fl_Double_Window(w, h + TITLE_H, title), m_theme(theme), m_uiFontSize(uiFontSize), m_pad(pad) {
-    set_modal();
-    border(0);
-    box(FL_FLAT_BOX);
-    color(theme ? theme->colors().bgEditor : FL_BACKGROUND2_COLOR);
+    : DialogBase(w, h + TITLE_H, title, theme, uiFontSize, ModalDialog), m_theme(theme), m_uiFontSize(uiFontSize), m_pad(pad) {
+    begin();
+    initShell(title);
 
     int margin = 12;
     int rowH = 24;
@@ -647,14 +644,9 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
     scroll->scrollbar.color(theme ? theme->colors().scrollbarThumb : fl_rgb_color(170, 170, 170));
     scroll->scrollbar.selection_color(theme ? theme->colors().scrollbarTrack : fl_rgb_color(235, 235, 235));
 
-    // Title bar
-    m_titleBar = createInfoTitleBar(0, 0, w, TITLE_H, title, theme, uiFontSize);
-    // Explicit fallback color in case setTheme fails
-    if (theme) {
-        ((Fl_Widget*)m_titleBar)->color(theme->colors().bgChrome);
-    }
+    // The shared title bar (createInfoTitleBar) is created by DialogBase.
     end();
-    resizable(nullptr);   // fixed-size dialog
+    finalizeShell();
 }
 
 SettingsDialog::~SettingsDialog() = default;
@@ -847,7 +839,7 @@ int SettingsDialog::handle(int event) {
             return 1;
         }
     }
-    return Fl_Double_Window::handle(event);
+    return DialogBase::handle(event);
 }
 
 bool SettingsDialog::runModal() {
@@ -904,19 +896,16 @@ void SettingsDialog::cbCancel(Fl_Widget * /*w*/, void *data) {
 // ---------------------------------------------------------------------------
 namespace {
 
-struct ExtensionsDialog : Fl_Double_Window {
+struct ExtensionsDialog : DialogBase {
     std::vector<Fl_Check_Button*> m_checks;
     Fl_Input *m_customInput = nullptr;
-    InfoTitleBar *m_titleBar = nullptr;
     HoverButton  *m_allBtn = nullptr;
     const Theme *m_theme = nullptr;
 
     ExtensionsDialog(int W, int H, const char *title, const Theme *theme, int uiFontSize)
-        : Fl_Double_Window(W, H + TITLE_H, title), m_theme(theme) {
-        set_modal();
-        border(0);
-        box(FL_FLAT_BOX);
-        color(theme ? theme->colors().bgEditor : FL_WHITE);
+        : DialogBase(W, H + TITLE_H, title, theme, uiFontSize, ModalDialog), m_theme(theme) {
+        begin();
+        initShell(title);
 
         int margin = 12;
         int rowH = 22;
@@ -1053,11 +1042,9 @@ struct ExtensionsDialog : Fl_Double_Window {
         btnBar->end();
 
         // Title bar (created last so it sits on top).
-        m_titleBar = createInfoTitleBar(0, 0, W, TITLE_H, title, theme, uiFontSize);
-        if (theme) ((Fl_Widget*)m_titleBar)->color(theme->colors().bgChrome);
-
+        // The shared title bar is created by DialogBase.
         end();
-        resizable(nullptr);
+        finalizeShell();
     }
 
     // Update the Select All button label to match the current state:
@@ -1069,17 +1056,6 @@ struct ExtensionsDialog : Fl_Double_Window {
             if (!cb->value()) { allSel = false; break; }
         m_allBtn->copy_label(I18n::get(allSel ? "settings.deselectall" : "settings.selectall"));
         m_allBtn->redraw();
-    }
-
-    void draw() FL_OVERRIDE {
-        Fl_Double_Window::draw();
-        Fl_Color bc = m_theme ? m_theme->colors().borderColor : fl_rgb_color(127, 127, 127);
-        ::fl_color(bc);
-        int bh = h();
-        ::fl_rectf(0, 0, w(), 1);
-        ::fl_rectf(0, 0, 1, bh);
-        ::fl_rectf(w() - 1, 0, 1, bh);
-        ::fl_line(0, bh - 1, w() - 1, bh - 1);
     }
 };
 

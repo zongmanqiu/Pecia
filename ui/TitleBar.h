@@ -25,6 +25,24 @@ public:
 
     // Button identifiers
     enum Btn { BTN_NONE = -1, BTN_PIN = 0, BTN_MIN, BTN_MAX, BTN_CLOSE, BTN_COUNT };
+
+    // Button visibility mask (passed to setEnabledButtons) - lets dialogs
+    // reuse the full four-button title bar underneath while showing only
+    // the buttons they need (e.g. dialogs keep just the close button).
+    enum ButtonMask {
+        BTN_MASK_PIN   = 1 << BTN_PIN,    // 1
+        BTN_MASK_MIN   = 1 << BTN_MIN,    // 2
+        BTN_MASK_MAX   = 1 << BTN_MAX,    // 4
+        BTN_MASK_CLOSE = 1 << BTN_CLOSE,  // 8
+        BTN_MASK_ALL   = BTN_MASK_PIN | BTN_MASK_MIN | BTN_MASK_MAX | BTN_MASK_CLOSE,
+        BTN_MASK_CLOSE_ONLY = BTN_MASK_CLOSE
+    };
+
+    // Restrict which caption buttons are drawn/hit-testable. DialogBase
+    // sets this so simple dialogs show only the close button. Default is
+    // all buttons (main window behavior). Call before show().
+    void setEnabledButtons(int mask) { m_enabledBtns = mask; refresh(); }
+    bool buttonEnabled(Btn b) const { return (m_enabledBtns & (1 << b)) != 0; }
     // Hit-test result codes for tab interactions
     enum { HIT_TAB_BASE = 100, HIT_CLOSE_BASE = 200, HIT_PLUS = 300 };
 
@@ -66,6 +84,9 @@ private:
     // HIT_TAB_BASE/HIT_CLOSE_BASE offset, HIT_PLUS, or BTN_NONE.
     int hitTest(int mx, int my) const;
 
+    // Total width (px) of the caption buttons that are currently enabled.
+    int enabledButtonsTotalW() const;
+
     // Draw the multi-tab row (called from draw() when m_multiTab is true)
     void drawTabs();
 
@@ -77,6 +98,7 @@ private:
 
     // Button state tracking
     int  m_btnW[BTN_COUNT];       // width of each caption button
+    int  m_enabledBtns = BTN_MASK_ALL;  // visible buttons (bitmask)
     int  m_hover = BTN_NONE;      // currently hovered button
     int  m_pressed = BTN_NONE;    // currently pressed button
     bool m_dragging = false;      // window drag in progress

@@ -1,7 +1,6 @@
 // AIChatWindow.h - standalone AI chat window.
 #pragma once
 
-#include <FL/Fl_Double_Window.H>
 #include <atomic>
 #include <functional>
 #include <map>
@@ -9,6 +8,7 @@
 #include <vector>
 
 #include "core/ShortcutCore.h"
+#include "ui/DialogBase.h"
 
 class Fl_Text_Editor;
 class Fl_Text_Display;
@@ -18,11 +18,8 @@ class Fl_Check_Button;
 class Fl_Button;
 class Fl_Box;
 class Config;
-class Theme;
-class TitleBar;
-class WindowFrame;
 
-class AIChatWindow : public Fl_Double_Window {
+class AIChatWindow : public DialogBase {
 public:
     AIChatWindow(Config *appCfg, const std::string &peciaPipe,
                  int w, int h, const char *title);
@@ -39,14 +36,17 @@ public:
     void applyShortcuts();
 
     int handle(int event) FL_OVERRIDE;
+    void onCaptionClose() FL_OVERRIDE { cbClose(nullptr, this); }
 
 private:
     // Dispatch a configurable shortcut (window ops + chat actions).
     // Returns 1 when handled.
     int dispatchShortcut();
     void minimizeWindow();
-    void togglePin();
-    bool m_pinned = false;
+    // Pin/maximize live in DialogBase (shared WindowFrame); these wrappers
+    // are kept so the configurable win.* shortcut bindings can trigger them.
+    void togglePin() { onCaptionTogglePin(); }
+    void toggleMaximize() { onCaptionMaximize(); }
     ShortcutRegistry m_shortcutRegistry;
     std::map<std::string, std::function<void()>> m_shortcutHandlers;
     static void cbSend(Fl_Widget *, void *);
@@ -66,7 +66,6 @@ private:
     void sendTo(const std::string &pipe, const char *failKey);
     void setStatus(const char *);   // shows a status message in the chat pane
     void appendTurn(const char *roleLabel, const std::string &text);
-    void toggleMaximize();
 
     // Cursor blink: toggles the input editor's cursor every 500ms,
     // same as MainWindow::cursorBlinkCb (FLTK has no built-in blink).
@@ -91,9 +90,6 @@ private:
 
     Config      *m_appCfg;
     std::string  m_peciaPipe;
-    Theme       *m_theme = nullptr;
-    TitleBar    *m_titleBar = nullptr;
-    WindowFrame *m_frame = nullptr;
 
     Fl_Text_Display *m_chatDisp = nullptr;
     Fl_Text_Buffer  *m_chatBuf = nullptr;

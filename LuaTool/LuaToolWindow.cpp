@@ -45,28 +45,11 @@ std::atomic<LuaToolWindow *> LuaToolWindow::s_active = nullptr;
 LuaToolWindow::LuaToolWindow(Config *appCfg,
                              const std::string &peciaPipe,
                              int w, int h, const char *title)
-    : Fl_Double_Window(w, h, title)
+    : DialogBase(appCfg, w, h, title, appCfg ? appCfg->getUiFontSize() : 16, ToolWindow)
     , m_appCfg(appCfg)
     , m_peciaPipe(peciaPipe) {
-    border(0);                      // draw our own title bar
-    m_theme = new Theme();
-    m_theme->load(*m_appCfg);
-    m_frame = new WindowFrame();
-
     begin();
-
-    // Custom title bar (single-tab mode shows the window title)
-    m_titleBar = new TitleBar(0, 0, w, TITLE_H);
-    m_titleBar->box(FL_FLAT_BOX);
-    m_titleBar->color(m_theme->colors().bgChrome);
-    m_titleBar->setTheme(m_theme);
-    m_titleBar->setFontSize(m_appCfg ? m_appCfg->getUiFontSize() : 16);
-    m_titleBar->setTabData({TitleBar::TabInfo{title}}, 0);
-    m_titleBar->setMultiTab(false);
-    m_titleBar->setOnTogglePin([this]() { togglePin(); });
-    m_titleBar->setOnMinimize([this]() { iconize(); });
-    m_titleBar->setOnToggleMaximize([this]() { toggleMaximize(); });
-    m_titleBar->setOnCloseWindow([this]() { cbClose(nullptr, this); });
+    initShell(title);
 
     // Shortcut dispatch registry (window ops + console actions) from
     // the shared shortcut.* config keys.
@@ -175,6 +158,7 @@ LuaToolWindow::LuaToolWindow(Config *appCfg,
     end();
     resizable(m_scriptEdit);
     color(tc.bgChrome);
+    finalizeShell();
     callback(cbClose, this);        // Alt+F4 / WM_CLOSE also saves
 
     loadScript();
@@ -234,8 +218,6 @@ LuaToolWindow::~LuaToolWindow() {
     if (s_active.load() == this) s_active.store(nullptr);
     delete m_localEngine;
     delete m_localBuf;
-    delete m_theme;
-    delete m_frame;
 }
 
 int LuaToolWindow::handle(int event) {
@@ -244,24 +226,9 @@ int LuaToolWindow::handle(int event) {
     if (event == FL_KEYDOWN || event == FL_SHORTCUT) {
         if (dispatchShortcut()) return 1;
     }
-    // Route title-bar mouse events to the custom TitleBar (border(0)).
-    if (event == FL_MOVE || event == FL_PUSH || event == FL_DRAG ||
-        event == FL_RELEASE || event == FL_LEAVE) {
-        int mx = Fl::event_x();
-        int my = Fl::event_y();
-        if (m_titleBar) {
-            if (event == FL_DRAG || event == FL_RELEASE) {
-                int ret = m_titleBar->handle(event);
-                if (ret) return ret;
-            } else if (my >= 0 && my < TITLE_H && mx >= 0 && mx < w()) {
-                int ret = m_titleBar->handle(event);
-                if (ret) return ret;
-            } else if (event == FL_MOVE) {
-                m_titleBar->handle(FL_LEAVE);
-            }
-        }
-    }
-    return Fl_Window::handle(event);
+    // Title-bar event forwarding and the outer border are handled by
+    // DialogBase (shared by every window).
+    return DialogBase::handle(event);
 }
 
 int LuaToolWindow::dispatchShortcut() {
@@ -328,16 +295,9 @@ void LuaToolWindow::minimizeWindow() {
 #endif
 }
 
-void LuaToolWindow::togglePin() {
-#if defined(_WIN32)
-    HWND hwnd = fl_xid(this);
-    if (!hwnd) return;
-    m_pinned = !m_pinned;
-    SetWindowPos(hwnd, m_pinned ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
-                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-    if (m_titleBar) m_titleBar->setPinned(m_pinned);
-#endif
-}
+// Pin/maximize are implemented in DialogBase (onCaptionTogglePin /
+// onCaptionMaximize); the header's togglePin()/toggleMaximize() wrappers
+// forward to them so the configurable win.* shortcut bindings work.
 
 void LuaToolWindow::openDialog() {
     // Re-center every time the window is opened (user may have moved it
@@ -353,7 +313,7 @@ void LuaToolWindow::openDialog() {
     // Apply the native chrome (taskbar presence, corners, border, icon,
     // edge resize). The HWND exists after show(); waiting for expose
     // first means the window never shows unpainted.
-    setupToolChrome(this, m_theme);
+    applyToolChrome();
     if (m_scriptEdit) {
         m_scriptEdit->take_focus();
         m_scriptEdit->insert_position(m_scriptBuf->length());
@@ -586,12 +546,6 @@ void LuaToolWindow::cursorBlinkCb(void *data) {
         self->m_scriptEdit->damage(FL_DAMAGE_CHILD);
     }
     Fl::add_timeout(0.5, cursorBlinkCb, self);
-}
-
-void LuaToolWindow::toggleMaximize() {
-    if (!m_frame) return;
-    bool maxed = m_frame->toggleMaximize(this);
-    if (m_titleBar) m_titleBar->setMaximized(maxed);
 }
 
 void LuaToolWindow::doRun() {

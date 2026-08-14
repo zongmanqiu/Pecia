@@ -1,9 +1,9 @@
 // SettingsDialog.h - modal dialog for application preferences
 #pragma once
 
-#include <FL/Fl_Double_Window.H>
 #include "core/Theme.h"
 #include "Layout.h"
+#include "ui/DialogBase.h"
 
 #include <string>
 #include <vector>
@@ -14,8 +14,7 @@ class Fl_Button;
 class Fl_Int_Input;
 class Fl_Input;
 class Config;
-class Theme;   // <-- needed for constructor theme parameter
-class InfoTitleBar;
+class Theme;
 
 // SettingsDialog
 //   Modal window shown via Settings > Options... Lets the user
@@ -29,7 +28,7 @@ class InfoTitleBar;
 //   The dialog uses a custom-drawn title bar (border(0) + self-drawn
 //   1px gray border) matching the main window / InfoWindow style, and
 //   supports rounded vs. right-angle corners via DWM attributes.
-class SettingsDialog : public Fl_Double_Window {
+class SettingsDialog : public DialogBase {
 public:
     SettingsDialog(int w, int h, const char *title, const Theme *theme = nullptr,
                     int uiFontSize = 16, int pad = 16);
@@ -67,7 +66,6 @@ private:
     Fl_Input        *m_searchUrlInput;   // 搜索引擎 URL 模板（%s = 选中内容）
     Fl_Button       *m_okBtn;
     Fl_Button       *m_cancelBtn;
-    InfoTitleBar    *m_titleBar;
     const Theme    *m_theme = nullptr;
     int             m_uiFontSize = 16;
     int             m_pad = 16;   // dialog content padding (px), from settings.ini
@@ -77,19 +75,6 @@ private:
     // ExtensionsDialog sub-dialog (m_chooseExtsBtn callback). Persisted
     // to settings.ini as a comma-separated string on saveTo().
     std::vector<std::wstring> m_openWithExts;
-
-    void draw() FL_OVERRIDE {
-        Fl_Double_Window::draw();
-        // Draw borders last, on top of everything, so fl_scroll in the
-        // child SettingsScroll cannot displace them.
-        Fl_Color bc = m_theme ? m_theme->colors().borderColor : fl_rgb_color(127, 127, 127);
-        ::fl_color(bc);
-        int bh = h();
-        ::fl_rectf(0, 0, w(), 1);                 // top
-        ::fl_rectf(0, 0, 1, bh);                 // left
-        ::fl_rectf(w() - 1, 0, 1, bh);            // right
-        ::fl_line(0, bh - 1, w() - 1, bh - 1);     // bottom
-    }
 
     int handle(int event) FL_OVERRIDE;   // OK shortcut support
 

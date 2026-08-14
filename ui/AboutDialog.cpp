@@ -1,19 +1,13 @@
 // AboutDialog.cpp - "About Pecia" dialog.
-// Built with the same window/layout conventions as SettingsDialog (Options):
-// a title bar created via the shared factory, content rows laid out with
-// plain Fl_Box widgets in a fixed label column (clean vertical alignment),
-// and no bottom button bar. QR images load from the exe-adjacent image/
-// folder (donate_wechat.png / donate_alipay.png); a placeholder box is drawn
-// if a file is missing so the dialog always works.
+// Derived from DialogBase (same TitleBar/caption-button shell, border and
+// theme as every other Pecia window); content is the version/author/link/
+// license/AI-tool rows plus donation QR codes. No bottom button bar.
 #include "ui/AboutDialog.h"
 #include "core/Theme.h"
 #include "core/I18n.h"
-#include "ui/InfoWindow.h"      // createInfoTitleBar factory
-#include "ui/Layout.h"          // TITLE_H, gBarH, gBtnH, fonts
+#include "ui/DialogBase.h"
 
-#include <FL/Fl_Double_Window.H>
 #include <FL/Fl_Box.H>
-#include <FL/Fl_Button.H>
 #include <FL/Fl_PNG_Image.H>
 #include <FL/Fl_Image_Surface.H>
 #include <FL/fl_draw.H>
@@ -28,25 +22,6 @@
 #include <vector>
 
 namespace {
-
-// Border-drawing window subclass: paints the outer frame ON TOP of all
-// children so the border never disappears (same as the sharing dialogs).
-class AboutWin : public Fl_Double_Window {
-    const Theme *m_theme;
-public:
-    AboutWin(int W, int H, const char *title, const Theme *theme)
-        : Fl_Double_Window(W, H, title), m_theme(theme) {}
-    void draw() FL_OVERRIDE {
-        Fl_Double_Window::draw();
-        Fl_Color bc = m_theme ? m_theme->colors().borderColor
-                              : fl_rgb_color(127, 127, 127);
-        ::fl_color(bc);
-        ::fl_rectf(0, 0, w(), 1);
-        ::fl_rectf(0, h() - 1, w(), 1);
-        ::fl_rectf(0, 0, 1, h());
-        ::fl_rectf(w() - 1, 0, 1, h());
-    }
-};
 
 // Clickable URL Fl_Box: opens the link on left-click; underlines on hover.
 class LinkBox : public Fl_Box {
@@ -116,142 +91,147 @@ Fl_Image *placeholderImage(const char *caption) {
     return surf.image();
 }
 
+// The dialog itself.
+class AboutDialog : public DialogBase {
+public:
+    AboutDialog(const Theme *theme, int uiFontSize)
+        : DialogBase(500, 600, I18n::get("menu.help.about"),
+                     theme, uiFontSize, ModalDialog) {
+        begin();
+        initShell(I18n::get("menu.help.about"));
+
+        const int fs = uiFontSize ? uiFontSize : 14;
+        const int W  = 500;
+        const int margin = 20;
+        const int labelW = 120;   // fixed label column (right-aligned)
+        int textCol = margin + labelW + 10;   // value column starts here
+
+        // ── Header: large app title + tagline ──
+        Fl_Box *appTitle = new Fl_Box(0, TITLE_H + 20, W, 42);
+        appTitle->box(FL_NO_BOX);
+        appTitle->labelsize(fs + 14);
+        appTitle->labelfont(FL_HELVETICA_BOLD);
+        appTitle->labelcolor(theme->colors().textPrimary);
+        appTitle->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
+        const char *appName = I18n::get("app.name");
+        appTitle->label(appName && *appName && strcmp(appName, "app.name") != 0
+                            ? appName : "Pecia 1.0.0");
+
+        Fl_Box *tagline = new Fl_Box(0, TITLE_H + 62, W, 24);
+        tagline->box(FL_NO_BOX);
+        tagline->labelsize(fs);
+        tagline->labelcolor(theme->colors().textSecondary);
+        tagline->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
+        const char *tag = I18n::get("about.tagline");
+        tagline->label(tag && *tag && strcmp(tag, "about.tagline") != 0 ? tag : "");
+
+        // ── Info rows: fixed label column + value column (plain Fl_Box) ──
+        int y = TITLE_H + 112;
+        const int ROW_H = 28;
+        Fl_Color lblCol = theme->colors().textSecondary;
+        Fl_Color valCol = theme->colors().textPrimary;
+
+        auto row = [&](const char *label, const char *value) {
+            Fl_Box *lb = new Fl_Box(margin, y, labelW, ROW_H, label);
+            lb->box(FL_NO_BOX);
+            lb->labelsize(fs);
+            lb->labelcolor(lblCol);
+            lb->align(FL_ALIGN_RIGHT | FL_ALIGN_CENTER);
+            Fl_Box *vb = new Fl_Box(textCol, y, W - textCol - margin, ROW_H, value);
+            vb->box(FL_NO_BOX);
+            vb->labelsize(fs);
+            vb->labelcolor(valCol);
+            vb->align(FL_ALIGN_LEFT | FL_ALIGN_CENTER);
+            y += ROW_H;
+        };
+
+        row(I18n::get("about.author"), "邱宗满 (Qiu Zongman)");
+        row(I18n::get("about.email"), "qiuzongman@foxmail.com");
+
+        // Project: label column + clickable link (same columns as the rows).
+        {
+            Fl_Box *lb = new Fl_Box(margin, y, labelW, ROW_H, I18n::get("about.project"));
+            lb->box(FL_NO_BOX);
+            lb->labelsize(fs);
+            lb->labelcolor(lblCol);
+            lb->align(FL_ALIGN_RIGHT | FL_ALIGN_CENTER);
+            new LinkBox(textCol, y, W - textCol - margin, ROW_H,
+                        "https://gitee.com/qiuzongman/pecia",
+                        "https://gitee.com/qiuzongman/pecia",
+                        fs, theme->colors().linkHover);
+            y += ROW_H;
+        }
+        row(I18n::get("about.license"), "AGPL-3.0");
+        row(I18n::get("about.ai"), "DeepSeek");
+
+        y += 6;
+
+        // ── Donate title ──
+        Fl_Box *donate = new Fl_Box(0, y, W, 26, I18n::get("about.donate"));
+        donate->box(FL_NO_BOX);
+        donate->labelsize(fs);
+        donate->labelcolor(theme->colors().textPrimary);
+        donate->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
+        y += 30;
+
+        // ── Two QR images (side by side, centered) ──
+        const int QR_SZ = 196;
+        const int gap = 14;
+        const char *labels[2] = { "微信 / WeChat", "支付宝 / Alipay" };
+        const char *files[2] = { "donate_wechat.png", "donate_alipay.png" };
+        int rowW = 2 * QR_SZ + gap;
+        int startX = (W - rowW) / 2;
+        for (int i = 0; i < 2; ++i) {
+            int qx = startX + i * (QR_SZ + gap);
+            Fl_Box *cap = new Fl_Box(qx, y, QR_SZ, 22, labels[i]);
+            cap->box(FL_NO_BOX);
+            cap->labelsize(fs - 2);
+            cap->labelcolor(theme->colors().textSecondary);
+            cap->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
+            Fl_Image *img = loadImage(files[i]);
+            if (!img) img = placeholderImage(labels[i]);
+            if (img) {
+                m_ownedImages.push_back(img);
+                int dw = QR_SZ, dh = QR_SZ;
+                if (img->w() > 0 && img->h() > 0) {
+                    float sc = (float)QR_SZ / (img->w() > img->h() ? img->w() : img->h());
+                    if (sc > 1.0f) sc = 1.0f;
+                    dw = (int)(img->w() * sc);
+                    dh = (int)(img->h() * sc);
+                }
+                Fl_Box *pic = new Fl_Box(qx + (QR_SZ - dw) / 2, y + 26, dw, dh);
+                pic->image(img);
+                pic->box(FL_DOWN_BOX);
+            }
+        }
+
+        end();
+        finalizeShell();
+    }
+
+    ~AboutDialog() override {
+        for (Fl_Image *im : m_ownedImages) delete im;
+    }
+
+    void centerAndShow() {
+        position((Fl::w() - w()) / 2, (Fl::h() - h()) / 2);
+        show();
+    }
+
+private:
+    std::vector<Fl_Image *> m_ownedImages;
+};
+
 } // namespace
 
 void showAboutDialog(const Theme *theme, int uiFontSize) {
     if (!theme) return;
-
-    const int fs = uiFontSize ? uiFontSize : 14;
-    const int W  = 500;
-    const int H  = 600;
-    const int margin = 20;
-    const int labelW = 120;   // fixed label column (right-aligned)
-    int textCol = margin + labelW + 10;   // value column starts here
-
-    AboutWin dlg(W, H, "About", theme);
-    dlg.border(0);
-    dlg.box(FL_FLAT_BOX);
-    dlg.color(theme->colors().bgEditor);
-    dlg.set_modal();
-    dlg.begin();
-
-    InfoTitleBar *titleBar = createInfoTitleBar(0, 0, W, TITLE_H, I18n::get("menu.help.about"), theme, fs);
-    // Mirror the Options dialog: force the chrome background explicitly so
-    // the title bar matches SettingsDialog exactly even if a theme lacks the
-    // chrome color (same defensive line as SettingsDialog.cpp).
-    if (theme) ((Fl_Widget*)titleBar)->color(theme->colors().bgChrome);
-
-    // ── Header: large app title + tagline ──
-    Fl_Box *appTitle = new Fl_Box(0, TITLE_H + 20, W, 42);
-    appTitle->box(FL_NO_BOX);
-    appTitle->labelsize(fs + 14);
-    appTitle->labelfont(FL_HELVETICA_BOLD);
-    appTitle->labelcolor(theme->colors().textPrimary);
-    appTitle->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-    const char *appName = I18n::get("app.name");
-    appTitle->label(appName && *appName && strcmp(appName, "app.name") != 0
-                        ? appName : "Pecia 1.0.0");
-
-    Fl_Box *tagline = new Fl_Box(0, TITLE_H + 62, W, 24);
-    tagline->box(FL_NO_BOX);
-    tagline->labelsize(fs);
-    tagline->labelcolor(theme->colors().textSecondary);
-    tagline->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-    const char *tag = I18n::get("about.tagline");
-    tagline->label(tag && *tag && strcmp(tag, "about.tagline") != 0 ? tag : "");
-
-    // ── Info rows: fixed label column + value column (plain Fl_Box) ──
-    int y = TITLE_H + 112;
-    const int ROW_H = 28;
-    Fl_Color lblCol = theme->colors().textSecondary;
-    Fl_Color valCol = theme->colors().textPrimary;
-
-    auto row = [&](const char *label, const char *value) {
-        Fl_Box *lb = new Fl_Box(margin, y, labelW, ROW_H, label);
-        lb->box(FL_NO_BOX);
-        lb->labelsize(fs);
-        lb->labelcolor(lblCol);
-        lb->align(FL_ALIGN_RIGHT | FL_ALIGN_CENTER);
-        Fl_Box *vb = new Fl_Box(textCol, y, W - textCol - margin, ROW_H, value);
-        vb->box(FL_NO_BOX);
-        vb->labelsize(fs);
-        vb->labelcolor(valCol);
-        vb->align(FL_ALIGN_LEFT | FL_ALIGN_CENTER);
-        y += ROW_H;
-    };
-
-    row(I18n::get("about.author"), "邱宗满 (Qiu Zongman)");
-    row(I18n::get("about.email"), "qiuzongman@foxmail.com");
-
-    // Project: label column + clickable link (same columns as the rows).
-    {
-        Fl_Box *lb = new Fl_Box(margin, y, labelW, ROW_H, I18n::get("about.project"));
-        lb->box(FL_NO_BOX);
-        lb->labelsize(fs);
-        lb->labelcolor(lblCol);
-        lb->align(FL_ALIGN_RIGHT | FL_ALIGN_CENTER);
-        new LinkBox(textCol, y, W - textCol - margin, ROW_H,
-                    "https://gitee.com/qiuzongman/pecia",
-                    "https://gitee.com/qiuzongman/pecia",
-                    fs, theme->colors().linkHover);
-        y += ROW_H;
-    }
-    row(I18n::get("about.license"), "AGPL-3.0");
-    row(I18n::get("about.ai"), "DeepSeek");
-
-    y += 6;
-
-    // ── Donate title ──
-    Fl_Box *donate = new Fl_Box(0, y, W, 26, I18n::get("about.donate"));
-    donate->box(FL_NO_BOX);
-    donate->labelsize(fs);
-    donate->labelcolor(theme->colors().textPrimary);
-    donate->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-    y += 30;
-
-    // ── Two QR images (side by side, centered) ──
-    const int QR_SZ = 196;
-    const int gap = 14;
-    std::vector<Fl_Image *> ownedImages;
-    const char *labels[2] = { "微信 / WeChat", "支付宝 / Alipay" };
-    const char *files[2] = { "donate_wechat.png", "donate_alipay.png" };
-    int rowW = 2 * QR_SZ + gap;
-    int startX = (W - rowW) / 2;
-    for (int i = 0; i < 2; ++i) {
-        int qx = startX + i * (QR_SZ + gap);
-        Fl_Box *cap = new Fl_Box(qx, y, QR_SZ, 22, labels[i]);
-        cap->box(FL_NO_BOX);
-        cap->labelsize(fs - 2);
-        cap->labelcolor(theme->colors().textSecondary);
-        cap->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-        Fl_Image *img = loadImage(files[i]);
-        if (!img) img = placeholderImage(labels[i]);
-        if (img) {
-            ownedImages.push_back(img);
-            int dw = QR_SZ, dh = QR_SZ;
-            if (img->w() > 0 && img->h() > 0) {
-                float sc = (float)QR_SZ / (img->w() > img->h() ? img->w() : img->h());
-                if (sc > 1.0f) sc = 1.0f;
-                dw = (int)(img->w() * sc);
-                dh = (int)(img->h() * sc);
-            }
-            Fl_Box *pic = new Fl_Box(qx + (QR_SZ - dw) / 2, y + 26, dw, dh);
-            pic->image(img);
-            pic->box(FL_DOWN_BOX);
-        }
-    }
-    y += 26 + QR_SZ + 12;
-
-    dlg.end();
-    dlg.position((Fl::w() - W) / 2, (Fl::h() - H) / 2);
-    dlg.show();
-
+    AboutDialog dlg(theme, uiFontSize);
+    dlg.centerAndShow();
 #if defined(_WIN32)
     HWND hwnd = fl_xid(&dlg);
     SetWindowLongPtrW(hwnd, GWL_EXSTYLE, GetWindowLongPtrW(hwnd, GWL_EXSTYLE) | WS_EX_APPWINDOW);
     SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED);
 #endif
-
     while (dlg.shown()) Fl::wait();
-    for (Fl_Image *im : ownedImages) delete im;
 }

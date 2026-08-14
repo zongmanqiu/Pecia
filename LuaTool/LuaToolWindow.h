@@ -1,9 +1,8 @@
 // LuaToolWindow.h - standalone Lua script tool window.
-// Shares the main window's custom title bar and theme so the tool
-// looks exactly like the main Pecia window.
+// Shares the main window's custom title bar and theme; built on DialogBase
+// (same shell as every other window).
 #pragma once
 
-#include <FL/Fl_Double_Window.H>
 #include <atomic>
 #include <functional>
 #include <map>
@@ -11,18 +10,16 @@
 
 #include "core/ShortcutCore.h"
 #include "ui/ThemeWidgets.h"
+#include "ui/DialogBase.h"
 
 class Fl_Text_Display;
 class Fl_Text_Buffer;
 class Fl_Button;
 class Fl_Box;
 class Config;
-class Theme;
-class TitleBar;
-class WindowFrame;
 class LuaEngine;
 
-class LuaToolWindow : public Fl_Double_Window {
+class LuaToolWindow : public DialogBase {
 public:
     LuaToolWindow(Config *appCfg, const std::string &peciaPipe,
                   int w, int h, const char *title);
@@ -39,14 +36,15 @@ public:
     void applyShortcuts();
 
     int handle(int event) FL_OVERRIDE;
+    void onCaptionClose() FL_OVERRIDE { cbClose(nullptr, this); }
 
 private:
     // Dispatch a configurable shortcut (window ops + console actions).
     // Returns 1 when handled.
     int dispatchShortcut();
     void minimizeWindow();
-    void togglePin();
-    bool m_pinned = false;
+    // Pin/maximize live in DialogBase (shared WindowFrame).
+    void togglePin() { onCaptionTogglePin(); }
     ShortcutRegistry m_shortcutRegistry;
     std::map<std::string, std::function<void()>> m_shortcutHandlers;
     static void cbRun(Fl_Widget *, void *);
@@ -62,7 +60,7 @@ private:
     void saveScript();
     std::wstring scriptLastPath();
     void appendOutput(const std::string &text);
-    void toggleMaximize();
+    void toggleMaximize() { onCaptionMaximize(); }
 
     void startInsServer();
     static void s_handleIns(void *data);
@@ -74,9 +72,6 @@ private:
 
     Config      *m_appCfg;
     std::string  m_peciaPipe;
-    Theme       *m_theme = nullptr;
-    TitleBar    *m_titleBar = nullptr;
-    WindowFrame *m_frame = nullptr;
     ThemedTextEditor *m_scriptEdit = nullptr;
     Fl_Text_Buffer *m_scriptBuf = nullptr;
     Fl_Text_Display *m_outDisp = nullptr;

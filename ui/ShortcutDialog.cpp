@@ -4,7 +4,6 @@
 #include "core/Config.h"
 #include "core/I18n.h"
 #include "core/Theme.h"
-#include "ui/InfoWindow.h"
 #include "ui/Layout.h"
 #include "ui/ThemeWidgets.h"
 
@@ -230,13 +229,11 @@ private:
 
 ShortcutDialog::ShortcutDialog(int w, int h, const char *title, Config *cfg,
                                const Theme *theme, int uiFontSize)
-    : Fl_Double_Window(w, h + TITLE_H, title),
+    : DialogBase(w, h + TITLE_H, title, theme, uiFontSize, ModalDialog),
       m_cfg(cfg), m_theme(theme), m_uiFontSize(uiFontSize),
       m_pad(cfg ? cfg->getDialogPad() : 16) {
-    set_modal();
-    border(0);
-    box(FL_FLAT_BOX);
-    color(theme ? theme->colors().bgEditor : FL_BACKGROUND2_COLOR);
+    begin();
+    initShell(title);
 
     int margin = 12;
     int btnH = gBtnH;
@@ -348,11 +345,8 @@ ShortcutDialog::ShortcutDialog(int w, int h, const char *title, Config *cfg,
     btnBar->resizable(nullptr);
     btnBar->end();
 
-    m_titleBar = createInfoTitleBar(0, 0, w, TITLE_H, title, theme, uiFontSize);
-    if (theme) ((Fl_Widget *)m_titleBar)->color(theme->colors().bgChrome);
-
     end();
-    resizable(nullptr);
+    finalizeShell();
 }
 
 ShortcutDialog::~ShortcutDialog() = default;
@@ -531,7 +525,7 @@ int ShortcutDialog::handle(int event) {
             return 1;
         }
     }
-    int ret = Fl_Double_Window::handle(event);
+    int ret = DialogBase::handle(event);
     if (event == FL_FOCUS || event == FL_UNFOCUS || event == FL_KEYUP) {
         updateHintVisibility();
     }
@@ -707,17 +701,6 @@ bool ShortcutDialog::runModal() {
 
     while (shown()) Fl::wait();
     return reinterpret_cast<intptr_t>(user_data()) != 0;
-}
-
-void ShortcutDialog::draw() {
-    Fl_Double_Window::draw();
-    Fl_Color bc = m_theme ? m_theme->colors().borderColor : fl_rgb_color(127, 127, 127);
-    fl_color(bc);
-    int bh = h();
-    fl_rectf(0, 0, w(), 1);
-    fl_rectf(0, 0, 1, bh);
-    fl_rectf(w() - 1, 0, 1, bh);
-    fl_line(0, bh - 1, w() - 1, bh - 1);
 }
 
 

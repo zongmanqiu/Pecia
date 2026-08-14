@@ -176,6 +176,8 @@ ui/MatchHighlight.cpp
     ui/ShortcutManager.cpp
     ui/ConfirmDialog.cpp
     ui/ParamDialog.cpp
+    ui/DialogBase.cpp
+    ui/ToolChrome.cpp
     ui/UiBridge.cpp
     LuaTool/LuaPipeServer.cpp
     LuaTool/AiPushServer.cpp
@@ -276,6 +278,7 @@ add_executable(PeciaLua WIN32
     ui/WindowFrame.cpp
     ui/ParamDialog.cpp
     ui/InfoWindow.cpp
+    ui/DialogBase.cpp
     core/ShortcutCore.cpp
     ui/Layout.cpp
     build/pecia_lua.rc
@@ -327,6 +330,7 @@ add_executable(PeciaAIChat WIN32
     AIChat/AIChatWindow.cpp
     AIChat/AIChatSettingsDialog.cpp
     ui/InfoWindow.cpp
+    ui/DialogBase.cpp
     ui/ToolChrome.cpp
     core/PipeClient.cpp
     core/AiApiClient.cpp

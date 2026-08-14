@@ -8,24 +8,22 @@
 // Parameter rows stack top-down, one input per parameter.
 #pragma once
 
-#include <FL/Fl_Double_Window.H>
 #include <string>
 #include <vector>
 
 #include "script/LuaParamParser.h"
 #include "ui/ThemeWidgets.h"
+#include "ui/DialogBase.h"
 
 class Theme;
 class Fl_Input;
 class Fl_Check_Button;
 class Fl_Button;
-class InfoTitleBar;
-class BorderOverlay;
 
 // Modal dialog collecting values for declared script parameters.
 // run() returns true on OK (values in results()) or false on cancel
 // (X / Esc-close).
-class ParamDialog : public Fl_Double_Window {
+class ParamDialog : public DialogBase {
 public:
     ParamDialog(const char *title,
                 const std::vector<LuaParam> &params,
@@ -38,7 +36,6 @@ public:
     const std::vector<std::string> &results() const { return m_values; }
 
 protected:
-    void draw() FL_OVERRIDE;
     int handle(int event) FL_OVERRIDE;   // OK shortcut
 
 private:
@@ -56,7 +53,5 @@ private:
     std::vector<Fl_Check_Button *> m_checks;  // checkbox rows (parallel to m_params)
     std::vector<std::string> m_values;
     Fl_Button        *m_ok = nullptr;
-    InfoTitleBar     *m_titleBar = nullptr;
-    BorderOverlay    *m_border = nullptr;
     int               m_result = 0;
 };

@@ -1,6 +1,5 @@
 // ConfirmDialog.cpp - custom modal confirmation dialog
 #include "ui/ConfirmDialog.h"
-#include "ui/InfoWindow.h"   // createInfoTitleBar, createBorderOverlay
 #include "ui/ThemeWidgets.h"
 #include "ui/Layout.h"
 #include "core/ShortcutCore.h"
@@ -15,12 +14,10 @@ static const int BTN_W = 90;
 ConfirmDialog::ConfirmDialog(const char *title, const char *message,
                              const char *b0, const char *b1, const char *b2,
                              const Theme *theme, int uiFontSize)
-    : Fl_Double_Window(420, 0, title), m_theme(theme)  // width 420, height computed below
+    : DialogBase(420, 0, title, theme, uiFontSize, ModalDialog)  // width 420, height computed below
 {
-    set_modal();
-    border(0);
-    box(FL_FLAT_BOX);
-    color(theme ? theme->colors().bgEditor : FL_BACKGROUND2_COLOR);
+    begin();
+    initShell(title);
 
     // --- Message text height ---
     fl_font(uiFontSize ? FL_HELVETICA : FL_HELVETICA, uiFontSize ? uiFontSize : 14);
@@ -56,10 +53,6 @@ ConfirmDialog::ConfirmDialog(const char *title, const char *message,
     int winW = 420;
     int winH = TITLE_H + MARGIN + textH + MARGIN + gBarH;
     size(winW, winH);
-
-    // Title bar (top)
-    m_titleBar = createInfoTitleBar(0, 0, winW, TITLE_H, title, theme, uiFontSize);
-    if (theme) ((Fl_Widget*)m_titleBar)->color(theme->colors().bgChrome);
 
     // Message
     int msgY = TITLE_H + MARGIN;
@@ -109,22 +102,8 @@ ConfirmDialog::ConfirmDialog(const char *title, const char *message,
     btnBar->resizable(nullptr);
     btnBar->end();
 
-    // Border overlay (fallback; draw() below overdraws for reliability)
-    m_border = createBorderOverlay(0, TITLE_H, winW, winH - TITLE_H, theme);
-
     end();
-    resizable(nullptr);
-}
-
-void ConfirmDialog::draw() {
-    Fl_Double_Window::draw();
-    // Draw outer border last, on top of everything (like SettingsDialog).
-    Fl_Color bc = m_theme ? m_theme->colors().borderColor : fl_rgb_color(127, 127, 127);
-    ::fl_color(bc);
-    ::fl_rectf(0, 0, w(), 1);
-    ::fl_rectf(0, h() - 1, w(), 1);
-    ::fl_rectf(0, 0, 1, h());
-    ::fl_rectf(w() - 1, 0, 1, h());
+    finalizeShell();
 }
 
 ConfirmDialog::~ConfirmDialog() = default;
@@ -140,7 +119,7 @@ int ConfirmDialog::handle(int event) {
             }
         }
     }
-    return Fl_Double_Window::handle(event);
+    return DialogBase::handle(event);
 }
 
 int ConfirmDialog::run() {
@@ -162,4 +141,3 @@ void ConfirmDialog::cbBtn(Fl_Widget *w, void *data) {
     }
     self->hide();
 }
-

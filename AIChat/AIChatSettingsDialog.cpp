@@ -7,7 +7,6 @@
 #include "core/Config.h"
 #include "core/I18n.h"
 #include "core/Theme.h"
-#include "ui/InfoWindow.h"     // createInfoTitleBar, createBorderOverlay
 #include "ui/ThemeWidgets.h"   // HoverButton
 #include "ui/Layout.h"
 #include "core/ShortcutCore.h"
@@ -31,13 +30,10 @@ const int WIN_W = MARGIN * 2 + LBL_W + IN_W;
 
 AIChatSettingsDialog::AIChatSettingsDialog(Config *appCfg, const Theme *theme,
                                            int uiFontSize)
-    : Fl_Double_Window(WIN_W, 0, I18n::get("ai.section"))
-    , m_cfg(appCfg)
-    , m_theme(theme) {
-    set_modal();
-    border(0);
-    box(FL_FLAT_BOX);
-    color(theme ? theme->colors().bgEditor : FL_BACKGROUND2_COLOR);
+    : DialogBase(WIN_W, 0, I18n::get("ai.section"), theme, uiFontSize, ModalDialog)
+    , m_cfg(appCfg) {
+    begin();
+    initShell(I18n::get("ai.section"));
 
     // Content area: three input rows, padded from the title bar and the
     // button bar so fields don't touch them. Padding is the single config
@@ -115,16 +111,9 @@ AIChatSettingsDialog::AIChatSettingsDialog(Config *appCfg, const Theme *theme,
     btnBar->resizable(nullptr);
     btnBar->end();
 
-    // Title bar (top), like SettingsDialog
-    m_titleBar = createInfoTitleBar(0, 0, WIN_W, TITLE_H, I18n::get("ai.section"),
-                                    theme, uiFontSize);
-    if (theme) ((Fl_Widget *)m_titleBar)->color(theme->colors().bgChrome);
-
-    // Border overlay (fallback; draw() below overdraws for reliability)
-    m_border = createBorderOverlay(0, TITLE_H, WIN_W, winH - TITLE_H, theme);
-
+    // The shared title bar is created by DialogBase.
     end();
-    resizable(nullptr);   // fixed-size dialog
+    finalizeShell();
 }
 
 bool AIChatSettingsDialog::runModal() {
@@ -153,18 +142,7 @@ int AIChatSettingsDialog::handle(int event) {
             return 1;
         }
     }
-    return Fl_Double_Window::handle(event);
-}
-
-void AIChatSettingsDialog::draw() {
-    Fl_Double_Window::draw();
-    // Draw outer border last, on top of everything (like SettingsDialog).
-    Fl_Color bc = m_theme ? m_theme->colors().borderColor : fl_rgb_color(127, 127, 127);
-    ::fl_color(bc);
-    ::fl_rectf(0, 0, w(), 1);
-    ::fl_rectf(0, h() - 1, w(), 1);
-    ::fl_rectf(0, 0, 1, h());
-    ::fl_rectf(w() - 1, 0, 1, h());
+    return DialogBase::handle(event);
 }
 
 void AIChatSettingsDialog::cbOk(Fl_Widget *, void *data) {

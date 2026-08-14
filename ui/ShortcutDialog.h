@@ -1,16 +1,14 @@
 // ShortcutDialog.h - modal dialog for customizing keyboard shortcuts.
 #pragma once
 
-#include <FL/Fl_Double_Window.H>
-
 #include "core/ShortcutCore.h"
+#include "ui/DialogBase.h"
 
 #include <string>
 #include <vector>
 
 class Config;
 class Theme;
-class InfoTitleBar;
 class Fl_Box;
 class Fl_Button;
 class Fl_Input;
@@ -37,7 +35,7 @@ struct ShortcutDialogRow {
 //   On OK, every row's effective combo is written to Config
 //   ("shortcut.<id>" in the shared settings.ini). The calling window is
 //   responsible for applying the changes (rebuilding menus / handlers).
-class ShortcutDialog : public Fl_Double_Window {
+class ShortcutDialog : public DialogBase {
 public:
     ShortcutDialog(int w, int h, const char *title, Config *cfg,
                    const Theme *theme = nullptr, int uiFontSize = 16);
@@ -91,7 +89,6 @@ private:
     std::vector<RowState> m_rows;
     std::vector<RowWidget *> m_widgets;
     RowWidget       *m_recording = nullptr;
-    InfoTitleBar    *m_titleBar = nullptr;
     class Fl_Input  *m_filterInput = nullptr;
     Fl_Box          *m_hintLabel = nullptr;
     Fl_Box          *m_bottomSpacer = nullptr;
@@ -103,6 +100,4 @@ private:
     class Fl_Button *m_resetBtn = nullptr;
 
     int handle(int event) FL_OVERRIDE;
-
-    void draw() FL_OVERRIDE;
 };
