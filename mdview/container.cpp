@@ -12,6 +12,10 @@
 #include <thread>
 #include "mmdr_ffi.h"
 
+// Forward declaration: process-level singleton placeholder used for images
+// that fail to load. Defined later in this file.
+static Fl_Image* unsupportedImage();
+
 // stb_image：跨平台图片解码（单头文件，零依赖）
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -126,8 +130,11 @@ void MyContainer::clear_images()
 
     // 清除图片缓存：GIF 帧指针与 m_gifs 的 gif->image 是同一指针，
     // 必须跳过（否则双删崩溃），由上方 m_gifs 循环统一删除。
+    // 占位图（unsupportedImage()）是进程级静态单例，属 m_images 外部的
+    // 自有生命周期，不能 delete（否则函数静态指针悬垂 → 后续 UAF/double-free）。
     for (auto& [path, img] : m_images) {
         if (m_gifs.count(path)) continue;
+        if (img == unsupportedImage()) continue;   // 单例占位图不释放
         delete img;
     }
     m_images.clear();
@@ -138,8 +145,11 @@ void MyContainer::clear_images()
     }
     m_scaledImages.clear();
 
-    // 清除自定义像素数据
-    for (auto* p : m_owned_pixels) delete[] p;
+    // 清除自定义像素数据（按分配器区分释放方式）
+    for (auto& [p, fromStbi] : m_owned_pixels) {
+        if (fromStbi) stbi_image_free(p);
+        else delete[] p;
+    }
     m_owned_pixels.clear();
 }
 
@@ -447,7 +457,7 @@ Fl_Image* MyContainer::load_svg_text(const std::string& svg_text)
     int bw = bmp.width, bh = bmp.height;
     auto* pixels = new unsigned char[(size_t)bh * stride];
     memcpy(pixels, bmp.pixels, (size_t)bh * stride);
-    m_owned_pixels.push_back(pixels);
+    m_owned_pixels.emplace_back(pixels, false);   // new[] -> delete[]
     Fl_Image* img = new Fl_RGB_Image(pixels, bw, bh, 4, stride);
     mmdr_bitmap_free(&bmp);
     return img;
@@ -461,6 +471,7 @@ Fl_Image* MyContainer::load_bitmap_file(const std::string& file)
     if (!rdata) return nullptr;
     rch = 4;
     int longer = std::max(rw, rh);
+    bool fromStbi = true;
     if (longer > 200) {
         float sc = 200.0f / longer;
         int nw = std::max(1, (int)(rw * sc));
@@ -476,8 +487,9 @@ Fl_Image* MyContainer::load_bitmap_file(const std::string& file)
         stbi_image_free(rdata);
         rdata = dst;
         rw = nw; rh = nh;
+        fromStbi = false;               // now a new[] buffer
     }
-    m_owned_pixels.push_back(rdata);
+    m_owned_pixels.emplace_back(rdata, fromStbi);
     return new Fl_RGB_Image(rdata, rw, rh, rch);
 }
 
@@ -592,8 +604,11 @@ Fl_Image* MyContainer::load_image_file(const std::string& path)
             }
             if (!img) return unsupportedImage();   // GIF 加载失败 → 占位
         }
+        else
         {
             // 位图用 stb_image 加载 + 手动缩放
+            // 注意：必须 else，否则 SVG/GIF 分支成功加载的图片也会被此块
+            // 用 stbi_load 重新解码并覆盖（SVG 永远显示占位、GIF 动画失效）。
             int iw = 0, ih = 0, ich = 0;
             unsigned char* data = stbi_load(path.c_str(), &iw, &ih, &ich, 4);
             if (data) {
@@ -603,6 +618,7 @@ Fl_Image* MyContainer::load_image_file(const std::string& path)
                 // 公式和 mermaid 不缩放
                 bool no_scale = (path.find("formulas") != std::string::npos)
                              || (path.find("meimaid") != std::string::npos);
+                bool fromStbi = true;
                 if (!no_scale && longer > 200) {
                     float sc = 200.0f / longer;
                     nw = std::max(1, (int)(iw * sc));
@@ -619,8 +635,9 @@ Fl_Image* MyContainer::load_image_file(const std::string& path)
                     stbi_image_free(data);
                     data = dst;
                     iw = nw; ih = nh;
+                    fromStbi = false;               // now a new[] buffer
                 }
-                m_owned_pixels.push_back(data);
+                m_owned_pixels.emplace_back(data, fromStbi);
                 img = new Fl_RGB_Image(data, iw, ih, ich);
             } else {
                 return unsupportedImage();   // 解码失败（格式不支持/损坏）→ 占位

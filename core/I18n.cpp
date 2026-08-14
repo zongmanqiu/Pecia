@@ -152,7 +152,7 @@ const char *I18n::detectSystemLang() {
         case 0x0009:                       candidate = "en";    break; // en
         case 0x0409:                       candidate = "en";    break; // en-US
         case 0x0804:                       candidate = "zh-CN"; break; // zh-CN
-        case 0x0404:                       candidate = "zh-TW"; break; // zh-TW
+        case 0x0404:                       candidate = "zh-CN"; break; // zh-TW (no zh-TW.txt; zh-CN is closest shipped)
         default:
             // Any other Chinese sublanguage (zh-HK, zh-SG, ...) has no
             // file; zh-CN is the closest match we ship.

@@ -38,6 +38,10 @@ Document::Document()
 }
 
 Document::~Document() {
+    // Remove the modify callback before destroying the buffer so no stray
+    // callback can fire on a half-destroyed Document (matches the add in
+    // the constructor / the editor's buffer-null pattern elsewhere).
+    if (m_buffer) m_buffer->remove_modify_callback(modifyCallback, this);
     delete m_buffer;
 }
 
@@ -377,29 +381,34 @@ bool Document::saveWithEncoding(const char *path, Encoding enc) {
         return false;
     }
 
+    // Check every write: on disk-full / device errors fwrite silently
+    // succeeds-or-short-writes; without checking we would mark the file
+    // clean and lose the user's data on the next close.
+    auto writeAll = [&](const void *buf, size_t n) -> bool {
+        return fp != nullptr && fwrite(buf, 1, n, fp) == n;
+    };
+
     bool ok = true;
     switch (enc) {
     case Encoding::UTF8:
-        fwrite(writeData, 1, writeLen, fp);
+        ok = writeAll(writeData, (size_t)writeLen);
         break;
 
     case Encoding::UTF8_BOM: {
         const unsigned char bom[3] = { 0xEF, 0xBB, 0xBF };
-        fwrite(bom, 1, 3, fp);
-        fwrite(writeData, 1, writeLen, fp);
+        ok = writeAll(bom, 3) && writeAll(writeData, (size_t)writeLen);
         break;
     }
 
     case Encoding::UTF16_LE: {
         const unsigned char bom[2] = { 0xFF, 0xFE };
-        fwrite(bom, 1, 2, fp);
+        ok = writeAll(bom, 2);
         wchar_t *w = nullptr; int wlen = 0;
         if (utf8ToWide(writeData, writeLen, &w, &wlen)) {
-            for (int i = 0; i < wlen; ++i) {
+            for (int i = 0; i < wlen && ok; ++i) {
                 unsigned char lo = w[i] & 0xFF;
                 unsigned char hi = (w[i] >> 8) & 0xFF;
-                fwrite(&lo, 1, 1, fp);
-                fwrite(&hi, 1, 1, fp);
+                ok = writeAll(&lo, 1) && writeAll(&hi, 1);
             }
             delete[] w;
         } else { ok = false; }
@@ -408,14 +417,13 @@ bool Document::saveWithEncoding(const char *path, Encoding enc) {
 
     case Encoding::UTF16_BE: {
         const unsigned char bom[2] = { 0xFE, 0xFF };
-        fwrite(bom, 1, 2, fp);
+        ok = writeAll(bom, 2);
         wchar_t *w = nullptr; int wlen = 0;
         if (utf8ToWide(writeData, writeLen, &w, &wlen)) {
-            for (int i = 0; i < wlen; ++i) {
+            for (int i = 0; i < wlen && ok; ++i) {
                 unsigned char lo = w[i] & 0xFF;
                 unsigned char hi = (w[i] >> 8) & 0xFF;
-                fwrite(&hi, 1, 1, fp);
-                fwrite(&lo, 1, 1, fp);
+                ok = writeAll(&hi, 1) && writeAll(&lo, 1);
             }
             delete[] w;
         } else { ok = false; }
@@ -431,17 +439,21 @@ bool Document::saveWithEncoding(const char *path, Encoding enc) {
         if (cp == 0) cp = CP_ACP;
         char *out = nullptr; int outLen = 0;
         if (utf8ToCodepage(cp, writeData, writeLen, &out, &outLen)) {
-            fwrite(out, 1, outLen, fp);
+            ok = writeAll(out, (size_t)outLen);
             delete[] out;
         } else {
             // Fallback: write as UTF-8
-            fwrite(writeData, 1, writeLen, fp);
+            ok = writeAll(writeData, (size_t)writeLen);
         }
         break;
     }
     }
 
-    fclose(fp);
+    // Flush then close, and treat a failed flush/close as a failed save.
+    if (fflush(fp) != 0) ok = false;
+    if (fclose(fp) != 0) ok = false;
+    fp = nullptr;
+
     ::free((void*)text);
     delete[] expanded;
     delete[] normalized;

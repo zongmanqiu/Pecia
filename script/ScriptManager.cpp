@@ -100,12 +100,23 @@ bool listLuaFiles(const std::string &dir, std::vector<std::string> &out) {
     do {
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
         std::wstring wname(fd.cFileName);
+        // Convert the WHOLE name to UTF-8 first (MultiByteToWideChar /
+        // WideCharToMultiByte counts are byte-vs-wchar - mixing them truncates
+        // multi-byte (e.g. Chinese) script names to garbage), then strip the
+        // trailing ".lua".
         std::string name;
-        int len = WideCharToMultiByte(CP_UTF8, 0, wname.c_str(), -1, nullptr, 0, nullptr, nullptr);
-        if (len > 4) {
-            name.resize(len - 1 - 4);
-            WideCharToMultiByte(CP_UTF8, 0, wname.c_str(), len - 5, &name[0], len - 5, nullptr, nullptr);
+        int len = WideCharToMultiByte(CP_UTF8, 0, wname.c_str(), -1,
+                                      nullptr, 0, nullptr, nullptr);
+        if (len > 0) {
+            name.resize((size_t)len - 1);   // len includes the NUL terminator
+            WideCharToMultiByte(CP_UTF8, 0, wname.c_str(), -1,
+                                &name[0], len, nullptr, nullptr);
         }
+        const char kLua[] = ".lua";
+        size_t slen = strlen(kLua);
+        if (name.size() > slen &&
+            name.compare(name.size() - slen, slen, kLua) == 0)
+            name.resize(name.size() - slen);
         if (!name.empty() &&
             std::find(out.begin(), out.end(), name) == out.end())
             out.push_back(name);

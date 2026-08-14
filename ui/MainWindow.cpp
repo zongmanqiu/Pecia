@@ -11,6 +11,7 @@
 
 #include "script/LuaEngine.h"
 #include "LuaTool/LuaPipeServer.h"
+#include "LuaTool/AiPushServer.h"
 #include "core/Config.h"
 #include "core/Theme.h"
 #include "core/FileManager.h"
@@ -542,6 +543,7 @@ MainWindow::~MainWindow() {
     Fl::remove_timeout(statusUpdateCb, this);
     Fl::remove_timeout(fixTaskbarCb, this);
     Fl::remove_timeout(s_applyLangDeferred, this);
+    Fl::remove_timeout(s_updateLinenumberWidthCb, this);
 
     for (auto &t : m_tabsList) {
         // Detach the editor from the buffer BEFORE deleting the document:
@@ -563,6 +565,10 @@ MainWindow::~MainWindow() {
     delete m_luaEngine;
     m_luaEngine = nullptr;
 
+    // AI push channel (owns a listener thread that we join in its dtor).
+    delete m_aiPush;
+    m_aiPush = nullptr;
+
     delete m_cfg;
 
     // Free the recent-files submenu strings and array (we own them
@@ -575,14 +581,17 @@ MainWindow::~MainWindow() {
         m_recentMenu = nullptr;
     }
     // Free the script toolbar menu array (the toolbar widget itself is
-    // deleted by FLTK after this destructor via the window).
+    // deleted by FLTK after this destructor via the window). The array
+    // contains nested submenus each null-terminated, so walk the full
+    // recorded count rather than stopping at the first null .text.
     if (m_scriptBarMenu) {
-        for (int i = 0; m_scriptBarMenu[i].text; ++i) {
+        for (int i = 0; i < m_scriptBarMenuCount; ++i) {
             free((void *)m_scriptBarMenu[i].text);
             if (m_scriptBarMenu[i].user_data_) free(m_scriptBarMenu[i].user_data_);
         }
         delete[] m_scriptBarMenu;
         m_scriptBarMenu = nullptr;
+        m_scriptBarMenuCount = 0;
     }
 }
 

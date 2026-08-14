@@ -359,6 +359,11 @@ public:
     // each followed by its script items (level-2 folders become nested
     // FL_SUBMENUs). Freed in the destructor and on every rebuild.
     Fl_Menu_Item *m_scriptBarMenu = nullptr;
+    // Element count of m_scriptBarMenu: the array contains nested submenus
+    // each terminated by an FLTK null entry, so the total length != the
+    // position of the first null `.text` - we must walk the full count to
+    // free every _strdup'd text/user_data_.
+    int m_scriptBarMenuCount = 0;
 
     std::vector<Tab> m_tabsList;
 
@@ -543,6 +548,11 @@ public:
     // torn down the menu window.
     const char *m_pendingLangCode = nullptr;
     static void s_applyLangDeferred(void *data);
+
+    // Deferred line-number width refresh (named callback so it can be
+    // removed in the destructor; an anonymous lambda timeout would fire on
+    // a destroyed 'this' if the window closes within the 0.0s window).
+    static void s_updateLinenumberWidthCb(void *data);
 
 private:
     // Helper used by handle() to dispatch global shortcuts before FLTK

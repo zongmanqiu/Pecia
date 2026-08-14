@@ -23,6 +23,28 @@ constexpr uint32_t kCompileOptions = PCRE2_UTF | PCRE2_UCP;
 // lets empty matches advance past the previous end.
 constexpr uint32_t kIterOptions = PCRE2_NOTEMPTY_ATSTART | PCRE2_ANCHORED;
 
+// Bounded backtrack budget. PCRE2's default MATCH_LIMIT is ~10 million, so
+// an adversarial pattern like (a+)+b against a long run of 'a's would
+// otherwise spin the caller (the Lua engine runs on the GUI thread) for a
+// very long time. Cap it to keep the regex engine always responsive;
+// exceeding the limit returns an error instead of hanging.
+constexpr uint32_t kMatchLimit   = 100'000;
+constexpr uint32_t kDepthLimit   = 100;
+
+// Create the process-reusable, bounded match context (thread-safe after
+// creation per PCRE2 docs). Ownership is static; never freed.
+pcre2_match_context *matchCtx() {
+    static pcre2_match_context *ctx = [] {
+        pcre2_match_context *c = pcre2_match_context_create_8(nullptr);
+        if (c) {
+            pcre2_set_match_limit_8(c, kMatchLimit);
+            pcre2_set_depth_limit_8(c, kDepthLimit);
+        }
+        return c;
+    }();
+    return ctx;
+}
+
 pcre2_code *compilePattern(const char *pattern, char *errbuf, int errcap) {
     int errcode = 0;
     PCRE2_SIZE erroffset = 0;
@@ -82,10 +104,10 @@ PR_API int pr_findall(const char *text, int textLen,
         // Standard global-match iteration: try anchored (so empty matches
         // don't loop), fall back to an unanchored scan on NOMATCH.
         int rc = pcre2_match_8(code, (PCRE2_SPTR8)text, (PCRE2_SIZE)textLen,
-                               offset, kIterOptions, md, nullptr);
+                               offset, kIterOptions, md, matchCtx());
         if (rc == PCRE2_ERROR_NOMATCH) {
             rc = pcre2_match_8(code, (PCRE2_SPTR8)text, (PCRE2_SIZE)textLen,
-                               offset, 0, md, nullptr);
+                               offset, 0, md, matchCtx());
             if (rc == PCRE2_ERROR_NOMATCH) break;
         }
         if (rc < 0) {
@@ -129,8 +151,9 @@ PR_API int pr_substitute_all(const char *text, int textLen,
     PCRE2_SIZE outLenBytes = 0;
     int rc = pcre2_substitute_8(
         code, (PCRE2_SPTR8)text, (PCRE2_SIZE)textLen, 0,
-        PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH,
-        nullptr, nullptr,
+        PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH |
+        PCRE2_SUBSTITUTE_EXTENDED,
+        nullptr, matchCtx(),
         (PCRE2_SPTR8)replacement, PCRE2_ZERO_TERMINATED,
         nullptr, &outLenBytes);
     if (rc == PCRE2_ERROR_NOMEMORY) {
@@ -143,8 +166,8 @@ PR_API int pr_substitute_all(const char *text, int textLen,
         PCRE2_SIZE done = outLenBytes;
         int rc2 = pcre2_substitute_8(
             code, (PCRE2_SPTR8)text, (PCRE2_SIZE)textLen, 0,
-            PCRE2_SUBSTITUTE_GLOBAL,
-            nullptr, nullptr,
+            PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_EXTENDED,
+            nullptr, matchCtx(),
             (PCRE2_SPTR8)replacement, PCRE2_ZERO_TERMINATED,
             (PCRE2_UCHAR8 *)buf, &done);
         if (rc2 < 0) {

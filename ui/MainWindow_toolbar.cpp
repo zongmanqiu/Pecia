@@ -43,12 +43,16 @@ void MainWindow::rebuildScriptBar() {
     if (!m_scriptBar) return;
 
     if (m_scriptBarMenu) {
-        for (int i = 0; m_scriptBarMenu[i].text; ++i) {
+        // m_scriptBarMenu contains nested FL_SUBMENUs, each ended by an
+        // FLTK null entry - so the first null `.text` is NOT the array end.
+        // Walk the full recorded element count to free every _strdup'd item.
+        for (int i = 0; i < m_scriptBarMenuCount; ++i) {
             free((void *)m_scriptBarMenu[i].text);
             if (m_scriptBarMenu[i].user_data_) free(m_scriptBarMenu[i].user_data_);
         }
         delete[] m_scriptBarMenu;
         m_scriptBarMenu = nullptr;
+        m_scriptBarMenuCount = 0;
     }
 
     ScriptCatalog cat = scriptManagerScan();
@@ -139,6 +143,7 @@ void MainWindow::rebuildScriptBar() {
     }
 
     m_scriptBarMenu = menu;
+    m_scriptBarMenuCount = itemCount;
     m_scriptBar->menu(menu);
     m_scriptBar->redraw();
 

@@ -61,7 +61,13 @@ void MainWindow::newFile() {
     if (i >= 0) {
         Tab t = m_tabsList[i];
         m_tabsList.erase(m_tabsList.begin() + i);
+        // Detach the editor from its buffer and destroy the page BEFORE
+        // deleting the document (matches openFile): the editor may still be
+        // focused and would touch the freed buffer on the next FL_UNFOCUS,
+        // and m_tabs->remove() only unlinks the page - it does not free it.
+        t.editor->buffer(nullptr);
         m_tabs->remove(t.page);
+        delete t.page;
         delete t.doc;
     }
     // Create a fresh empty document in place of the old one.
@@ -91,10 +97,13 @@ bool MainWindow::closeCurrentTab() {
     Tab t = m_tabsList[i];
     m_tabsList.erase(m_tabsList.begin() + i);
 
-    // Remove the page from Fl_Tabs (which also deletes it)
+    // Detach the editor from its buffer and destroy the page BEFORE
+    // deleting the document (matches openFile). m_tabs->remove() only
+    // unlinks the page from Fl_Tabs - it does NOT free it, so we must
+    // delete t.page (which owns the editor) explicitly.
+    t.editor->buffer(nullptr);
     m_tabs->remove(t.page);
-    // t.page and t.editor are deleted by FLTK via Fl_Group destructor.
-    // We need to explicitly clear Fl_Tabs' cached pointers:
+    delete t.page;
     delete t.doc;
 
     switchToTab(activeTabIndex() < 0 ? 0 : activeTabIndex());
@@ -115,7 +124,11 @@ void MainWindow::closeTab(int index) {
 
     Tab t = m_tabsList[index];
     m_tabsList.erase(m_tabsList.begin() + index);
+    // Same detach + destroy-page-before-doc ordering as openFile (see the
+    // closeCurrentTab comment): avoid UAF and the page/editor leak.
+    t.editor->buffer(nullptr);
     m_tabs->remove(t.page);
+    delete t.page;
     delete t.doc;
 
     switchToTab(activeTabIndex() < 0 ? 0 : activeTabIndex());
@@ -284,7 +297,13 @@ bool MainWindow::detachExtraTabsToNewWindows() {
     for (int idx : allRemove) {
         Tab t = m_tabsList[idx];
         m_tabsList.erase(m_tabsList.begin() + idx);
+        // Same ordering as the other tab-close paths (see closeCurrentTab):
+        // detach editor from buffer and free the page before deleting the
+        // document, so a still-focused editor can't touch a freed buffer and
+        // the page/editor isn't leaked (m_tabs->remove() only unlinks it).
+        t.editor->buffer(nullptr);
         m_tabs->remove(t.page);
+        delete t.page;
         delete t.doc;
     }
 

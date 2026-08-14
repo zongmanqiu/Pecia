@@ -34,6 +34,11 @@
 // number of digits in the maximum line number, measured with the
 // editor's current font. Only updates when the width actually changes
 // to avoid unnecessary redraws on every keystroke.
+void MainWindow::s_updateLinenumberWidthCb(void *data) {
+    MainWindow *self = static_cast<MainWindow *>(data);
+    if (self) self->updateLinenumberWidth();
+}
+
 void MainWindow::updateLinenumberWidth() {
     if (!m_cfg->getLineNumbers()) return;
     for (auto &t : m_tabsList) {

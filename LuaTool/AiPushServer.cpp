@@ -31,9 +31,13 @@ AiPushServer::AiPushServer() {
 }
 
 AiPushServer::~AiPushServer() {
+    // Signal the listener to stop and wait for it to finish. This prevents
+    // the listener thread (which touches m_pipeName/m_cv/m_mu/m_queue) from
+    // outliving this object - the old code detached the thread, so once this
+    // object was destroyed any still-blocked thread read freed members (UB).
     m_ready = false;
     m_cv.notify_all();
-    m_thread.detach();   // blocked in ConnectNamedPipe; process exit kills it
+    if (m_thread.joinable()) m_thread.join();
 }
 
 void AiPushServer::push(const std::string &text) {
@@ -47,18 +51,45 @@ void AiPushServer::push(const std::string &text) {
 }
 
 void AiPushServer::listenLoop() {
-    for (;;) {
+    // Overlapped connect + exit event so the outer accept can be interrupted
+    // promptly by the destructor (synchronous ConnectNamedPipe would block
+    // forever and make join() hang). Wait on the event with a poll timeout so
+    // the loop also notices m_ready turning false even with no incoming client.
+    HANDLE hAccept = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+    if (hAccept == nullptr) return;
+
+    while (m_ready) {
         HANDLE hPipe = CreateNamedPipeA(
             m_pipeName.c_str(),
-            PIPE_ACCESS_DUPLEX,
+            PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
             PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
             1, 65536, 65536, 0, nullptr);
-        if (hPipe == INVALID_HANDLE_VALUE) return;
+        if (hPipe == INVALID_HANDLE_VALUE) break;
 
-        if (!ConnectNamedPipe(hPipe, nullptr) &&
-            GetLastError() != ERROR_PIPE_CONNECTED) {
+        ResetEvent(hAccept);
+        OVERLAPPED ov = {};
+        ov.hEvent = hAccept;
+        BOOL connOk = ConnectNamedPipe(hPipe, &ov);
+        DWORD err = GetLastError();
+        if (connOk || err == ERROR_PIPE_CONNECTED) {
+            // Client connected (synchronously or in the accept gap).
+        } else if (err == ERROR_IO_PENDING) {
+            for (;;) {
+                DWORD wr = WaitForSingleObject(hAccept, 200);
+                if (wr == WAIT_OBJECT_0) break;          // connected
+                if (!m_ready) {                          // teardown requested
+                    CancelIoEx(hPipe, nullptr);
+                    break;
+                }
+            }
+            if (!m_ready) {
+                CancelIoEx(hPipe, nullptr);
+                CloseHandle(hPipe);
+                break;
+            }
+        } else {
             CloseHandle(hPipe);
-            continue;
+            break;
         }
 
         // Client connected: serve queued messages until it disconnects.
@@ -69,7 +100,9 @@ void AiPushServer::listenLoop() {
                 std::unique_lock<std::mutex> lk(m_mu);
                 m_cv.wait(lk, [this]() { return !m_ready || !m_queue.empty(); });
                 if (!m_ready) {
+                    DisconnectNamedPipe(hPipe);
                     CloseHandle(hPipe);
+                    CloseHandle(hAccept);
                     return;
                 }
                 msg = std::move(m_queue.front());
@@ -87,4 +120,6 @@ void AiPushServer::listenLoop() {
         // Remaining queued messages survive in m_queue; the next client
         // connection (or the same client reconnecting) drains them.
     }
+
+    CloseHandle(hAccept);
 }

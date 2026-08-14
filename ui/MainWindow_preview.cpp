@@ -250,6 +250,12 @@ void MainWindow::togglePreview()
     }
 
     // 开启：首次创建面板
+    // 若 0.1s 前的"关闭"销毁仍挂起，必须先取消，否则 destroyPreviewCb 到时
+    // 会把刚重新激活的面板删掉，留下悬垂的 m_preview（use-after-free）。
+    if (m_previewDestroyPending) {
+        Fl::remove_timeout(destroyPreviewCb, this);
+        m_previewDestroyPending = false;
+    }
     if (!m_preview) {
         m_preview = new PreviewPanel();
         m_previewDivider = new PreviewDivider(0, 0, kDividerW, 100);

@@ -26,10 +26,13 @@ bool FileManager::checkSaveBeforeClose(Document *doc, int tabIndex,
     if (switchTab) switchTab(tabIndex);
 
     UiBridge *bridge = uiBridge();
+    // If the UI bridge isn't injected yet, default to Cancel (Third) rather
+    // than Don't Save (Second): a dirty, unsaved document must never be
+    // silently closed/data-lost because the confirm dialog wasn't available.
     ConfirmChoice c = bridge ? bridge->confirm(I18n::get("confirm.unsaved.title"),
         I18n::get("confirm.unsaved.msg"),
         I18n::get("dlg.save"), I18n::get("dlg.dontsave"), I18n::get("dlg.cancel"))
-        : ConfirmChoice::Second;
+        : ConfirmChoice::Third;
     if (c == ConfirmChoice::First) return save(doc, tabIndex, updateLabel, updateTitle, updateStatus);
     if (c == ConfirmChoice::Second) return true;
     return false;

@@ -12,6 +12,7 @@
 #include <memory>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 #include <functional>
 #include "litehtml.h"
@@ -106,7 +107,12 @@ private:
     std::map<std::string, Fl_Image*> m_images;
     std::map<std::string, Fl_Image*> m_scaledImages; // 按 路径@WxH 键的缩放缓存
     std::map<std::string, GifAnim*> m_gifs;
-    std::vector<unsigned char*> m_owned_pixels;
+    // Self-owned image pixel buffers and how they were allocated.
+    // pair <ptr, fromStbi>: fromStbi==true means stbi_image_free, false means
+    // delete[]. stbi_load/stbi_load_gif return stbi_malloc'd memory while the
+    // scaled copies are new unsigned char[] - the two MUST NOT be freed the
+    // same way (delete[] on a malloc'd block is undefined behavior).
+    std::vector<std::pair<unsigned char*, bool>> m_owned_pixels;
     scroll_to_cb_t m_scroll_cb;
     remote_done_cb_t m_remote_done_cb;   // 远程图片下载完成（主线程）
     std::map<std::string, Fl_Font> m_font_map;

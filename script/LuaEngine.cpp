@@ -13,6 +13,7 @@ extern "C" {
 #include <cstring>
 #include <ctime>
 #include <vector>
+#include <atomic>
 
 #include <windows.h>
 #include <shellapi.h>
@@ -64,6 +65,30 @@ void unloadRegexDll() {
         g_fnFindAll = nullptr;
         g_fnSubst = nullptr;
         g_fnFree = nullptr;
+    }
+}
+
+// --------------------------------------------------------------------------
+// Script execution budget. Lua has no built-in timeout, so an innocent
+// `while true do end` (or a pathological regex) would block the GUI thread
+// forever. We install an instruction-counting debug hook in run() and raise
+// a Lua error once a run burns through kMaxInstructions, so the editor and
+// the (30s-waiting) pipe server are never frozen by a runaway script.
+// Scripts run serially on the FLTK main thread (via Fl::awake), so a plain
+// counter is race-free here.
+// --------------------------------------------------------------------------
+const long long kMaxInstructions = 5'000'000;   // ~a few hundred ms of work
+std::atomic<long long> g_instructionBudget{0};
+
+void s_instructionHook(lua_State *L, lua_Debug *) {
+    // LUA_MASKCOUNT invokes the hook every N instructions; the count we pass
+    // to lua_sethook is the decrement per call. Exceeding the budget raises
+    // a Lua error (via longjmp), which unwinds pcall and reports a timeout
+    // to the user instead of hanging the GUI thread forever.
+    long long remaining = g_instructionBudget.fetch_sub(2048) - 2048;
+    if (remaining <= 0) {
+        g_instructionBudget.store(0);
+        luaL_error(L, "script timeout: execution exceeded the instruction limit");
     }
 }
 
@@ -491,6 +516,13 @@ bool LuaEngine::run(const std::string &script,
 
     std::string sink;   // local sink so output is safe even if caller passes nullptr
 
+    // Reset any leftover stack state / globals from a previous run: a fresh
+    // run must not see the previous script's `params`/`pecia_lang` globals
+    // or leftover temporary stack values.
+    lua_settop(L, 0);
+    lua_pushnil(L); lua_setglobal(L, "params");
+    lua_pushnil(L); lua_setglobal(L, "pecia_lang");
+
     // Stash per-run state in the registry.
     lua_pushlightuserdata(L, &kScratchKey);
     lua_pushlightuserdata(L, &ctx);
@@ -511,13 +543,21 @@ bool LuaEngine::run(const std::string &script,
         }
         lua_pop(L, 1);
         ok = false;
-    } else if (lua_pcall(L, 0, 0, 0) != LUA_OK) {
-        if (errMsg) {
-            const char *s = lua_tostring(L, -1);
-            *errMsg = s ? s : "runtime error";
+    } else {
+        // Guard against runaway scripts: install the instruction-counting
+        // timeout hook for the duration of this pcall, then remove it.
+        g_instructionBudget.store(kMaxInstructions);
+        lua_sethook(L, &s_instructionHook, LUA_MASKCOUNT, 2048);
+        int pc = lua_pcall(L, 0, 0, 0);
+        lua_sethook(L, nullptr, 0, 0);   // remove the hook regardless of outcome
+        if (pc != LUA_OK) {
+            if (errMsg) {
+                const char *s = lua_tostring(L, -1);
+                *errMsg = s ? s : "runtime error";
+            }
+            lua_pop(L, 1);
+            ok = false;
         }
-        lua_pop(L, 1);
-        ok = false;
     }
 
     if (output) output->append(sink);

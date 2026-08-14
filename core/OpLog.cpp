@@ -11,7 +11,14 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <mutex>
 #include <windows.h>
+
+// Serializes all log writes: the AI HTTP thread and the main thread both
+// log, and trimTailIfNeeded rewrites the file - without a lock two threads
+// could interleave lines or one thread's trim could clobber another's
+// append. Best-effort logging, but never corrupt.
+static std::mutex g_opLogMu;
 
 // temp/<exe-base-name>_ops-YYYYMMDD_HHMMSS.log next to the executable.
 static const char *logFileName() {
@@ -101,6 +108,7 @@ void opLog(const char *fmt, ...) {
 
     char line[1100];
     snprintf(line, sizeof(line), "%s  %s\n", stamp, msg);
+    std::lock_guard<std::mutex> lk(g_opLogMu);
     appendLine(line);
 }
 

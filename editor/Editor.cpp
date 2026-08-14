@@ -362,6 +362,14 @@ void Editor::applyLineHighlight() {
     // style buffer); only FindReplace's match highlighting is unavailable
     // on such files. Large files are typically opened read-only anyway.
     if (len > kStyleBufLimitBytes) {
+        // Drop any style buffer that a previous (smaller) document attached,
+        // so the editor doesn't keep a stale, mismatched highlight_data that
+        // no longer matches the new buffer's length (would corrupt layout).
+        if (m_styleBuf) {
+            highlight_data(nullptr, nullptr, 0, 'A', 0, 0);
+            delete m_styleBuf;
+            m_styleBuf = nullptr;
+        }
         m_lastLineStart = -1;
         m_highlightDataSet = false;
         return;

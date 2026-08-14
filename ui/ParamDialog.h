@@ -44,6 +44,10 @@ protected:
 private:
     static void cbBtn(Fl_Widget *w, void *data);
     static void cbKey(Fl_Widget *w, void *data);
+    // Collect all values (checkbox/choice/input, in declaration order) into
+    // m_values and confirm the dialog. Shared by the OK button and the
+    // Enter-in-last-input shortcut so both walk m_params identically.
+    static void collectAndOk(ParamDialog *self);
 
     const Theme        *m_theme;
     std::vector<LuaParam> m_params;      // declaration order (drives result order)

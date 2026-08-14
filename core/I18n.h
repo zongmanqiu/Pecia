@@ -6,12 +6,6 @@
 // Maximum length of a single value string
 #define I18N_MAX_LEN 256
 
-// Supported languages
-enum class Lang {
-    English,
-    SimplifiedChinese,
-};
-
 // I18n
 //   Loads key=value pairs from lang/<code>.txt. Lines starting with '#'
 //   or '[' are comments; everything is UTF-8. The class is a singleton:

@@ -208,7 +208,7 @@ int replaceAllForward(std::string &text,
                       const char *repl, int replLen,
                       bool matchCase, bool wholeWord) {
     if (needleLen <= 0) return -1;
-    if (replLen <= 0) repl = "";
+    if (!repl || replLen <= 0) { repl = ""; replLen = 0; }
     int pos = 0;
     int count = 0;
     for (;;) {

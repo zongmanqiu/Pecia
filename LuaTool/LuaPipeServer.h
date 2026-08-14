@@ -7,6 +7,7 @@
 // Work is marshalled to the UI thread via Fl::awake.
 #pragma once
 
+#include <atomic>
 #include <string>
 #include <thread>
 
@@ -25,13 +26,13 @@ public:
     // Full pipe name the tools should connect to ("\\.\pipe\pecia-lua-<pid>").
     const char *pipeName() const { return m_pipeName.c_str(); }
 
-    bool ready() const { return m_ready; }
+    bool ready() const { return m_ready.load(); }
 
 private:
     void listenLoop();
 
     MainWindow  *m_owner;
     std::string  m_pipeName;
-    bool         m_ready = false;
+    std::atomic<bool> m_ready = false;
     std::thread  m_thread;
 };

@@ -8,6 +8,7 @@
 // no client is connected are delivered once the client (re)connects.
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
@@ -29,7 +30,7 @@ private:
     void listenLoop();
 
     std::string m_pipeName;
-    bool        m_ready = false;
+    std::atomic<bool> m_ready = false;
     std::thread m_thread;
     std::mutex  m_mu;
     std::condition_variable m_cv;

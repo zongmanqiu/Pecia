@@ -219,62 +219,62 @@ bool ParamDialog::run() {
     return m_result != 0;
 }
 
-void ParamDialog::cbBtn(Fl_Widget *w, void *data) {
-    auto *self = static_cast<ParamDialog *>(data);
-    if (w == self->m_ok) {
-        self->m_values.clear();
-        size_t ci = 0, ii = 0, ki = 0;
-        for (const LuaParam &prm : self->m_params) {
-            if (prm.isCheckbox) {
-                // Checked = the on/true option, unchecked = off/false
-                // (order-independent, so scripts always see on/off or
-                // true/false semantics).
-                int want = self->m_checks[ki]->value() ? 0 : 1;  // 0 = prefer on/true
-                int sel = -1;
-                for (size_t k = 0; k < prm.choices.size(); ++k) {
-                    bool isOn = (prm.choices[k] == "on" || prm.choices[k] == "true");
-                    if (want == 0 && isOn) { sel = (int)k; break; }
-                    if (want == 1 && !isOn) { sel = (int)k; break; }
-                }
-                if (sel >= 0)
-                    self->m_values.push_back(prm.choices[(size_t)sel]);
-                else
-                    self->m_values.push_back("");
-                ++ki;
-            } else if (!prm.choices.empty()) {
-                // Return the RAW option value (choices[k]), not the
-                // translated display label - scripts match on values.
-                int sel = self->m_choices[ci]->value();
-                if (sel >= 0 && sel < (int)prm.choices.size())
-                    self->m_values.push_back(prm.choices[(size_t)sel]);
-                else
-                    self->m_values.push_back("");
-                ++ci;
-            } else {
-                const char *v = self->m_inputs[ii]->value();
-                self->m_values.push_back(v ? v : "");
-                ++ii;
+void ParamDialog::collectAndOk(ParamDialog *self) {
+    self->m_values.clear();
+    size_t ci = 0, ii = 0, ki = 0;
+    for (const LuaParam &prm : self->m_params) {
+        if (prm.isCheckbox) {
+            // Checked = the on/true option, unchecked = off/false
+            // (order-independent, so scripts always see on/off or
+            // true/false semantics).
+            int want = self->m_checks[ki]->value() ? 0 : 1;  // 0 = prefer on/true
+            int sel = -1;
+            for (size_t k = 0; k < prm.choices.size(); ++k) {
+                bool isOn = (prm.choices[k] == "on" || prm.choices[k] == "true");
+                if (want == 0 && isOn) { sel = (int)k; break; }
+                if (want == 1 && !isOn) { sel = (int)k; break; }
             }
+            if (sel >= 0)
+                self->m_values.push_back(prm.choices[(size_t)sel]);
+            else
+                self->m_values.push_back("");
+            ++ki;
+        } else if (!prm.choices.empty()) {
+            // Return the RAW option value (choices[k]), not the
+            // translated display label - scripts match on values.
+            int sel = self->m_choices[ci]->value();
+            if (sel >= 0 && sel < (int)prm.choices.size())
+                self->m_values.push_back(prm.choices[(size_t)sel]);
+            else
+                self->m_values.push_back("");
+            ++ci;
+        } else {
+            const char *v = self->m_inputs[ii]->value();
+            self->m_values.push_back(v ? v : "");
+            ++ii;
         }
-        self->m_result = 1;
-    } else {
-        self->m_result = 0;   // cancel (X / other)
     }
+    self->m_result = 1;
     self->hide();
 }
 
-void ParamDialog::cbKey(Fl_Widget *w, void *data) {
-    // Enter in an input field acts like OK.
+void ParamDialog::cbBtn(Fl_Widget *w, void *data) {
     auto *self = static_cast<ParamDialog *>(data);
-    if (w == self->m_inputs.back()) {
-        self->m_values.clear();
-        for (Fl_Input *in : self->m_inputs) {
-            const char *v = in->value();
-            self->m_values.push_back(v ? v : "");
-        }
-        self->m_result = 1;
+    if (w == self->m_ok) {
+        collectAndOk(self);
+    } else {
+        self->m_result = 0;   // cancel (X / other)
         self->hide();
     }
+}
+
+void ParamDialog::cbKey(Fl_Widget *w, void *data) {
+    // Enter in an input field acts like OK. Guard: m_inputs may be empty
+    // (pure checkbox/choice dialog) - nothing to submit via Enter, and
+    // .back() on an empty vector is undefined behavior.
+    auto *self = static_cast<ParamDialog *>(data);
+    if (self->m_inputs.empty()) return;
+    if (w == self->m_inputs.back()) collectAndOk(self);
 }
 
 void ParamDialog::draw() {

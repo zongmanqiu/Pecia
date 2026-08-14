@@ -740,9 +740,11 @@ void MainWindow::cbModify(int pos, int nInserted, int nDeleted,
         // Defer line number width update so it doesn't run on every
         // keystroke - the width only needs to change when the number of
         // digits in the line count changes (e.g. 9→10, 99→100, etc.)
-        Fl::add_timeout(0.0, [](void *data) {
-            ((MainWindow *)data)->updateLinenumberWidth();
-        }, self);
+        // Use a named callback (with dedupe) so the destructor can cancel
+        // it - an anonymous lambda armed with add_timeout could otherwise
+        // fire on a destroyed MainWindow (use-after-free).
+        Fl::remove_timeout(s_updateLinenumberWidthCb, self);
+        Fl::add_timeout(0.0, s_updateLinenumberWidthCb, self);
     }
 }
 
