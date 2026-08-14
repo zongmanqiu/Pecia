@@ -4,6 +4,7 @@
 #include "core/I18n.h"
 #include "core/ShortcutCore.h"
 #include "ui/ThemeWidgets.h"
+#include "ui/SmokeTest.h"
 #include "core/Config.h"
 
 #include <FL/Fl.H>
@@ -1087,6 +1088,28 @@ static std::vector<std::wstring> parseCustomExts(const char *text) {
 }
 
 } // namespace
+
+void SettingsDialog::openExtensionsForTest() {
+    // Reuse the real ExtensionsDialog construction path (width/height/rows
+    // identical to cbChooseExts) but display-only: no registry changes.
+    const int dlgW = 400;
+    const int rowH = 22;
+    const int cols = 2;
+    int perCol = (kAssocExtCount + cols - 1) / cols;
+    int customRowH = rowH + 8;
+    const int dlgH = perCol * rowH + customRowH + TITLE_H + 12;
+    // A lightweight SettingsDialog owns the theme/fonts the extensions
+    // dialog needs; `this` is already such an instance in the normal flow,
+    // but for the Test Dialogs entry we may not have one, so use this.
+    ExtensionsDialog dlg(dlgW, dlgH, I18n::get("settings.filetype"),
+                         m_theme, m_uiFontSize);
+    dlg.position((Fl::w() - dlgW) / 2, (Fl::h() - dlgH - TITLE_H) / 2);
+    dlg.refreshToggleLabel();
+    dlg.user_data(reinterpret_cast<void *>((intptr_t)0));
+    dlg.show();
+    if (ui::g_smokeMode) { dlg.hide(); return; }
+    while (dlg.shown()) Fl::wait();
+}
 
 void SettingsDialog::cbChooseExts(Fl_Widget * /*w*/, void *data) {
     SettingsDialog *self = static_cast<SettingsDialog *>(data);

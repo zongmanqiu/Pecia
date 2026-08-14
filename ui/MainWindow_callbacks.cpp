@@ -653,6 +653,18 @@ void MainWindow::cbTestFileError(Fl_Widget * /*w*/, void *data) {
         &self->m_theme, self->m_cfg->getUiFontSize()).run();
 }
 
+void MainWindow::cbTestExtensions(Fl_Widget * /*w*/, void *data) {
+    auto *self = static_cast<MainWindow *>(data);
+    if (!self) return;
+    // Reuse the real ExtensionsDialog construction by going through a
+    // SettingsDialog (display only; openExtensionsForTest never touches the
+    // registry). Pad from config like the real Options dialog.
+    SettingsDialog dlg(520, 480, I18n::get("settings.title"), &self->m_theme,
+                       self->m_cfg->getUiFontSize(),
+                       self->m_cfg ? self->m_cfg->getDialogPad() : 16);
+    dlg.openExtensionsForTest();
+}
+
 void MainWindow::cbTestInfoWindow(Fl_Widget * /*w*/, void *data) {
     auto *self = static_cast<MainWindow *>(data);
     if (!self) return;

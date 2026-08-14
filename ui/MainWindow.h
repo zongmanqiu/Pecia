@@ -139,6 +139,7 @@ public:
     static void cbTestLargeFile(Fl_Widget *w, void *data);
     static void cbTestFileError(Fl_Widget *w, void *data);
     static void cbTestInfoWindow(Fl_Widget *w, void *data);
+    static void cbTestExtensions(Fl_Widget *w, void *data);
     static void cbTestParams(Fl_Widget *w, void *data);
     static void cbTestAIChat(Fl_Widget *w, void *data);
     static void cbTestLua(Fl_Widget *w, void *data);

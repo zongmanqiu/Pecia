@@ -46,6 +46,11 @@ public:
     // false if they cancelled.
     bool runModal();
 
+    // Test/Debug: show the "add to Open with" ExtensionsDialog (build +
+    // display only; never touches the registry). Used by the Help > Test
+    // Dialogs menu to inspect the window's UI and translations.
+    void openExtensionsForTest();
+
 
 
 private:

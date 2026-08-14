@@ -170,6 +170,7 @@ Fl_Menu_Item g_menu[] = {
     { "   Settings Dialog",   0, MainWindow::cbSettings,        nullptr, 0 },
     { "   Shortcuts Dialog",  0, MainWindow::cbShortcuts,       nullptr, 0 },
     { "   Info Window",       0, MainWindow::cbTestInfoWindow,  nullptr, 0 },
+    { "   Extensions Dialog", 0, MainWindow::cbTestExtensions,  nullptr, 0 },
     { "   Script Params",     0, MainWindow::cbTestParams,      nullptr, 0 },
     { "   Confirm: Save",     0, MainWindow::cbTestSaveConfirm, nullptr, 0 },
     { "   Confirm: Large File",0, MainWindow::cbTestLargeFile,  nullptr, 0 },

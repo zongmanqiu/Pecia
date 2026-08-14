@@ -100,6 +100,13 @@ void runOpenTest() {
     { SettingsDialog dlg(520, 480, "smoke-settings", &theme, fs, 16); }
     CHECK(true);
 
+    // ── ExtensionsDialog (Open-with chooser; previously not covered) ──
+    {
+        SettingsDialog dlg(520, 480, "smoke-ext", &theme, fs, 16);
+        dlg.openExtensionsForTest();
+    }
+    CHECK(true);
+
     // ── Confirm (3 / 2 / 1 buttons) ──
     { ConfirmDialog dlg("t", "msg", "Yes", "No", "Cancel", &theme, fs); }
     { ConfirmDialog dlg2("t", "msg", "OK", "Cancel", nullptr, &theme, fs); }
