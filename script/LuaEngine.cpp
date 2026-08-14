@@ -115,8 +115,10 @@ int l_regex_gsub(lua_State *L) {
         lua_pushstring(L, err[0] ? err : "regex error");
         return 2;
     }
-    if (rc == 0 || outLen <= 0) {
-        lua_pushlstring(L, text, tl);   // no match - unchanged
+    if (rc == 0 || outLen <= 0 || !out) {
+        // No match or a degenerate result: return the text unchanged.
+        if (g_fnFree && out) g_fnFree(out);
+        lua_pushlstring(L, text, tl);
         return 1;
     }
     lua_pushlstring(L, out, (size_t)outLen);
@@ -145,10 +147,18 @@ int l_regex_findall(lua_State *L) {
         lua_pushstring(L, err[0] ? err : "regex error");
         return 2;
     }
+    // Cap pathological results (e.g. a zero-width pattern over a long string
+    // can produce millions of matches) so we don't build a giant table.
+    if (n > 100000) n = 100000;
     std::vector<int> starts((size_t)n), ends((size_t)n);
     if (n > 0) {
-        g_fnFindAll(text, (int)tl, pat, starts.data(), ends.data(), n,
-                    err, sizeof(err));
+        int m = g_fnFindAll(text, (int)tl, pat, starts.data(), ends.data(), n,
+                            err, sizeof(err));
+        if (m < 0 || m != n) {   // second pass disagreed -> don't trust buffers
+            lua_pushnil(L);
+            lua_pushliteral(L, "regex internal error");
+            return 2;
+        }
     }
     lua_createtable(L, n, 0);
     for (int i = 0; i < n; ++i) {

@@ -1,6 +1,6 @@
 // LuaParamParser.h - parse `--!param`/`--!pui` declarations from a Lua
-// script's header (first 40 lines). Used to auto-generate the parameter
-// dialog before running a script.
+// script's header (first 256 lines, see kScriptMetaMaxLines). Used to
+// auto-generate the parameter dialog before running a script.
 #pragma once
 
 #include <string>
@@ -29,7 +29,7 @@ struct LuaParamSet {
 // resolve all UI texts for `langCode` (e.g. "zh-CN"; "" or "en" = the
 // base texts). Lookup chain per text: <key>.<lang> -> <key> (base, en)
 // -> raw value (param name / option value). Only lines within the first
-// 40 lines are considered (matches kScriptMetaMaxLines); malformed
+// 256 lines are considered (matches kScriptMetaMaxLines); malformed
 // entries are skipped.
 LuaParamSet luaParseParams(const std::string &script,
                            const std::string &langCode = "en");
