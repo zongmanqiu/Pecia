@@ -85,7 +85,35 @@ static const std::unordered_map<std::string, std::string>& emoji_map()
     return m;
 }
 
-static std::string replace_emoji(const std::string& text)
+// Fenced code-block ranges ("```" ... "```", including the fences). Content
+// inside these must be treated as literal: emoji shorthand and $$ formulas
+// should NOT be substituted there (it would corrupt code samples).
+static std::vector<std::pair<size_t, size_t>> find_fenced_ranges(const std::string& text)
+{
+    std::vector<std::pair<size_t, size_t>> ranges;
+    size_t i = 0;
+    while (i < text.size()) {
+        size_t open = text.find("```", i);
+        if (open == std::string::npos) break;
+        size_t close = text.find("```", open + 3);
+        if (close == std::string::npos) break;   // unterminated fence: ignore rest
+        ranges.push_back({open, close + 3});     // inclusive of closing fence
+        i = close + 3;
+    }
+    return ranges;
+}
+
+// True if pos falls inside any fenced code-range (or before i's next range).
+static bool in_any_fence(const std::vector<std::pair<size_t, size_t>>& r,
+                         size_t pos)
+{
+    for (const auto& p : r)
+        if (pos >= p.first && pos < p.second) return true;
+    return false;
+}
+
+static std::string replace_emoji(const std::string& text,
+                                 const std::vector<std::pair<size_t, size_t>>& fences)
 {
     // 单遍扫描：遇到 ':' 才尝试匹配简码（原实现 100 个简码逐个 find+replace
     // 全文，O(100×N)；改为 O(N) 单遍，长文档明显更快）。
@@ -94,7 +122,7 @@ static std::string replace_emoji(const std::string& text)
     result.reserve(text.size() + 16);
     size_t i = 0;
     while (i < text.size()) {
-        if (text[i] == ':') {
+        if (text[i] == ':' && !in_any_fence(fences, i)) {
             size_t j = text.find(':', i + 1);
             if (j != std::string::npos && j - i <= 32) {
                 auto it = m.find(text.substr(i, j - i + 1));
@@ -221,15 +249,22 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
                        const std::string& doc_dir,
                        std::vector<PreviewHeading>* headings_out)
 {
-    // 0. 替换 emoji 简码为 Unicode
-    std::string md = replace_emoji(markdown);
+    // 0. 替换 emoji 简码为 Unicode（跳过 fenced code block 内部，避免误伤代码）
+    std::vector<std::pair<size_t, size_t>> fences0 = find_fenced_ranges(markdown);
+    std::string md = replace_emoji(markdown, fences0);
+
+    // emoji 替换会改变代码块之外文本的字节长度，使 fences0 在 md 上失准；
+    // 对处理后的 md 重新定位 fenced 范围，供下面的 $$ 提取使用。
+    std::vector<std::pair<size_t, size_t>> fences = find_fenced_ranges(md);
 
     // 1a. 提取 $$...$$ 公式。位置判定行内/块级：$$ 所在行若前后还有文字
     // （非独占行）→ 行内小图；独占一行（行首起、行尾止）→ 块级大图。
+    // 仅处理非 fenced-code 内的 $$（代码块里的 $$ 是字面量，不能当公式）。
     std::vector<FormulaItem> formulas;
 
     size_t pos = 0;
     while ((pos = md.find("$$", pos)) != std::string::npos) {
+        if (in_any_fence(fences, pos)) { pos += 2; continue; }
         size_t end = md.find("$$", pos + 2);
         if (end == std::string::npos) break;
         std::string formula = md.substr(pos + 2, end - pos - 2);

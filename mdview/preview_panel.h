@@ -56,7 +56,6 @@ public:
     void pump();
 
 private:
-    void applyResult(const std::string &html);
     void applyResult(const std::string &html, std::vector<PreviewHeading> headings);
     void workerLoop();
 

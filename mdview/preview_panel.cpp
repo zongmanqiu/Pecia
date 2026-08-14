@@ -60,7 +60,18 @@ void PreviewPanel::workerLoop()
             m_hasRequest = false;              // 只处理最新请求（覆盖式）
         }
         std::vector<PreviewHeading> headings;
-        std::string html = md_to_html(markdown, build_dir, doc_dir, &headings);
+        std::string html;
+        try {
+            html = md_to_html(markdown, build_dir, doc_dir, &headings);
+        } catch (...) {
+            // Rendering threw (e.g. bad_alloc building HTML strings). Do not
+            // let the exception kill the worker thread: m_workerBusy must
+            // still be reset so the pump timer can stop, otherwise the 30ms
+            // poll loop would spin forever waiting on a dead worker.
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_workerBusy = false;
+            continue;
+        }
 
         {
             std::lock_guard<std::mutex> lock(m_mutex);
@@ -149,11 +160,6 @@ void PreviewPanel::timerCb(void *data)
     if (keep) {
         Fl::add_timeout(0.03, timerCb, self);
     }
-}
-
-void PreviewPanel::applyResult(const std::string &html)
-{
-    applyResult(html, {});
 }
 
 void PreviewPanel::applyResult(const std::string &html, std::vector<PreviewHeading> headings)
