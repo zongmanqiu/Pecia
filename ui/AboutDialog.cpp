@@ -1,18 +1,19 @@
 // AboutDialog.cpp - "About Pecia" dialog.
-// Built the same way as the other dialogs (SettingsDialog / InfoWindow):
-// an Fl_Double_Window subclass that draws the outer border on top of all
-// children (so the border never disappears), a themed InfoTitleBar via the
-// shared factory, and label/value rows with a fixed label column for clean
-// alignment. QR images load from the exe-adjacent image/ folder
-// (donate_wechat.png / donate_alipay.png); a placeholder box is drawn if a
-// file is missing so the dialog always works.
+// Built with the same window/layout conventions as SettingsDialog (Options):
+// a title bar created via the shared factory, content rows laid out with
+// plain Fl_Box widgets in a fixed label column (clean vertical alignment),
+// and no bottom button bar. QR images load from the exe-adjacent image/
+// folder (donate_wechat.png / donate_alipay.png); a placeholder box is drawn
+// if a file is missing so the dialog always works.
 #include "ui/AboutDialog.h"
 #include "core/Theme.h"
 #include "core/I18n.h"
 #include "ui/InfoWindow.h"      // createInfoTitleBar factory
+#include "ui/Layout.h"          // TITLE_H, gBarH, gBtnH, fonts
 
 #include <FL/Fl_Double_Window.H>
 #include <FL/Fl_Box.H>
+#include <FL/Fl_Button.H>
 #include <FL/Fl_PNG_Image.H>
 #include <FL/Fl_Image_Surface.H>
 #include <FL/fl_draw.H>
@@ -28,19 +29,13 @@
 
 namespace {
 
-constexpr int kTitleH = 36;
-constexpr int kLabelW = 120;   // fixed label column width (right-aligned)
-
-// ---------------------------------------------------------------------------
-// AboutDialogWin - Fl_Double_Window subclass whose draw() paints the outer
-// border last, on top of every child, so the frame is always visible (same
-// approach as InfoDialog / SettingsDialog's ExtensionsDialog).
-// ---------------------------------------------------------------------------
-class AboutDialogWin : public Fl_Double_Window {
+// Border-drawing window subclass: paints the outer frame ON TOP of all
+// children so the border never disappears (same as the sharing dialogs).
+class AboutWin : public Fl_Double_Window {
     const Theme *m_theme;
 public:
-    AboutDialogWin(int W, int H, const Theme *theme)
-        : Fl_Double_Window(W, H), m_theme(theme) {}
+    AboutWin(int W, int H, const char *title, const Theme *theme)
+        : Fl_Double_Window(W, H, title), m_theme(theme) {}
     void draw() FL_OVERRIDE {
         Fl_Double_Window::draw();
         Fl_Color bc = m_theme ? m_theme->colors().borderColor
@@ -53,75 +48,37 @@ public:
     }
 };
 
-// A clickable URL text (underlined on hover); opens via ShellExecuteA.
-class ClickableLink : public Fl_Widget {
+// Clickable URL Fl_Box: opens the link on left-click; underlines on hover.
+class LinkBox : public Fl_Box {
     const char *m_url;
-    const char *m_text;
-    const Theme *m_theme;
-    int  m_fontSize;
     bool m_hover = false;
 public:
-    ClickableLink(int X, int Y, int W, int H, const char *url,
-                  const char *text, const Theme *theme, int fs)
-        : Fl_Widget(X, Y, W, H), m_url(url), m_text(text),
-          m_theme(theme), m_fontSize(fs) {}
-
+    LinkBox(int X, int Y, int W, int H, const char *url, const char *text,
+            int fs, Fl_Color c)
+        : Fl_Box(X, Y, W, H, text), m_url(url) {
+        box(FL_NO_BOX);
+        labelsize(fs);
+        labelcolor(c);
+        align(FL_ALIGN_LEFT | FL_ALIGN_CENTER);
+    }
     void draw() FL_OVERRIDE {
-        Fl_Color c = m_theme ? m_theme->colors().linkHover
-                             : fl_rgb_color(6, 69, 173);
-        fl_color(c);
-        fl_font(FL_HELVETICA, m_fontSize);
-        int tw = (int)fl_width(m_text);
-        fl_draw(m_text, x(), y(), w(), h(), FL_ALIGN_LEFT | FL_ALIGN_CENTER);
-        if (m_hover) {   // underline on hover only
-            int ty = y() + h() / 2 + fl_descent() - 1;
-            fl_line(x(), ty, x() + tw, ty);
+        Fl_Box::draw();
+        if (m_hover) {
+            int tw = (int)fl_width(label());
+            fl_color(labelcolor());
+            fl_line(x(), y() + h() / 2 + fl_descent() - 1,
+                    x() + tw, y() + h() / 2 + fl_descent() - 1);
         }
     }
     int handle(int event) FL_OVERRIDE {
-        switch (event) {
-        case FL_ENTER: m_hover = true; redraw(); fl_cursor(FL_CURSOR_HAND); return 1;
-        case FL_LEAVE: m_hover = false; redraw(); fl_cursor(FL_CURSOR_DEFAULT); return 1;
-        case FL_PUSH:
-            if (Fl::event_button() == FL_LEFT_MOUSE && m_url && *m_url) {
-                ShellExecuteA(nullptr, "open", m_url, nullptr, nullptr, SW_SHOWNORMAL);
-                return 1;
-            }
-            return 0;
-        default: return 0;
+        if (event == FL_ENTER) { m_hover = true; redraw(); fl_cursor(FL_CURSOR_HAND); return 1; }
+        if (event == FL_LEAVE) { m_hover = false; redraw(); fl_cursor(FL_CURSOR_DEFAULT); return 1; }
+        if (event == FL_PUSH && Fl::event_button() == FL_LEFT_MOUSE) {
+            if (m_url && *m_url) ShellExecuteA(nullptr, "open", m_url, nullptr, nullptr, SW_SHOWNORMAL);
+            return 1;
         }
+        return 0;
     }
-};
-
-// ---------------------------------------------------------------------------
-// A label row: fixed-width right-aligned label column + value. Using the same
-// kLabelW for every row keeps the labels vertically aligned.
-// ---------------------------------------------------------------------------
-class AboutRow : public Fl_Widget {
-    const char *m_label;
-    const char *m_value;
-    const Theme *m_theme;
-    int m_fontSize;
-public:
-    AboutRow(int X, int Y, int W, int H, const char *label, const char *value,
-             const Theme *theme, int fs)
-        : Fl_Widget(X, Y, W, H), m_label(label), m_value(value),
-          m_theme(theme), m_fontSize(fs) {}
-
-    void draw() FL_OVERRIDE {
-        Fl_Color labelCol = m_theme ? m_theme->colors().textSecondary
-                                    : fl_rgb_color(110, 110, 110);
-        Fl_Color valCol   = m_theme ? m_theme->colors().textPrimary : FL_BLACK;
-        fl_font(FL_HELVETICA, m_fontSize);
-        // fixed label column (x()..x()+kLabelW), value to its right
-        fl_color(labelCol);
-        fl_draw(m_label, x(), y(), kLabelW, h(),
-                FL_ALIGN_RIGHT | FL_ALIGN_CENTER);
-        fl_color(valCol);
-        fl_draw(m_value, x() + kLabelW + 6, y(), w() - kLabelW - 6, h(),
-                FL_ALIGN_LEFT | FL_ALIGN_CENTER);
-    }
-    int handle(int) FL_OVERRIDE { return 0; }
 };
 
 // Load exeDir/image/<name> as a Fl_Image*. Returns nullptr if unavailable.
@@ -143,7 +100,7 @@ Fl_Image *loadImage(const char *name) {
     return img;
 }
 
-// Placeholder for a missing QR image so the layout is never broken.
+// Placeholder for a missing QR image.
 Fl_Image *placeholderImage(const char *caption) {
     const int SZ = 200;
     Fl_Image_Surface surf(SZ, SZ);
@@ -166,21 +123,22 @@ void showAboutDialog(const Theme *theme, int uiFontSize) {
 
     const int fs = uiFontSize ? uiFontSize : 14;
     const int W  = 500;
-    const int H  = 580;
-    const int margin = 24;
+    const int H  = 600;
+    const int margin = 20;
+    const int labelW = 120;   // fixed label column (right-aligned)
+    int textCol = margin + labelW + 10;   // value column starts here
 
-    AboutDialogWin dlg(W, H, theme);
+    AboutWin dlg(W, H, "About", theme);
     dlg.border(0);
     dlg.box(FL_FLAT_BOX);
     dlg.color(theme->colors().bgEditor);
     dlg.set_modal();
-    dlg.begin();   // begin adding children as window children
+    dlg.begin();
 
-    // Shared factory builds (and themes) the title bar in place.
-    createInfoTitleBar(0, 0, W, kTitleH, I18n::get("menu.help.about"), theme, fs);
+    createInfoTitleBar(0, 0, W, TITLE_H, I18n::get("menu.help.about"), theme, fs);
 
-    // ── Header: large app title ──
-    Fl_Box *appTitle = new Fl_Box(0, kTitleH + 20, W, 40);
+    // ── Header: large app title + tagline ──
+    Fl_Box *appTitle = new Fl_Box(0, TITLE_H + 20, W, 42);
     appTitle->box(FL_NO_BOX);
     appTitle->labelsize(fs + 14);
     appTitle->labelfont(FL_HELVETICA_BOLD);
@@ -190,7 +148,7 @@ void showAboutDialog(const Theme *theme, int uiFontSize) {
     appTitle->label(appName && *appName && strcmp(appName, "app.name") != 0
                         ? appName : "Pecia 1.0.0");
 
-    Fl_Box *tagline = new Fl_Box(0, kTitleH + 62, W, 24);
+    Fl_Box *tagline = new Fl_Box(0, TITLE_H + 62, W, 24);
     tagline->box(FL_NO_BOX);
     tagline->labelsize(fs);
     tagline->labelcolor(theme->colors().textSecondary);
@@ -198,30 +156,46 @@ void showAboutDialog(const Theme *theme, int uiFontSize) {
     const char *tag = I18n::get("about.tagline");
     tagline->label(tag && *tag && strcmp(tag, "about.tagline") != 0 ? tag : "");
 
-    // ── info rows (fixed label column for clean alignment) ──
-    int y = kTitleH + 110;
-    const int ROW_H = 30;
-    new AboutRow(margin, y, W - 2 * margin, ROW_H, I18n::get("about.author"),
-                 "邱宗满 (Qiu Zongman)", theme, fs); y += ROW_H;
-    new AboutRow(margin, y, W - 2 * margin, ROW_H, I18n::get("about.email"),
-                 "qiuzongman@foxmail.com", theme, fs); y += ROW_H;
+    // ── Info rows: fixed label column + value column (plain Fl_Box) ──
+    int y = TITLE_H + 112;
+    const int ROW_H = 28;
+    Fl_Color lblCol = theme->colors().textSecondary;
+    Fl_Color valCol = theme->colors().textPrimary;
 
-    // Project: label column + clickable link aligned to the value column.
+    auto row = [&](const char *label, const char *value) {
+        Fl_Box *lb = new Fl_Box(margin, y, labelW, ROW_H, label);
+        lb->box(FL_NO_BOX);
+        lb->labelsize(fs);
+        lb->labelcolor(lblCol);
+        lb->align(FL_ALIGN_RIGHT | FL_ALIGN_CENTER);
+        Fl_Box *vb = new Fl_Box(textCol, y, W - textCol - margin, ROW_H, value);
+        vb->box(FL_NO_BOX);
+        vb->labelsize(fs);
+        vb->labelcolor(valCol);
+        vb->align(FL_ALIGN_LEFT | FL_ALIGN_CENTER);
+        y += ROW_H;
+    };
+
+    row(I18n::get("about.author"), "邱宗满 (Qiu Zongman)");
+    row(I18n::get("about.email"), "qiuzongman@foxmail.com");
+
+    // Project: label column + clickable link (same columns as the rows).
     {
-        Fl_Box *lbl = new Fl_Box(margin, y, kLabelW, ROW_H, I18n::get("about.project"));
-        lbl->box(FL_NO_BOX);
-        lbl->labelsize(fs);
-        lbl->labelcolor(theme->colors().textSecondary);
-        lbl->align(FL_ALIGN_RIGHT | FL_ALIGN_CENTER);
-        new ClickableLink(margin + kLabelW + 6, y, W - 2 * margin - kLabelW - 6,
-                          ROW_H, "https://gitee.com/qiuzongman/pecia",
-                          "https://gitee.com/qiuzongman/pecia", theme, fs);
+        Fl_Box *lb = new Fl_Box(margin, y, labelW, ROW_H, I18n::get("about.project"));
+        lb->box(FL_NO_BOX);
+        lb->labelsize(fs);
+        lb->labelcolor(lblCol);
+        lb->align(FL_ALIGN_RIGHT | FL_ALIGN_CENTER);
+        new LinkBox(textCol, y, W - textCol - margin, ROW_H,
+                    "https://gitee.com/qiuzongman/pecia",
+                    "https://gitee.com/qiuzongman/pecia",
+                    fs, theme->colors().linkHover);
         y += ROW_H;
     }
-    new AboutRow(margin, y, W - 2 * margin, ROW_H, I18n::get("about.license"),
-                 "AGPL-3.0", theme, fs); y += ROW_H;
-    new AboutRow(margin, y, W - 2 * margin, ROW_H, I18n::get("about.ai"),
-                 "DeepSeek", theme, fs); y += ROW_H + 4;
+    row(I18n::get("about.license"), "AGPL-3.0");
+    row(I18n::get("about.ai"), "DeepSeek");
+
+    y += 6;
 
     // ── Donate title ──
     Fl_Box *donate = new Fl_Box(0, y, W, 26, I18n::get("about.donate"));
@@ -246,22 +220,23 @@ void showAboutDialog(const Theme *theme, int uiFontSize) {
         cap->labelsize(fs - 2);
         cap->labelcolor(theme->colors().textSecondary);
         cap->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-
         Fl_Image *img = loadImage(files[i]);
         if (!img) img = placeholderImage(labels[i]);
         if (img) {
             ownedImages.push_back(img);
-            int iw = img->w() > 0 ? img->w() : QR_SZ;
-            int ih = img->h() > 0 ? img->h() : QR_SZ;
-            float scale = (float)QR_SZ / (iw > ih ? iw : ih);
-            if (scale > 1.0f) scale = 1.0f;
-            int dw = (int)(iw * scale), dh = (int)(ih * scale);
+            int dw = QR_SZ, dh = QR_SZ;
+            if (img->w() > 0 && img->h() > 0) {
+                float sc = (float)QR_SZ / (img->w() > img->h() ? img->w() : img->h());
+                if (sc > 1.0f) sc = 1.0f;
+                dw = (int)(img->w() * sc);
+                dh = (int)(img->h() * sc);
+            }
             Fl_Box *pic = new Fl_Box(qx + (QR_SZ - dw) / 2, y + 26, dw, dh);
             pic->image(img);
             pic->box(FL_DOWN_BOX);
         }
     }
-    y += 26 + QR_SZ + 10;
+    y += 26 + QR_SZ + 12;
 
     dlg.end();
     dlg.position((Fl::w() - W) / 2, (Fl::h() - H) / 2);
