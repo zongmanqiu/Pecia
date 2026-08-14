@@ -604,34 +604,24 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
     btnBar->box(FL_FLAT_BOX);
     btnBar->color(chromeCol);
 
-    int btnW = 80, gap = 8;
-    int totalBtnW = btnW * 2 + gap;
-    int btnX = w - margin - totalBtnW;
     int btnY = btnBarY + (gBarH - btnH) / 2;
-    m_okBtn = new HoverButton(btnX, btnY, btnW, btnH, I18n::get("settings.ok"));
+    const int gap = 8;
+    m_okBtn = new HoverButton(0, btnY, 0, btnH, I18n::get("settings.ok"));
     m_okBtn->color(chromeCol);
     m_okBtn->selection_color(theme ? theme->colors().accentSelection : FL_SELECTION_COLOR);
     m_okBtn->labelsize(uiFontSize);
     m_okBtn->labelcolor(theme ? theme->colors().textPrimary : FL_BLACK);
     m_okBtn->callback(cbOk, this);
 
-    m_cancelBtn = new HoverButton(btnX + btnW + gap, btnY, btnW, btnH, I18n::get("settings.cancel"));
+    m_cancelBtn = new HoverButton(0, btnY, 0, btnH, I18n::get("settings.cancel"));
     m_cancelBtn->color(chromeCol);
     m_cancelBtn->selection_color(theme ? theme->colors().accentSelection : FL_SELECTION_COLOR);
     m_cancelBtn->labelsize(uiFontSize);
     m_cancelBtn->labelcolor(theme ? theme->colors().textPrimary : FL_BLACK);
     m_cancelBtn->callback(cbCancel, this);
 
-    // Width adapts to the label text; buttons stay right-aligned.
-    int okW = 0, okH = 0, cancelW = 0, cancelH = 0;
-    m_okBtn->measure_label(okW, okH);
-    m_cancelBtn->measure_label(cancelW, cancelH);
-    okW += 24; if (okW < 40) okW = 40;
-    cancelW += 24; if (cancelW < 40) cancelW = 40;
-    totalBtnW = okW + cancelW + gap;
-    btnX = w - margin - totalBtnW;
-    m_okBtn->resize(btnX, btnY, okW, btnH);
-    m_cancelBtn->resize(btnX + okW + gap, btnY, cancelW, btnH);
+    // Auto-width right-aligned row: [OK] [Cancel].
+    fitButtonRow({m_okBtn, m_cancelBtn}, w, btnBarY + gBarH / 2, margin, gap);
 
     btnBar->resizable(nullptr);
     btnBar->end();
@@ -1005,19 +995,13 @@ struct ExtensionsDialog : DialogBase {
         btnBar->box(FL_FLAT_BOX);
         btnBar->color(chromeCol);
 
-        auto btnWidth = [&](const char *label) -> int {
-            return (int)(fl_width(label) + 0.5) + 16;  // 8px padding each side
-        };
         const char *kAllLbl   = I18n::get("settings.selectall");
         const char *kDeselect = I18n::get("settings.deselectall");
-        int allW = btnWidth(kAllLbl) > btnWidth(kDeselect) ? btnWidth(kAllLbl) : btnWidth(kDeselect);
-        int okW  = btnWidth(I18n::get("settings.ok"));
         int gap  = 8;
         int okY  = btnY + (TITLE_H - btnH) / 2;
-        int okX  = W - margin - okW;
-        int allX = okX - gap - allW;
-        HoverButton *allBtn = new HoverButton(allX, okY, allW, btnH, kAllLbl);
-        HoverButton *okBtn  = new HoverButton(okX, okY, okW, btnH, I18n::get("settings.ok"));
+        // created with zero width; fitButtonRow sizes + right-aligns below.
+        HoverButton *allBtn = new HoverButton(0, okY, 0, btnH, kAllLbl);
+        HoverButton *okBtn  = new HoverButton(0, okY, 0, btnH, I18n::get("settings.ok"));
         m_allBtn = allBtn;
         for (auto *b : { allBtn, okBtn }) {
             b->color(chromeCol);
@@ -1025,6 +1009,20 @@ struct ExtensionsDialog : DialogBase {
             b->labelsize(uiFontSize);
             b->labelcolor(theme ? theme->colors().textPrimary : FL_BLACK);
         }
+        // The Select-All button toggles between two labels; pin its width to
+        // the wider of the two so it never jumps while switching.
+        allBtn->copy_label(kDeselect);
+        allBtn->fit();
+        int allW = allBtn->w();
+        allBtn->copy_label(kAllLbl);
+        allBtn->fit();
+        if (allBtn->w() > allW) { allW = allBtn->w(); allBtn->size(allW, btnH); }
+        allBtn->copy_label(kAllLbl);
+        okBtn->fit();
+        int okW = okBtn->w();
+        int okX  = W - margin - okW;
+        allBtn->position(okX - gap - allW, okY);
+        okBtn->position(okX, okY);
         allBtn->callback([](Fl_Widget*, void *data){
             auto *self = static_cast<ExtensionsDialog*>(data);
             // Toggle: everything selected -> clear all, otherwise select all.

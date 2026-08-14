@@ -2,8 +2,8 @@
 #pragma once
 
 #include <FL/Fl_Box.H>
-#include <FL/Fl_Button.H>
 #include "ui/DialogBase.h"
+#include "ui/ThemeWidgets.h"   // HoverButton (auto-width button row)
 
 class Theme;
 
@@ -25,7 +25,7 @@ protected:
 
 private:
     Fl_Box        *m_message;
-    Fl_Button     *m_btn[3];
+    HoverButton   *m_btn[3];
     int            m_result = -1;
 
     static void cbBtn(Fl_Widget *w, void *data);

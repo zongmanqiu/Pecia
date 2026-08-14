@@ -122,30 +122,9 @@ LuaToolWindow::LuaToolWindow(Config *appCfg,
     m_helpBtn->callback(cbHelp, this);
     styleBtn(m_helpBtn);
 
-    int runW = 0, runH = 0, clearW = 0, clearH = 0;
-    int saveAsW = 0, saveAsH = 0, helpW = 0, helpH = 0;
-    int toAiW = 0, toAiH = 0;
-    m_runBtn->measure_label(runW, runH);
-    m_clearBtn->measure_label(clearW, clearH);
-    m_saveAsBtn->measure_label(saveAsW, saveAsH);
-    m_helpBtn->measure_label(helpW, helpH);
-    m_toAiBtn->measure_label(toAiW, toAiH);
-    runW += 24;      // horizontal label padding
-    clearW += 24;
-    saveAsW += 24;
-    helpW += 24;
-    toAiW += 24;
-    if (runW < 60) runW = 60;      // never shrink below a tappable width
-    if (clearW < 60) clearW = 60;
-    if (saveAsW < 60) saveAsW = 60;
-    if (helpW < 60) helpW = 60;
-    if (toAiW < 60) toAiW = 60;
-    int btnRight = w - BTN_GAP;
-    m_runBtn->resize(btnRight - runW, btnY, runW, BTN_H);
-    m_clearBtn->resize(m_runBtn->x() - BTN_GAP - clearW, btnY, clearW, BTN_H);
-    m_toAiBtn->resize(m_clearBtn->x() - BTN_GAP - toAiW, btnY, toAiW, BTN_H);
-    m_saveAsBtn->resize(m_toAiBtn->x() - BTN_GAP - saveAsW, btnY, saveAsW, BTN_H);
-    m_helpBtn->resize(m_saveAsBtn->x() - BTN_GAP - helpW, btnY, helpW, BTN_H);
+    // Auto-width right-aligned row (rightmost = Run).
+    fitButtonRow({m_runBtn, m_clearBtn, m_toAiBtn, m_saveAsBtn, m_helpBtn},
+                 w, btnY + BTN_H / 2, BTN_GAP, BTN_GAP);
 
     m_outBuf = new Fl_Text_Buffer();
     m_outDisp = new ThemedTextDisplay(x, outY, cw, OUT_H, tc);
@@ -183,31 +162,11 @@ void LuaToolWindow::refreshLabels() {
         m_titleBar->setTabData({TitleBar::TabInfo{I18n::get("lua.title")}}, 0);
     }
 
-    // Re-measure and reposition the buttons (labels may have changed width).
-    int runW = 0, runH = 0, clearW = 0, clearH = 0;
-    int saveAsW = 0, saveAsH = 0, helpW = 0, helpH = 0;
-    int toAiW = 0, toAiH = 0;
-    if (m_runBtn) m_runBtn->measure_label(runW, runH);
-    if (m_clearBtn) m_clearBtn->measure_label(clearW, clearH);
-    if (m_saveAsBtn) m_saveAsBtn->measure_label(saveAsW, saveAsH);
-    if (m_toAiBtn) m_toAiBtn->measure_label(toAiW, toAiH);
-    if (m_helpBtn) m_helpBtn->measure_label(helpW, helpH);
-    runW += 24;
-    clearW += 24;
-    saveAsW += 24;
-    helpW += 24;
-    toAiW += 24;
-    if (runW < 60) runW = 60;
-    if (clearW < 60) clearW = 60;
-    if (saveAsW < 60) saveAsW = 60;
-    if (helpW < 60) helpW = 60;
-    if (toAiW < 60) toAiW = 60;
-    int btnRight = w() - BTN_GAP;
-    if (m_runBtn) m_runBtn->resize(btnRight - runW, m_runBtn->y(), runW, m_runBtn->h());
-    if (m_clearBtn) m_clearBtn->resize(m_runBtn->x() - BTN_GAP - clearW, m_clearBtn->y(), clearW, m_clearBtn->h());
-    if (m_toAiBtn) m_toAiBtn->resize(m_clearBtn->x() - BTN_GAP - toAiW, m_toAiBtn->y(), toAiW, m_toAiBtn->h());
-    if (m_saveAsBtn) m_saveAsBtn->resize(m_toAiBtn->x() - BTN_GAP - saveAsW, m_saveAsBtn->y(), saveAsW, m_saveAsBtn->h());
-    if (m_helpBtn) m_helpBtn->resize(m_saveAsBtn->x() - BTN_GAP - helpW, m_helpBtn->y(), helpW, m_helpBtn->h());
+    // Re-fit the auto-width button row after labels change (translations
+    // differ in length). Keep the row's vertical center.
+    int rowCenter = m_runBtn ? m_runBtn->y() + m_runBtn->h() / 2 : 0;
+    fitButtonRow({m_runBtn, m_clearBtn, m_toAiBtn, m_saveAsBtn, m_helpBtn},
+                 w(), rowCenter, BTN_GAP, BTN_GAP);
 
     redraw();
 }

@@ -71,34 +71,20 @@ ConfirmDialog::ConfirmDialog(const char *title, const char *message,
 
     Fl_Color btnFg = theme ? theme->colors().textPrimary : FL_BLACK;
     const char *labels[] = { b0, b1, b2 };
-    int btnW[3] = { 0, 0, 0 };
-    for (int i = 0; i < 3; ++i) {
-        if (!labels[i]) { m_btn[i] = nullptr; continue; }
-        int bw = 0;
-        fl_font(FL_HELVETICA, uiFontSize ? uiFontSize : 14);
-        bw = (int)fl_width(labels[i]) + 24;
-        if (bw < 60) bw = 60;
-        btnW[i] = bw;
-    }
-    int totalW = 0;
-    for (int i = 0; i < 3; ++i) {
-        if (!labels[i]) continue;
-        if (totalW > 0) totalW += GAP;
-        totalW += btnW[i];
-    }
-    int btnX = winW - MARGIN - totalW;
     int btnY = btnBarY + (gBarH - BTN_H) / 2;
 
+    // Create the present buttons (b0..b2, any may be null) with zero width;
+    // fitButtonRow sizes each to its label and right-aligns the row.
     for (int i = 0; i < 3; ++i) {
-        if (!labels[i]) continue;
-        m_btn[i] = new HoverButton(btnX, btnY, btnW[i], BTN_H, labels[i]);
+        if (!labels[i]) { m_btn[i] = nullptr; continue; }
+        m_btn[i] = new HoverButton(0, btnY, 0, BTN_H, labels[i]);
         m_btn[i]->color(chromeCol);
         m_btn[i]->selection_color(theme ? theme->colors().accentSelection : FL_SELECTION_COLOR);
         m_btn[i]->labelcolor(btnFg);
         m_btn[i]->labelsize(uiFontSize);
         m_btn[i]->callback(cbBtn, this);
-        btnX += btnW[i] + GAP;
     }
+    fitButtonRow({m_btn[0], m_btn[1], m_btn[2]}, winW, btnBarY + gBarH / 2, MARGIN, GAP);
     btnBar->resizable(nullptr);
     btnBar->end();
 

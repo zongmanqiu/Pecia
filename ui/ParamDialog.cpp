@@ -169,10 +169,8 @@ ParamDialog::ParamDialog(const char *title,
     m_ok->labelsize(uiFontSize);
     m_ok->callback(cbBtn, this);
 
-    int okW = 0, okH = 0;
-    m_ok->measure_label(okW, okH);
-    okW += 24; if (okW < 60) okW = 60;
-    m_ok->resize(winW - MARGIN - okW, btnY, okW, gBtnH);
+    // Auto-width right-aligned single OK button (the title bar X is cancel).
+    fitButtonRow({m_ok}, winW, btnBarY + gBarH / 2, MARGIN, GAP);
 
     btnBar->end();
     end();

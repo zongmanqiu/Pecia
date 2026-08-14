@@ -127,8 +127,8 @@ AIChatWindow::AIChatWindow(Config *appCfg,
         b->labelcolor(btnFg);
         b->labelsize(uiFontSize);
     };
-    // Right-aligned buttons: [Settings] [清除] [发送到文档] [发送]
-    // Settings sits left of Clear; widths adapt to the label text.
+    // Right-aligned buttons: [Settings] [清除] [发送到文档] [发送].
+    // fitButtonRow sizes each to its label (auto-width) and right-aligns.
     m_sendBtn = new HoverButton(0, buttonY, 0, BTN_H, I18n::get("chat.send"));
     m_sendBtn->callback(cbSend, this);
     styleBtn(m_sendBtn);
@@ -144,31 +144,8 @@ AIChatWindow::AIChatWindow(Config *appCfg,
     m_clearBtn = new HoverButton(0, buttonY, 0, BTN_H, I18n::get("chat.clear"));
     m_clearBtn->callback(cbClear, this);
     styleBtn(m_clearBtn);
-
-    int sendW = 0, sendH = 0, toDocW = 0, toDocH = 0, clearW = 0, clearH = 0;
-    int settingsW = 0, settingsH = 0;
-    int toLuaW = 0, toLuaH = 0;
-    m_sendBtn->measure_label(sendW, sendH);
-    m_toDocBtn->measure_label(toDocW, toDocH);
-    m_toLuaBtn->measure_label(toLuaW, toLuaH);
-    m_clearBtn->measure_label(clearW, clearH);
-    m_settingsBtn->measure_label(settingsW, settingsH);
-    sendW += 24;      // horizontal label padding
-    toDocW += 24;
-    toLuaW += 24;
-    clearW += 24;
-    settingsW += 24;
-    if (sendW < 60) sendW = 60;      // never shrink below a tappable width
-    if (toDocW < 60) toDocW = 60;
-    if (toLuaW < 60) toLuaW = 60;
-    if (clearW < 60) clearW = 60;
-    if (settingsW < 60) settingsW = 60;
-    int btnRight = w - BTN_GAP;
-    m_sendBtn->resize(btnRight - sendW, buttonY, sendW, BTN_H);
-    m_toDocBtn->resize(m_sendBtn->x() - BTN_GAP - toDocW, buttonY, toDocW, BTN_H);
-    m_toLuaBtn->resize(m_toDocBtn->x() - BTN_GAP - toLuaW, buttonY, toLuaW, BTN_H);
-    m_clearBtn->resize(m_toLuaBtn->x() - BTN_GAP - clearW, buttonY, clearW, BTN_H);
-    m_settingsBtn->resize(m_clearBtn->x() - BTN_GAP - settingsW, buttonY, settingsW, BTN_H);
+    fitButtonRow({m_sendBtn, m_toDocBtn, m_toLuaBtn, m_clearBtn, m_settingsBtn},
+                 w, buttonY + BTN_H / 2, BTN_GAP, BTN_GAP);
 
     end();
     resizable(m_chatDisp);
@@ -210,30 +187,12 @@ void AIChatWindow::refreshLabels() {
         m_titleBar->setTabData({TitleBar::TabInfo{I18n::get("chat.title")}}, 0);
     }
 
-    int sendW = 0, sendH = 0, toDocW = 0, toDocH = 0, clearW = 0, clearH = 0;
-    int settingsW = 0, settingsH = 0;
-    int toLuaW = 0, toLuaH = 0;
-    if (m_sendBtn) m_sendBtn->measure_label(sendW, sendH);
-    if (m_toDocBtn) m_toDocBtn->measure_label(toDocW, toDocH);
-    if (m_toLuaBtn) m_toLuaBtn->measure_label(toLuaW, toLuaH);
-    if (m_clearBtn) m_clearBtn->measure_label(clearW, clearH);
-    if (m_settingsBtn) m_settingsBtn->measure_label(settingsW, settingsH);
-    sendW += 24;
-    toDocW += 24;
-    toLuaW += 24;
-    clearW += 24;
-    settingsW += 24;
-    if (sendW < 60) sendW = 60;
-    if (toDocW < 60) toDocW = 60;
-    if (toLuaW < 60) toLuaW = 60;
-    if (clearW < 60) clearW = 60;
-    if (settingsW < 60) settingsW = 60;
-    int btnRight = w() - BTN_GAP;
-    if (m_sendBtn) m_sendBtn->resize(btnRight - sendW, m_sendBtn->y(), sendW, m_sendBtn->h());
-    if (m_toDocBtn) m_toDocBtn->resize(m_sendBtn->x() - BTN_GAP - toDocW, m_toDocBtn->y(), toDocW, m_toDocBtn->h());
-    if (m_toLuaBtn) m_toLuaBtn->resize(m_toDocBtn->x() - BTN_GAP - toLuaW, m_toLuaBtn->y(), toLuaW, m_toLuaBtn->h());
-    if (m_clearBtn) m_clearBtn->resize(m_toLuaBtn->x() - BTN_GAP - clearW, m_clearBtn->y(), clearW, m_clearBtn->h());
-    if (m_settingsBtn) m_settingsBtn->resize(m_clearBtn->x() - BTN_GAP - settingsW, m_settingsBtn->y(), settingsW, m_settingsBtn->h());
+    // Re-fit the auto-width button row after labels change (translations
+    // differ in length). Buttons already carry their new labels above;
+    // re-center on the row they already sit in.
+    int rowCenter = m_sendBtn ? m_sendBtn->y() + m_sendBtn->h() / 2 : 0;
+    fitButtonRow({m_sendBtn, m_toDocBtn, m_toLuaBtn, m_clearBtn, m_settingsBtn},
+                 w(), rowCenter, BTN_GAP, BTN_GAP);
 
     redraw();
 }

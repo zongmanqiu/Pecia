@@ -311,13 +311,13 @@ ShortcutDialog::ShortcutDialog(int w, int h, const char *title, Config *cfg,
     Fl_Color fg = theme ? theme->colors().textPrimary : FL_BLACK;
     Fl_Color sel = theme ? theme->colors().accentSelection : FL_SELECTION_COLOR;
 
-    int btnW = 80, gap = 8;
     int btnY = btnBarY + (gBarH - btnH) / 2;
+    const int gap = 8;
     // Right-aligned: [Restore Defaults] [OK] [Cancel].
-    m_resetBtn = new HoverButton(0, btnY, btnW, btnH,
+    m_resetBtn = new HoverButton(0, btnY, 0, btnH,
                                  I18n::get("shortcut.dialog.reset"));
-    m_okBtn = new HoverButton(0, btnY, btnW, btnH, I18n::get("settings.ok"));
-    m_cancelBtn = new HoverButton(0, btnY, btnW, btnH,
+    m_okBtn = new HoverButton(0, btnY, 0, btnH, I18n::get("settings.ok"));
+    m_cancelBtn = new HoverButton(0, btnY, 0, btnH,
                                   I18n::get("settings.cancel"));
     for (auto *b : { m_resetBtn, m_okBtn, m_cancelBtn }) {
         b->color(chromeCol);
@@ -329,18 +329,9 @@ ShortcutDialog::ShortcutDialog(int w, int h, const char *title, Config *cfg,
     m_cancelBtn->callback(cbCancel, this);
     m_resetBtn->callback(cbReset, this);
 
-    int resetW = 0, okW = 0, cancelW = 0, okH = 0, cancelH = 0;
-    m_resetBtn->measure_label(resetW, okH);
-    m_okBtn->measure_label(okW, okH);
-    m_cancelBtn->measure_label(cancelW, cancelH);
-    resetW += 24; if (resetW < 40) resetW = 40;
-    okW += 24; if (okW < 40) okW = 40;
-    cancelW += 24; if (cancelW < 40) cancelW = 40;
-    int totalBtnW = resetW + okW + cancelW + gap * 2;
-    int btnX = w - margin - totalBtnW;
-    m_resetBtn->resize(btnX, btnY, resetW, btnH);
-    m_okBtn->resize(btnX + resetW + gap, btnY, okW, btnH);
-    m_cancelBtn->resize(btnX + resetW + gap + okW + gap, btnY, cancelW, btnH);
+    // Auto-width right-aligned row: [Restore Defaults] [OK] [Cancel].
+    fitButtonRow({m_resetBtn, m_okBtn, m_cancelBtn}, w,
+                 btnBarY + gBarH / 2, margin, gap);
 
     btnBar->resizable(nullptr);
     btnBar->end();

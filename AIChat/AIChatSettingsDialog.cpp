@@ -81,7 +81,7 @@ AIChatSettingsDialog::AIChatSettingsDialog(Config *appCfg, const Theme *theme,
     btnBar->box(FL_FLAT_BOX);
     btnBar->color(chromeCol);
 
-    int btnX, btnY = btnBarY + (gBarH - BTN_H) / 2;   // vertically centered
+    int btnY = btnBarY + (gBarH - BTN_H) / 2;   // vertically centered
     HoverButton *glmBtn = new HoverButton(0, btnY, 0, BTN_H, I18n::get("ai.glmapi"));
     HoverButton *ok = new HoverButton(0, btnY, 0, BTN_H, I18n::get("settings.ok"));
     glmBtn->color(chromeCol);
@@ -97,17 +97,9 @@ AIChatSettingsDialog::AIChatSettingsDialog(Config *appCfg, const Theme *theme,
     ok->labelcolor(fg);
     ok->callback(cbOk, this);
 
-    // Width adapts to the label text; buttons stay right-aligned.
-    // Layout: [GLM api] [OK]  (no Cancel - the title bar close button covers it)
-    int okW = 0, okH = 0, glmW = 0, glmH = 0;
-    ok->measure_label(okW, okH);
-    glmBtn->measure_label(glmW, glmH);
-    okW += 24; if (okW < 40) okW = 40;
-    glmW += 24; if (glmW < 40) glmW = 40;
-    int totalBtnW = glmW + okW + GAP;
-    btnX = WIN_W - MARGIN - totalBtnW;
-    glmBtn->resize(btnX, btnY, glmW, BTN_H);
-    ok->resize(btnX + glmW + GAP, btnY, okW, BTN_H);
+    // Auto-width right-aligned row: [GLM api] [OK] (no Cancel - the title
+    // bar close button covers it).
+    fitButtonRow({glmBtn, ok}, WIN_W, btnBarY + gBarH / 2, MARGIN, GAP);
     btnBar->resizable(nullptr);
     btnBar->end();
 

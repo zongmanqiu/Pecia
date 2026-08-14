@@ -13,6 +13,7 @@
 #include <FL/Fl_Button.H>
 #include <FL/Fl_Choice.H>
 #include <FL/fl_draw.H>
+#include <initializer_list>
 #include <string>
 
 #include "core/Theme.h"
@@ -81,9 +82,33 @@ inline void drawToolScrollbar(Fl_Scrollbar *sb, bool horizontal,
 // button look distinct from plain chrome background.
 class HoverButton : public Fl_Button {
 public:
+    // Horizontal padding on each side of the label (total = 2x). Used by
+    // fit() so every auto-fitted button shares the exact same width rule.
+    static constexpr int kPadX = 12;
+    // Minimum auto-fitted width, so a short label still yields a tappable
+    // button (all windows agree on this one value).
+    static constexpr int kMinW = 48;
+
     HoverButton(int X, int Y, int W, int H, const char *l = nullptr)
         : Fl_Button(X, Y, W, H, l) {
         box(FL_BORDER_BOX);
+    }
+
+    // Width that fits the current label (text width + 2*padX, clamped to
+    // kMinW). Works with any label/font already set on this button.
+    int fitWidth() const {
+        Fl_Button *me = const_cast<HoverButton *>(this);
+        int tw = 0, th = 0;
+        me->measure_label(tw, th);
+        int w = tw + 2 * kPadX;
+        if (w < kMinW) w = kMinW;
+        return w;
+    }
+
+    // Resize to fit the label (height unchanged). Convenient for buttons
+    // whose final x is computed by the caller (right-aligned rows).
+    void fit() {
+        resize(x(), y(), fitWidth(), h());
     }
 
     void draw() FL_OVERRIDE {
@@ -103,6 +128,30 @@ public:
         return Fl_Button::handle(event);
     }
 };
+
+// Layout a right-aligned row of buttons across [barX, rightEdge] (the
+// chrome bottom button bar of a dialog). Each button is first sized to its
+// label (HoverButton::fit), then placed right-to-left with `gap` between
+// them, ending `margin` from rightEdge, vertically centered at `barCenterY`.
+// Accepts Fl_Button* so callers can pass members typed as the base class;
+// every button must actually be a HoverButton (they all are in Pecia).
+inline void fitButtonRow(std::initializer_list<Fl_Button *> btns,
+                         int rightEdge, int barCenterY, int margin, int gap) {
+    // Size every button to its label first.
+    for (Fl_Button *b : btns)
+        if (b) static_cast<HoverButton *>(b)->fit();
+    // Place right-to-left.
+    int x = rightEdge - margin;
+    // Walk the list in reverse to lay out from right to left.
+    const auto *vec = btns.begin();
+    for (size_t i = btns.size(); i-- > 0;) {
+        Fl_Button *b = vec[i];
+        if (!b) continue;
+        int w = b->w();
+        b->position(x - w, barCenterY - b->h() / 2);
+        x -= w + gap;
+    }
+}
 
 // Dropdown styled like the Options dialog's Tab width / Auto save
 // choices: rectangular FL_BORDER_BOX with a divider line and arrow.
