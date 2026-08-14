@@ -94,4 +94,4 @@ main/
 
 ## License
 
-待定(见 LICENSE 占位)。
+[GNU AGPL-3.0](LICENSE)。
