@@ -23,12 +23,13 @@
 #include <FL/Fl_Button.H>
 #include <FL/Fl_Box.H>
 #include <FL/x.H>
-
 #include <shobjidl.h>   // IFileSaveDialog
 #include <windows.h>
 #include <atomic>
 #include <condition_variable>
 #include <cstring>
+#include <cwchar>
+#include <memory>
 #include <mutex>
 #include <thread>
 
@@ -364,8 +365,10 @@ void LuaToolWindow::loadScript() {
     // The last script is stored as a plain text file next to the exe
     // (script.last.txt), NOT inside the INI: scripts are multi-line and
     // the INI writer does not escape newlines, which corrupted the file.
-    std::string path = scriptLastPath();
-    FILE *f = fopen(path.c_str(), "rb");
+    // Open via the wide path so a non-ASCII install directory (Chinese)
+    // works - GetModuleFileNameA + fopen break on those.
+    std::wstring path = scriptLastPath();
+    FILE *f = _wfopen(path.c_str(), L"rb");
     if (!f) return;
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
@@ -388,8 +391,8 @@ void LuaToolWindow::saveScript() {
     if (!m_scriptBuf) return;
     char *script = m_scriptBuf->text();
     if (script) {
-        std::string path = scriptLastPath();
-        FILE *f = fopen(path.c_str(), "wb");
+        std::wstring path = scriptLastPath();
+        FILE *f = _wfopen(path.c_str(), L"wb");
         if (f) {
             fwrite(script, 1, strlen(script), f);
             fclose(f);
@@ -398,14 +401,15 @@ void LuaToolWindow::saveScript() {
     }
 }
 
-// Resolve <exe dir>/script.last.txt (UTF-8, no BOM; BOM accepted on load).
-std::string LuaToolWindow::scriptLastPath() {
-    char exePath[MAX_PATH];
-    DWORD n = GetModuleFileNameA(nullptr, exePath, MAX_PATH);
-    if (n == 0 || n >= MAX_PATH) return "script.last.txt";
-    char *slash = strrchr(exePath, '\\');
+// Resolve <exe dir>/script.last.txt (UTF-8 filename, so use wide-char path
+// to survive a non-ASCII exe directory).
+std::wstring LuaToolWindow::scriptLastPath() {
+    wchar_t exePath[MAX_PATH];
+    DWORD n = GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return L"script.last.txt";
+    wchar_t *slash = wcsrchr(exePath, L'\\');
     if (slash) *slash = 0;
-    return std::string(exePath) + "\\script.last.txt";
+    return std::wstring(exePath) + L"\\script.last.txt";
 }
 
 void LuaToolWindow::appendOutput(const std::string &text) {
@@ -536,16 +540,9 @@ void LuaToolWindow::doSaveAs() {
             if (SUCCEEDED(psi->GetDisplayName(SIGDN_FILESYSPATH, &path)) &&
                 path) {
                 // Write UTF-8 with BOM so the editor loads it correctly.
-                std::string utf8;
-                {
-                    int wlen = (int)wcslen(path);
-                    int blen = WideCharToMultiByte(CP_UTF8, 0, path, wlen,
-                                                   nullptr, 0, nullptr, nullptr);
-                    utf8.resize(blen);
-                    WideCharToMultiByte(CP_UTF8, 0, path, wlen, &utf8[0], blen,
-                                        nullptr, nullptr);
-                }
-                FILE *f = fopen(utf8.c_str(), "wb");
+                // Open via the wide path: fopen() uses the ANSI code page and
+                // would mangle/deny a non-ASCII save location.
+                FILE *f = _wfopen(path, L"wb");
                 if (f) {
                     fwrite("\xEF\xBB\xBF", 1, 3, f);   // UTF-8 BOM
                     fwrite(content.data(), 1, content.size(), f);
@@ -719,10 +716,31 @@ struct InsRequest {
     std::condition_variable cv;
     bool        done = false;
 };
+
+// Read exactly n bytes (loop over partial reads - a byte-mode pipe can
+// return less than requested in one ReadFile, which the previous code
+// treated as a hard error, dropping valid requests).
+bool readExact(HANDLE h, void *buf, DWORD n) {
+    char *p = static_cast<char *>(buf);
+    while (n > 0) {
+        DWORD got = 0;
+        if (!ReadFile(h, p, n, &got, nullptr) || got == 0) return false;
+        p += got;
+        n -= got;
+    }
+    return true;
+}
 } // namespace
 
 void LuaToolWindow::s_handleIns(void *data) {
-    InsRequest *r = static_cast<InsRequest *>(data);
+    // `data` is a heap std::shared_ptr<InsRequest>*; take ownership so the
+    // request stays alive even if the listener already dropped its ref
+    // (fixes a use-after-scope of the old stack local when the wait_for
+    // timeout fired and the UI callback ran late).
+    std::shared_ptr<InsRequest> *wrapper =
+        static_cast<std::shared_ptr<InsRequest> *>(data);
+    std::shared_ptr<InsRequest> r = std::move(*wrapper);
+    delete wrapper;
     LuaToolWindow *self = s_active.load();
     if (self && self->m_scriptBuf)
         self->m_scriptBuf->text(r->text.c_str());
@@ -747,29 +765,28 @@ void LuaToolWindow::startInsServer() {
                 continue;
             }
             char tag[4] = {0};
-            DWORD got = 0;
-            bool ok = ReadFile(hPipe, tag, 4, &got, nullptr) && got == 4 &&
+            bool ok = readExact(hPipe, tag, 4) &&
                       memcmp(tag, PIPE_TAG_INS, 4) == 0;
             DWORD len = 0;
-            if (ok) ok = ReadFile(hPipe, &len, 4, &got, nullptr) && got == 4 &&
-                        len <= (1 << 20);
+            if (ok) ok = readExact(hPipe, &len, 4) && len <= (1 << 20);
             std::string text;
             if (ok && len > 0) {
                 text.resize(len);
-                ok = ReadFile(hPipe, &text[0], len, &got, nullptr) && got == len;
+                ok = readExact(hPipe, &text[0], len);
             }
+            DWORD written = 0;
             if (ok) {
-                InsRequest req;
-                req.text = std::move(text);
-                Fl::awake(s_handleIns, &req);
+                std::shared_ptr<InsRequest> req = std::make_shared<InsRequest>();
+                req->text = std::move(text);
+                Fl::awake(s_handleIns, new std::shared_ptr<InsRequest>(req));
                 {
-                    std::unique_lock<std::mutex> lk(req.mu);
-                    req.cv.wait_for(lk, std::chrono::seconds(10),
-                                    [&req]() { return req.done; });
+                    std::unique_lock<std::mutex> lk(req->mu);
+                    req->cv.wait_for(lk, std::chrono::seconds(10),
+                                     [&req]() { return req->done; });
                 }
-                WriteFile(hPipe, PIPE_TAG_OK, 4, &got, nullptr);
+                WriteFile(hPipe, PIPE_TAG_OK, 4, &written, nullptr);
             } else {
-                WriteFile(hPipe, PIPE_TAG_ERR, 4, &got, nullptr);
+                WriteFile(hPipe, PIPE_TAG_ERR, 4, &written, nullptr);
             }
             FlushFileBuffers(hPipe);
             DisconnectNamedPipe(hPipe);

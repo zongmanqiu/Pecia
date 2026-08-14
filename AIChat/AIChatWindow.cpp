@@ -29,6 +29,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cwchar>
 #include <thread>
 #include <windows.h>
 
@@ -258,6 +259,7 @@ void AIChatWindow::refreshLabels() {
 
 AIChatWindow::~AIChatWindow() {
     Fl::remove_timeout(cursorBlinkCb, this);
+    Fl::remove_timeout(pushPollCb, this);   // cancel the pending push poll (dangling this otherwise)
     if (s_active.load() == this) s_active.store(nullptr);
     delete m_theme;
     delete m_frame;
@@ -391,12 +393,24 @@ void AIChatWindow::pollPushPipe() {
         return;
     }
     if (avail < 4) return;
-    DWORD len = 0, got = 0;
-    if (!ReadFile(static_cast<HANDLE>(m_pushPipe), &len, 4, &got, nullptr) || got != 4) {
-        CloseHandle(static_cast<HANDLE>(m_pushPipe));
-        m_pushPipe = nullptr;
-        return;
+    // Read the 4-byte LE length, looping over partial reads rather than
+    // treating a short single read as a disconnect.
+    unsigned char lenBytes[4];
+    {
+        size_t got = 0;
+        while (got < 4) {
+            DWORD n = 0;
+            if (!ReadFile(static_cast<HANDLE>(m_pushPipe), lenBytes + got, 4 - (DWORD)got,
+                          &n, nullptr) || n == 0) {
+                CloseHandle(static_cast<HANDLE>(m_pushPipe));   // peer gone
+                m_pushPipe = nullptr;
+                return;
+            }
+            got += n;
+        }
     }
+    DWORD len = ((DWORD)lenBytes[0]) | ((DWORD)lenBytes[1] << 8) |
+                ((DWORD)lenBytes[2] << 16) | ((DWORD)lenBytes[3] << 24);
     if (len == 0 || len > (16 << 20)) return;   // frame too large: drop
     std::string msg(len, '\0');
     char *p = &msg[0];
@@ -617,16 +631,17 @@ void AIChatWindow::cbClose(Fl_Widget *, void *data) {
 
 // Read script\lua_api.txt next to the exe (CMake copies
 // main/script/scripts/* into build/script/). Read fresh on every send so
-// doc edits apply immediately; "" when missing.
+// doc edits apply immediately; "" when missing. Uses wide-char paths so a
+// non-ASCII install directory (Chinese, etc.) works - GetModuleFileNameA +
+// fopen_s break on those.
 std::string AIChatWindow::readLuaApiHelp() {
-    char apiPath[MAX_PATH];
-    GetModuleFileNameA(nullptr, apiPath, MAX_PATH);
-    char *apiSlash = strrchr(apiPath, '\\');
+    wchar_t apiPath[MAX_PATH];
+    if (GetModuleFileNameW(nullptr, apiPath, MAX_PATH) == 0) return {};
+    wchar_t *apiSlash = wcsrchr(apiPath, L'\\');
     if (!apiSlash) return {};
-    strcpy_s(apiSlash + 1, MAX_PATH - (apiSlash + 1 - apiPath),
-             "script\\lua_api.txt");
+    wcscpy_s(apiSlash + 1, MAX_PATH - (apiSlash + 1 - apiPath), L"script\\lua_api.txt");
     FILE *f = nullptr;
-    if (fopen_s(&f, apiPath, "rb") != 0 || !f) return {};
+    if (_wfopen_s(&f, apiPath, L"rb") != 0 || !f) return {};
     std::string out;
     fseek(f, 0, SEEK_END);
     long n = ftell(f);

@@ -60,7 +60,7 @@ private:
     void doSaveAs();
     void loadScript();
     void saveScript();
-    std::string scriptLastPath();
+    std::wstring scriptLastPath();
     void appendOutput(const std::string &text);
     void toggleMaximize();
 

@@ -1,4 +1,4 @@
-﻿// main_ai.cpp - PeciaAIChat standalone AI chat tool entry point.
+// main_ai.cpp - PeciaAIChat standalone AI chat tool entry point.
 // Single instance: a second launch activates the existing window.
 #include <FL/Fl.H>
 #include <FL/fl_string_functions.h>
@@ -64,6 +64,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmdLine, int) {
             ShowWindow(w, SW_RESTORE);
             SetForegroundWindow(w);
         }
+        CloseHandle(hMutex);
         return 0;
     }
 

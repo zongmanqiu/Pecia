@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <thread>
 
@@ -40,8 +41,13 @@ bool writeAll(HANDLE h, const void *buf, DWORD n) {
     return true;
 }
 
-// Request frame marshalled to the UI thread.
+// Request frame marshalled to the UI thread. Shared_ptr so the request stays
+// alive after the listener thread's wait_for times out: the queued UI-thread
+// callback holds its own copy and safely completes even if the listener has
+// already dropped its reference (a stack/raw-owned request would be freed and
+// the late callback would dereference a destroyed object -> UB).
 struct PipeRequest {
+    explicit PipeRequest(MainWindow *o) : owner(o) {}
     MainWindow      *owner;
     std::string      tag;
     std::string      payload;
@@ -53,8 +59,15 @@ struct PipeRequest {
     bool             done = false;
 };
 
+// `data` is a heap-allocated std::shared_ptr<PipeRequest>*. We take
+// ownership, run the request on the UI thread, signa done, then free the
+// shared_ptr wrapper. The inner request stays alive via this copy even if
+// the listener already gave up its reference.
 void s_runOnUiThread(void *data) {
-    PipeRequest *r = static_cast<PipeRequest *>(data);
+    std::shared_ptr<PipeRequest> *wrapper =
+        static_cast<std::shared_ptr<PipeRequest> *>(data);
+    std::shared_ptr<PipeRequest> r = std::move(*wrapper);
+    delete wrapper;
     if (r->tag == PIPE_TAG_INS) {
         r->ok = r->owner->insertAiText(r->payload, &r->err);
     } else if (r->tag == PIPE_TAG_GETSEL) {
@@ -169,19 +182,21 @@ void LuaPipeServer::listenLoop() {
             continue;
         }
 
-        PipeRequest req;
-        req.owner = m_owner;
-        req.tag.assign(tag, 4);
-        req.payload = std::move(payload);
-        Fl::awake(s_runOnUiThread, &req);
-
+        std::shared_ptr<PipeRequest> req = std::make_shared<PipeRequest>(m_owner);
+        req->tag.assign(tag, 4);
+        req->payload = std::move(payload);
+        // Pass a heap shared_ptr wrapper through the opaque Fl::awake data;
+        // s_runOnUiThread takes ownership of the wrapper. req keeps its own
+        // reference, so even if the UI callback is delayed past the wait_for
+        // timeout the request object stays alive until the callback completes.
+        Fl::awake(s_runOnUiThread, new std::shared_ptr<PipeRequest>(req));
         {
-            std::unique_lock<std::mutex> lk(req.mu);
-            req.cv.wait_for(lk, std::chrono::seconds(30), [&req]() { return req.done; });
+            std::unique_lock<std::mutex> lk(req->mu);
+            req->cv.wait_for(lk, std::chrono::seconds(30), [&req]() { return req->done; });
         }
 
-        const char *rtag = req.ok ? PIPE_TAG_OK : PIPE_TAG_ERR;
-        const std::string &reply = req.ok ? req.out : req.err;
+        const char *rtag = req->ok ? PIPE_TAG_OK : PIPE_TAG_ERR;
+        const std::string &reply = req->ok ? req->out : req->err;
         writeAll(hPipe, rtag, 4);
         DWORD plen = (DWORD)reply.size();
         writeAll(hPipe, &plen, 4);
