@@ -212,11 +212,3 @@ void MainWindow::cbToggleScriptBar(Fl_Widget *w, void *data) {
     self->layoutTabs();
 }
 
-// Sync the toolbar menu items' toggle/checkmark state with the menu
-// bar's items. With the shared-menu approach (menu() pointer), the
-// toolbar and m_menu reference the SAME Fl_Menu_Item objects, so their
-// states are inherently in sync. This function exists as a safety hook
-// for future use (e.g. if toolbar menus ever diverge from m_menu).
-void MainWindow::syncScriptBarMenuState() {
-    // No-op: toolbar items are script buttons, not toggles.
-}

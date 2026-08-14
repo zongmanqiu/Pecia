@@ -43,10 +43,6 @@ class PreviewDivider;
 struct ShortcutDialogRow;
 
 struct Fl_Menu_Item;
-// Global FL_MOUSEWHEEL handler: when the mouse hovers the preview pane,
-// wheel scrolls the preview and Ctrl+wheel zooms it (defined in
-// ui/MainWindow_frame.cpp, registered in the MainWindow constructor).
-int preview_wheel_handler(int event);
 // Main menu bar definition (defined in ui/MenuTable.cpp).
 extern Fl_Menu_Item g_menu[];
 
@@ -399,10 +395,6 @@ public:
     void applyScriptItemShortcut(Fl_Menu_Item *item, const char *relPath);
     // Re-translate toolbar item labels after a language change.
     void updateScriptBarLabels();
-    // Sync the toggle/checkmark state of toolbar menu items with the
-    // menu bar's items. Called after settings are applied or after a
-    // toggle callback fires from either the menu bar or the toolbar.
-    void syncScriptBarMenuState();
 
     // Recent Files submenu backing array. The menu table uses
     // FL_SUBMENU_POINTER on the "Recent Files" entry, which makes FLTK
@@ -569,23 +561,11 @@ private:
     void *m_dropTarget = nullptr;
 
     // --- Custom frame support (border(0) + self-drawn title bar) ---
-    // Window edge resize: which edge(s) the mouse is dragging on.
-    // 0 = none, otherwise a bitmask of FL_LEFT/FL_RIGHT/FL_TOP/FL_BOTTOM
-    // (using the FLTK alignment flags as directions).
-    int  m_resizeEdge = 0;
-    int  m_dragStartX = 0;   // screen-space mouse pos at drag start
-    int  m_dragStartY = 0;
-    int  m_origX = 0, m_origY = 0, m_origW = 0, m_origH = 0;  // window geom at drag start
-
     // Maximized state. When maximized we save the restore rectangle
     // so the user can go back to the previous size/position.
     bool m_maximized = false;
     int  m_restoreX = 0, m_restoreY = 0, m_restoreW = 0, m_restoreH = 0;
 
-    // Hit-test the window border for edge resizing. Returns a bitmask
-    // of 1=left, 2=top, 4=right, 8=bottom, or 0 if the mouse is not on
-    // any resize edge.
-    int  hitResizeEdge(int mx, int my) const;
     // Toggle maximized / restored.
     void toggleMaximize();
     // Apply maximized state geometry.

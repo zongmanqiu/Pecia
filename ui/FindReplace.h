@@ -119,7 +119,6 @@ private:
     // (close button x - GAP) on the right. layout() re-uses this on
     // every resize so the count always fills the remaining space.
     int m_countStartX;
-    int m_countEndX;
 
     std::function<void()> m_onClose;
     std::function<void(bool)> m_onHighlightChange;  // true = highlight on, false = off

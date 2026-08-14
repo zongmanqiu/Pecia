@@ -1,4 +1,4 @@
-﻿// FindReplace.cpp - inline find/replace bar implementation
+// FindReplace.cpp - inline find/replace bar implementation
 #include "FindReplace.h"
 #include "ui/MatchHighlight.h"
 #include "ui/ThemeWidgets.h"
@@ -196,7 +196,6 @@ FindReplace::FindReplace(int x, int y, int w, int h)
     // geometry at the end (after the close button is placed) and store
     // the starting x so we can size it after the constructor is done.
     m_countStartX = cx;
-    m_countEndX   = x + w - fixedRight - GAP;
 
     // Match-count display: transparent box, centered text, same gray
     // color as the input hint labels. It fills the remaining horizontal

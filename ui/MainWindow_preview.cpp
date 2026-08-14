@@ -452,6 +452,10 @@ void MainWindow::refreshPreview()
 {
     if (!m_preview || !m_previewActive) return;
     std::string md = activeDocumentText();
+    // Skip when the document text is unchanged (fixes the auto-refresh timer
+    // re-rendering the full document every tick even when nothing changed).
+    // togglePreview() clears m_lastRenderedMd to force the first/initial render.
+    if (!m_lastRenderedMd.empty() && md == m_lastRenderedMd) return;
     m_lastRenderedMd = md;   // 记忆（循环定时器据此跳过未变化的内容）
     // 设置文档基础目录（解析相对图片路径；未命名标签则为空）
     std::string base;

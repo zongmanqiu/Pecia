@@ -438,29 +438,6 @@ void MainWindow::resize(int X, int Y, int W, int H) {
     layoutTabs();
 }
 
-// Hit-test the window border for edge resizing. mx,my are in window
-// coordinates (0..w(), 0..h()). Returns a bitmask:
-//   1=left, 2=top, 4=right, 8=bottom
-// Corners combine two bits (e.g. top-left = 1|2 = 3).
-int MainWindow::hitResizeEdge(int mx, int my) const {
-    // Don't treat the title bar area as a resize edge on the top side
-    // unless the mouse is in the very top RESIZE_PAD pixels (so the
-    // user can still grab the top edge below the title bar's drag zone
-    // is not needed - the top edge IS the title bar's top). Actually
-    // for border(0) windows the top edge is at y=0 which is the title
-    // bar. We allow top-edge resize only in the top RESIZE_PAD pixels.
-    int edge = 0;
-    bool onLeft   = (mx < RESIZE_PAD);
-    bool onRight  = (mx >= w() - RESIZE_PAD);
-    bool onTop    = (my < RESIZE_PAD);
-    bool onBottom = (my >= h() - RESIZE_PAD);
-    if (onLeft)   edge |= 1;
-    if (onTop)    edge |= 2;
-    if (onRight)  edge |= 4;
-    if (onBottom) edge |= 8;
-    return edge;
-}
-
 // Toggle between maximized and restored (previous geometry).
 void MainWindow::toggleMaximize() {
     if (m_maximized) {
