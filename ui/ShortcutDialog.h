@@ -49,6 +49,10 @@ public:
     bool runModal();
 
 private:
+    // Test seam: the UI smoke test reads row combos and drives the commit
+    // path (finishOk) without showing the dialog.
+    friend struct UiSmokeAccess;
+
     class RowWidget;
     class SettingsScroll;
 

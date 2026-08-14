@@ -49,6 +49,10 @@ public:
 
 
 private:
+    // Test seam: the UI smoke test reads/writes the controls and drives the
+    // commit path (saveTo) without showing the dialog.
+    friend struct UiSmokeAccess;
+
     Fl_Choice       *m_tabWidthChoice;   // 2 / 4 / 8 (spaces)
     Fl_Check_Button *m_autoIndentChk;
 

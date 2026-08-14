@@ -39,6 +39,10 @@ protected:
     int handle(int event) FL_OVERRIDE;   // OK shortcut
 
 private:
+    // Test seam: the UI smoke test sets control values and drives the commit
+    // path (collectAndOk) without showing the dialog.
+    friend struct UiSmokeAccess;
+
     static void cbBtn(Fl_Widget *w, void *data);
     static void cbKey(Fl_Widget *w, void *data);
     // Collect all values (checkbox/choice/input, in declaration order) into

@@ -30,12 +30,61 @@
 #include "ui/ShortcutDialog.h"
 
 #include <FL/Fl.H>
+#include <FL/Fl_Check_Button.H>
+#include <FL/Fl_Input.H>
+#include <FL/Fl_Choice.H>
+#include <FL/Fl_Int_Input.H>
+#include <FL/Fl_Button.H>
 
 #include <cstdio>
 #include <vector>
 #include <string>
+#include <filesystem>
+#include <windows.h>
+
+// ---------------------------------------------------------------------------
+// Data-flow test seam. Declared a friend of the dialogs so a smoke test can
+// set control values and drive the commit path (saveTo/collectAndOk/finishOk)
+// without showing the window or needing real mouse/keyboard input.
+// ---------------------------------------------------------------------------
+struct UiSmokeAccess {
+    // SettingsDialog -----------------------------------------------------
+    static void settingsSetTabWidth(SettingsDialog &d, int idx) { d.m_tabWidthChoice->value(idx); }
+    static void settingsSetAutoIndent(SettingsDialog &d, bool on) { d.m_autoIndentChk->value(on ? 1 : 0); }
+    static void settingsSetMultiTab(SettingsDialog &d, bool on) { d.m_multiTabChk->value(on ? 1 : 0); }
+    static bool settingsSaveTo(SettingsDialog &d, Config &cfg) { return d.saveTo(cfg); }
+
+    // ParamDialog --------------------------------------------------------
+    static void paramSetText(ParamDialog &d, size_t i, const char *v) { if (i < d.m_inputs.size()) d.m_inputs[i]->value(v); }
+    static void paramSetChoice(ParamDialog &d, size_t i, int idx) { if (i < d.m_choices.size()) d.m_choices[i]->value(idx); }
+    static void paramSetCheck(ParamDialog &d, size_t i, bool on) { if (i < d.m_checks.size()) d.m_checks[i]->value(on ? 1 : 0); }
+    static void paramCommit(ParamDialog &d) { ParamDialog::collectAndOk(&d); }
+    static const std::vector<std::string> &paramResults(const ParamDialog &d) { return d.m_values; }
+
+    // ShortcutDialog -----------------------------------------------------
+    // Force a row's in-memory combo (the dialog uses this before finishOk).
+    static void shortcutSetCombo(ShortcutDialog &d, size_t row, int key, unsigned mods) {
+        if (row < d.m_rows.size()) { d.m_rows[row].combo.key = key; d.m_rows[row].combo.mods = mods; }
+    }
+    static void shortcutCommit(ShortcutDialog &d) { d.finishOk(); }
+    static std::string shortcutComboText(const ShortcutDialog &d, size_t row) {
+        if (row >= d.m_rows.size()) return std::string();
+        return d.comboText(d.m_rows[row].combo);
+    }
+    static size_t shortcutRowCount(const ShortcutDialog &d) { return d.m_rows.size(); }
+};
 
 namespace {
+
+// Temporary config directory so the data-flow tests never touch the real
+// settings.ini. Returns a canonical string usable by Config.
+std::filesystem::path testConfigDir() {
+    std::filesystem::path dir = std::filesystem::temp_directory_path() /
+                                ("pecia_ui_smoke_" + std::to_string(::GetCurrentProcessId()));
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    return dir;
+}
 
 // One-time FLTK + app init before constructing any window (mirrors the
 // startup sequence in main_*.cpp).
@@ -102,6 +151,85 @@ void runOpenTest() {
     CHECK(true);
 }
 
+// Data-flow round-trips: exercise the commit paths that a modal OK click
+// would drive, but without showing/blocking the dialogs (UiSmokeAccess is a
+// test friend). Uses an isolated temp Config so the real settings.ini is never
+// touched.
+void runDataFlowTest() {
+    Config cfg(testConfigDir());                        // isolated config dir
+    initLayoutHeights(cfg);
+    Theme theme;
+    theme.load(cfg);
+    const int fs = 16;
+
+    // ── SettingsDialog: loadFrom -> change -> saveTo round-trip ──
+    {
+        SettingsDialog dlg(520, 480, "flow-settings", &theme, fs, 16);
+        // Populate controls from config (all defaults now).
+        dlg.loadFrom(cfg);
+
+        // Change several controls and commit.
+        UiSmokeAccess::settingsSetTabWidth(dlg, 1);       // 4 space (index 1)
+        UiSmokeAccess::settingsSetAutoIndent(dlg, true);
+        UiSmokeAccess::settingsSetMultiTab(dlg, true);
+        bool changed = UiSmokeAccess::settingsSaveTo(dlg, cfg);
+        CHECK(changed);
+
+        // Read back through the same Config object (in-memory + ini).
+        CHECK_EQ(cfg.getTabWidth(), 4);
+        CHECK(cfg.getAutoIndent());
+        CHECK(cfg.getMultiTab());
+    }
+    CHECK(true);
+
+    // ── ParamDialog: set text/checkbox/choice -> commit -> results() ──
+    {
+        std::vector<LuaParam> params;
+        LuaParam a; a.name = "n"; a.defValue = "10"; a.description = "Count";
+        LuaParam b; b.name = "flag"; b.isCheckbox = true;
+        b.choices = {"on", "off"}; b.defValue = "on";   // on=true off=false
+        LuaParam c; c.name = "mode"; c.choices = {"a", "b", "c"};
+        c.defValue = "b"; c.description = "Mode";
+        params = {a, b, c};
+        ParamDialog dlg("flow-param", params, &theme, fs);
+
+        // User edits: text "7", uncheck the flag (off), choose "c".
+        UiSmokeAccess::paramSetText(dlg, 0, "7");
+        UiSmokeAccess::paramSetCheck(dlg, 0, false);      // off (only checkbox, index 0)
+        UiSmokeAccess::paramSetChoice(dlg, 0, 2);         // "c"
+        UiSmokeAccess::paramCommit(dlg);
+
+        const auto &res = UiSmokeAccess::paramResults(dlg);
+        CHECK_EQ((int)res.size(), 3);
+        if (res.size() == 3) {
+            CHECK(res[0] == "7");
+            CHECK(res[1] == "off");      // checkbox off -> the off choice
+            CHECK(res[2] == "c");        // raw option value, not the label
+        }
+    }
+    CHECK(true);
+
+    // ── ShortcutDialog: set a row combo -> finishOk -> config shortcut ──
+    {
+        std::vector<ShortcutDialogRow> rows;
+        ShortcutDialogRow a;
+        a.id = "win.pin"; a.name = "Pin"; a.group = SG_WINDOW;
+        a.defKey = 0; a.defMods = 0;
+        rows.push_back(a);
+        ShortcutDialog dlg(520, 560, "flow-shortcut", &cfg, &theme, fs);
+        dlg.setRows(rows);
+
+        // Bind Ctrl+Alt+P for win.pin and read it back from config.
+        UiSmokeAccess::shortcutSetCombo(dlg, 0, 'p', FL_CTRL | FL_ALT);
+        UiSmokeAccess::shortcutCommit(dlg);      // finishOk writes to cfg
+        std::string s = cfg.getShortcut("win.pin");
+        CHECK(!s.empty());
+        CHECK(s == "Ctrl+Alt+P");
+        CHECK(UiSmokeAccess::shortcutComboText(dlg, 0) == "Ctrl+Alt+P");
+    }
+    CHECK(true);
+}
+
 } // namespace
 
 int main() {
@@ -110,9 +238,10 @@ int main() {
     ui::g_smokeMode = true;   // no blocking modal loops during the smoke test
 
     runOpenTest();
+    runDataFlowTest();
 
     if (test::failCount() == 0) {
-        printf("test_ui_smoke: all windows opened without crashing\n");
+        printf("test_ui_smoke: all windows opened and data flows verified\n");
         return 0;
     }
     fprintf(stderr, "test_ui_smoke: %d/%d checks FAILED\n",
