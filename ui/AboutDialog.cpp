@@ -6,6 +6,7 @@
 #include "core/Theme.h"
 #include "core/I18n.h"
 #include "ui/DialogBase.h"
+#include "ui/SmokeTest.h"
 
 #include <FL/Fl_Box.H>
 #include <FL/Fl_PNG_Image.H>
@@ -233,5 +234,6 @@ void showAboutDialog(const Theme *theme, int uiFontSize) {
     SetWindowLongPtrW(hwnd, GWL_EXSTYLE, GetWindowLongPtrW(hwnd, GWL_EXSTYLE) | WS_EX_APPWINDOW);
     SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED);
 #endif
+    if (ui::g_smokeMode) { dlg.hide(); return; }   // smoke test: build+show only
     while (dlg.shown()) Fl::wait();
 }

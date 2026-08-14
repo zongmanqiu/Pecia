@@ -1,6 +1,7 @@
 // InfoWindow.cpp - reusable info dialog, built on DialogBase.
 #include "ui/InfoWindow.h"
 #include "ui/DialogBase.h"
+#include "ui/SmokeTest.h"
 #include "core/Theme.h"
 
 #include <FL/Fl.H>
@@ -71,5 +72,6 @@ void InfoWindow::show() {
     InfoDialogBase dlg(m_title.c_str(), m_rows, m_theme, m_uiFontSize, W);
     dlg.position((Fl::w() - dlg.w()) / 2, (Fl::h() - dlg.h()) / 2);
     dlg.show();
+    if (ui::g_smokeMode) { dlg.hide(); return; }   // smoke: build+show only
     while (dlg.shown()) Fl::wait();
 }

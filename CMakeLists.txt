@@ -697,6 +697,67 @@ add_test(NAME script_manager COMMAND test_script_manager)
 # on the same build/lang destination and intermittently fails the build.
 add_dependencies(test_script_manager pecia_copy_lang)
 
+# ---------------------------------------------------------------------------
+# UI smoke test - constructs/opens every dialog via its real code path (with
+# a smoke-mode flag that skips the blocking modal loop) so "open a window and
+# it crashes" regressions (e.g. the ShortcutDialog child(0) crash, ParamDialog
+# close-button overflow) fail the build instead of only crashing in QA.
+# ---------------------------------------------------------------------------
+add_executable(test_ui_smoke
+    test/test_ui_smoke.cpp
+    ui/SettingsDialog.cpp
+    ui/AboutDialog.cpp
+    ui/ConfirmDialog.cpp
+    ui/ParamDialog.cpp
+    ui/ShortcutDialog.cpp
+    ui/InfoWindow.cpp
+    ui/DialogBase.cpp
+    ui/TitleBar.cpp
+    ui/WindowFrame.cpp
+    ui/ToolChrome.cpp
+    ui/Layout.cpp
+    core/Config.cpp
+    core/Theme.cpp
+    core/I18n.cpp
+    core/ShortcutCore.cpp
+    script/LuaParamParser.cpp
+)
+target_include_directories(test_ui_smoke PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/ui
+    ${CMAKE_SOURCE_DIR}/build
+    ${FLTK_INCLUDE_DIRS}
+)
+if(MSVC)
+    target_compile_options(test_ui_smoke PRIVATE /utf-8 /permissive- /W4 /MD)
+    target_compile_definitions(test_ui_smoke PRIVATE _CRT_SECURE_NO_WARNINGS UNICODE _UNICODE)
+endif()
+target_link_libraries(test_ui_smoke PRIVATE
+    ${FLTK_LIBRARIES}
+    comctl32
+    shell32
+    user32
+    imm32
+    gdi32
+    kernel32
+    winspool
+    ole32
+    oleaut32
+    uuid
+    comdlg32
+    advapi32
+    ws2_32
+    gdiplus
+    dwmapi
+    dbghelp
+)
+add_test(NAME ui_smoke COMMAND test_ui_smoke)
+set_tests_properties(ui_smoke PROPERTIES TIMEOUT 60)
+
+# The smoke test needs lang/ + the resource header next to its binary.
+add_dependencies(test_ui_smoke pecia_copy_lang)
+
 # Pipe wire protocol: locks the frame format (4-byte tag + u32 LE length
 # + payload, OK/ERR reply) used by the Lua console Save As -> reload
 # scripts chain. Client links the REAL PipeClient.cpp (the exact
