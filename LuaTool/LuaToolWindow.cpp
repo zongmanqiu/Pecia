@@ -15,6 +15,7 @@
 #include "ui/TitleBar.h"
 #include "ui/WindowFrame.h"
 #include "ui/Layout.h"
+#include "ui/SmokeTest.h"
 
 #include <FL/Fl.H>
 #include <FL/Fl_Text_Editor.H>
@@ -141,7 +142,9 @@ LuaToolWindow::LuaToolWindow(Config *appCfg,
     callback(cbClose, this);        // Alt+F4 / WM_CLOSE also saves
 
     loadScript();
-    startInsServer();
+    // In smoke-test mode skip the detached pipe-listener thread (it blocks
+    // forever and references this; the test only constructs/opens windows).
+    if (!ui::g_smokeMode) startInsServer();
 
     // Start the cursor blink timer (same cadence as the main window).
     Fl::add_timeout(0.5, cursorBlinkCb, this);
