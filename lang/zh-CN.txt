@@ -272,7 +272,8 @@ error.out_of_memory = 内存不足，无法打开该文件（%.0f MB）。
 
 
 settings.cleanuptemp = 清理7天前的临时文件
-settings.group_ui_sys = 界面与系统about.tagline = 基于 C++ & FLTK 的轻量文本编辑器
+settings.group_ui_sys = 界面与系统
+about.tagline = 基于 C++ & FLTK 的轻量文本编辑器
 about.author = 作者
 about.email = 邮箱
 about.project = 项目地址
