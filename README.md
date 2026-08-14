@@ -55,6 +55,7 @@ main/
 ├── CMakeLists.txt      构建规则(CMake 入口)
 ├── main.cpp            程序入口
 ├── README.md           本文档
+├── 架构总览.md          当前实现的架构/分层/进程模型(了解代码怎么运转)
 ├── 目录结构说明.md      目录与模块规范(接手必读)
 ├── core/               核心纯逻辑(无 UI)
 ├── editor/             编辑器控件
