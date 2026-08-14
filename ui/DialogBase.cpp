@@ -128,8 +128,10 @@ void DialogBase::applyToolChrome() {
 
 void DialogBase::draw() {
     Fl_Double_Window::draw();
-    // Draw the 1px outer border on top of all children so it never
-    // disappears (same approach as the shared InfoDialog / SettingsDialog).
+    // Modal dialogs draw their own 1px border here (they have no native
+    // non-client frame). Tool windows instead get their 1px border from the
+    // WM_NCPAINT handler (setupToolChrome), again as exactly one line.
+    if (m_mode != ModalDialog) return;
     Fl_Color bc = m_theme ? m_theme->colors().borderColor : fl_rgb_color(127, 127, 127);
     ::fl_color(bc);
     ::fl_rectf(0, 0, w(), 1);

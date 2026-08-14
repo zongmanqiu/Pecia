@@ -213,6 +213,11 @@ void MainWindow::minimizeWindow() {
 static WNDPROC s_origWndProc = nullptr;
 static const int NC_PAD = 6;  // non-client resize border width (px)
 
+// Non-client edge-resize grip fill color, set from MainWindow::color()
+// so the 6px grip blends with the content (only the 1px border shows).
+static COLORREF s_mainEdgeFill = RGB(235, 235, 235);
+static COLORREF s_mainEdgeBorder = RGB(180, 180, 180);
+
 static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
                                               WPARAM wp, LPARAM lp) {
     switch (msg) {
@@ -241,9 +246,7 @@ static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
 
             // Fill non-client border with window background color
             if (!IsZoomed(hwnd)) {
-                uchar r, g, b;
-                Fl::get_color(FL_BACKGROUND2_COLOR, r, g, b);
-                HBRUSH brush = CreateSolidBrush(RGB(r, g, b));
+                HBRUSH brush = CreateSolidBrush(s_mainEdgeFill);
                 RECT rcL = {0, 0, NC_PAD, wh};
                 FillRect(hdc, &rcL, brush);
                 RECT rcR = {ww - NC_PAD, 0, ww, wh};
@@ -254,7 +257,7 @@ static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
             }
 
             // Draw 1px gray border at window's outer edge
-            HPEN pen = CreatePen(PS_SOLID, 1, RGB(180, 180, 180));
+            HPEN pen = CreatePen(PS_SOLID, 1, s_mainEdgeBorder);
             HPEN oldPen = (HPEN)SelectObject(hdc, pen);
             HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
             Rectangle(hdc, 0, 0, ww, wh);
@@ -330,6 +333,21 @@ void MainWindow::fixTaskbarCb(void *data) {
 #if defined(_WIN32)
     HWND hwnd = fl_xid(self);
     if (hwnd) {
+        // Fill the 6px edge-resize grip with the window background color
+        // so it blends with the content (only the 1px border shows).
+        {
+            uchar r, g, b;
+            Fl::get_color(self->color(), r, g, b);
+            s_mainEdgeFill = RGB(r, g, b);
+        }
+        // The 1px border follows the current theme.
+        {
+            const ThemeColors &mc = self->m_theme.colors();
+            uchar r, g, b;
+            Fl::get_color(mc.borderColor, r, g, b);
+            s_mainEdgeBorder = RGB(r, g, b);
+        }
+
         LONG_PTR exStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
         // Remove WS_EX_TOOLWINDOW (added by FLTK's border(0)), add
         // WS_EX_APPWINDOW so the window behaves like a normal top-level

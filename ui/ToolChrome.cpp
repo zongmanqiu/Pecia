@@ -33,6 +33,13 @@
 static WNDPROC s_origWndProc = nullptr;
 static const int NC_PAD = 6;
 
+// Non-client border fill color. Filled with the window's background color
+// (set in setupToolChrome from win->color()) so the 6px edge-resize grip
+// blends with the content, leaving only the 1px outer border visible.
+static COLORREF s_edgeFill = RGB(235, 235, 235);
+// The 1px outer border color (theme borderColor when available).
+static COLORREF s_edgeBorder = RGB(180, 180, 180);
+
 static LRESULT WINAPI toolSubclassProc(HWND hwnd, UINT msg,
                                        WPARAM wp, LPARAM lp) {
     switch (msg) {
@@ -56,9 +63,7 @@ static LRESULT WINAPI toolSubclassProc(HWND hwnd, UINT msg,
             int wh = rcWin.bottom - rcWin.top;
 
             if (!IsZoomed(hwnd)) {
-                uchar r, g, b;
-                Fl::get_color(FL_BACKGROUND2_COLOR, r, g, b);
-                HBRUSH brush = CreateSolidBrush(RGB(r, g, b));
+                HBRUSH brush = CreateSolidBrush(s_edgeFill);
                 RECT rcL = {0, 0, NC_PAD, wh};
                 FillRect(hdc, &rcL, brush);
                 RECT rcR = {ww - NC_PAD, 0, ww, wh};
@@ -68,7 +73,8 @@ static LRESULT WINAPI toolSubclassProc(HWND hwnd, UINT msg,
                 DeleteObject(brush);
             }
 
-            HPEN pen = CreatePen(PS_SOLID, 1, RGB(180, 180, 180));
+            // Draw 1px border at window's outer edge (theme border color).
+            HPEN pen = CreatePen(PS_SOLID, 1, s_edgeBorder);
             HPEN oldPen = (HPEN)SelectObject(hdc, pen);
             HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
             Rectangle(hdc, 0, 0, ww, wh);
@@ -125,6 +131,20 @@ void setupToolChrome(Fl_Window *win, const Theme *theme) {
     if (!win) return;
     HWND hwnd = fl_xid(win);
     if (!hwnd) return;
+
+    // Fill the 6px edge-resize grip with the window's background color so
+    // it blends with the content; only the 1px outer border stays visible.
+    {
+        uchar r, g, b;
+        Fl::get_color(win->color(), r, g, b);
+        s_edgeFill = RGB(r, g, b);
+    }
+    // The 1px border color follows the theme when one is given.
+    if (theme) {
+        uchar r, g, b;
+        Fl::get_color(theme->colors().borderColor, r, g, b);
+        s_edgeBorder = RGB(r, g, b);
+    }
 
     // border(0) sets WS_POPUP | WS_EX_TOOLWINDOW: remove TOOLWINDOW and
     // add APPWINDOW so the window behaves like a normal top-level window
