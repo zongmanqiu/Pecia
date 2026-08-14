@@ -233,6 +233,15 @@ bool Document::loadWithEncoding(const char *path, Encoding enc) {
     }
     size_t rd = fread(raw, 1, (size_t)sz, fp);
     fclose(fp);
+    // A short read means the file shrank mid-read or hit an I/O error: do
+    // NOT hand the truncated bytes to the editor as if they were the whole
+    // file (that would silently drop content and mark the doc clean).
+    if (rd != (size_t)sz) {
+        if (UiBridge *b = uiBridge())
+            b->message("Error", "Failed to read file (unexpected end / I/O error)", "OK");
+        delete[] raw;
+        return false;
+    }
     raw[rd] = 0;
 
     char *utf8 = nullptr; int utf8Len = 0;
