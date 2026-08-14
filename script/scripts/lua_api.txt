@@ -1,0 +1,166 @@
+Pecia Lua 脚本指南 / Script Reference
+==================================================
+
+脚本执行方式 / How scripts run
+--------------------------------------------------
+- 脚本的**顶层代码直接执行**（加载后立即运行一次）；**没有 main() 约定**——
+  不要写 `function main()` 却不调用它，那样什么都不会发生。
+- 需要执行的代码**直接写在顶层**；可以定义辅助函数，但必须在顶层调用。
+- 用 `print(...)` 输出额外信息（显示在控制台）；**运行成功/失败的状态
+  由控制台自动提示**（成功显示完成信息，失败显示错误），脚本无需自己 print。
+- 运行时错误会显示在控制台；请自行校验输入（如选区为空时 print 提示）。
+
+完整示例 / Complete example（大小写互换 / toggle case）
+--------------------------------------------------
+```lua
+-- ==Meta==
+-- @name Toggle Case
+-- @name.zh-CN 切换大小写
+-- ==/Meta==
+
+local sel = editor:get_selection()
+if #sel == 0 then
+    print("No selection - select the text to convert first.")
+    return
+end
+local new_text = sel:gsub("%a", function(c)
+    return (c == c:lower()) and c:upper() or c:lower()
+end)
+editor:replace_selection(new_text)
+print("Done: toggled " .. #sel .. " chars.")
+```
+注意：示例中大小写转换在**一次 gsub 内完成**；不要写两次 gsub
+（如先 %l 再 %u），第二次会抵消第一次的结果。
+
+脚本头元信息 / Script Metadata
+--------------------------------------------------
+Pecia 的 Lua 脚本可以在文件头部的注释块中声明显示名称（支持多语言）。
+风格参考 Tampermonkey (油猴) 的 UserScript 头注释。
+
+格式（脚本文件开头、第一个可执行代码之前）:
+
+    -- ==Meta==
+    -- @name My Script
+    -- @name.zh-CN 我的脚本
+    -- @author Zhang San
+    -- @date 20260809
+    -- ==/Meta==
+
+规则:
+  - 声明区 = 从文件开头到第一个 Lua 代码行的连续注释区（空行允许），
+    ==Meta== 块、--!param、--!pui 都放在这里；没有行数限制
+    （仅 256 行防呆上限），大脚本多参数也没问题。
+  - 每行以 Lua 行注释 `--` 开头；`--` 与 `@` 之间可以有空格。
+  - **Pecia 只读取 @name 系列**（按钮显示名），其他键（@author、@date、
+    @description、@version 等）都只是给人看的注释，不会被读取或处理。
+    作者可以随意添加自己想要的说明字段。
+
+@name 系列（唯一被读取的键）:
+  - `@name 名称`           基础名称（默认语言 en）
+  - `@name.<语言代码> 名称` 指定语言的覆盖名称（语言代码与 Pecia 的
+    Settings > Language 菜单显示一致，如 zh-CN）
+
+显示回退链:
+  1. `@name.<当前语言>`（如 @name.zh-CN）
+  2. `@name`（en）
+  3. 文件名
+
+其他键（注释，Pecia 忽略）:
+
+    @author   作者
+    @date     日期
+    @description 描述
+    @version  版本号
+    ...       任意自定义字段
+
+块必须闭合（-- ==/Meta==）。未闭合、块内出现非注释行、或闭合标记
+没有对应的开始标记，都会导致整个块被忽略（回退链生效）。
+
+示例:
+
+    -- ==Meta==
+    -- @name → *
+    -- @author 邱宗满
+    -- @date 20260809
+    -- ==/Meta==
+
+    --!param order=asc|desc: 排序方式（升序/降序）
+    function main()
+        -- ...
+    end
+
+编辑器 / Editor
+--------------------------------------------------
+editor:get_selection()        -- 返回选中文本 / returns selection ("" if none)
+editor:replace_selection(t)   -- 替换选区；无选区时插入并选中 / replace sel (or insert at cursor)
+editor:get_cursor()           -- 光标位置(字节) / cursor position (bytes)
+editor:set_cursor(p)          -- 移动光标(越界钳制) / move cursor (clamped)
+
+交互 / Interaction
+--------------------------------------------------
+win:message("hi")             -- 提示框 / message box
+win:question("ok?")           -- 是/否询问 → bool / Yes-No → bool
+win:clipboard_get()           -- 读剪贴板 / read clipboard
+win:clipboard_set("t")        -- 写剪贴板 / write clipboard
+win:open("path-or-url")       -- 默认程序打开 / open with default handler
+
+正则 / Regex（PCRE2 引擎，按需加载 pecia_regex.dll，脚本结束后卸载）
+--------------------------------------------------
+regex:gsub(text, pattern, repl)
+                              -- 替换所有匹配 / replace all matches
+                              -- 捕获组：$1 ${name} / capture groups
+regex:findall(text, pattern)
+                              -- 匹配区间表 {{start,end},...}（UTF-8 字节偏移）
+                              -- 无效模式返回 nil, 错误信息 / nil + errmsg on error
+注意 / Notes:
+  * 语法是 PCRE2（不是 Lua pattern）：\d \w \p{Han} (?i) (?m) 等
+  * Lua 字符串里写 \d 需转义为 \\d，或用 [0-9] 等字符类
+  * 引擎在脚本首次调用时加载、脚本结束自动卸载（日常零内存占用）
+
+全局变量 / Globals
+--------------------------------------------------
+pecia_lang                    -- 当前 UI 语言码（"en" / "zh-CN" ...）
+                              -- 脚本可据此输出本地化提示 / localize your own messages
+
+参数 / Parameters（脚本头部 --!param 声明，运行前自动弹窗）
+--------------------------------------------------
+-- 声明区 = 文件开头到第一个代码行的连续注释区（==Meta== 块、
+-- --!param、--!pui 都在这里；空行允许，无行数限制，仅 256 行防呆）
+--!param name[=default][: desc]              文本输入 / text input
+--!param name=opt1|opt2[: desc]              下拉选择（默认=第一项）/ dropdown
+--!param name=off|on[: desc]                 复选框（Match Case 样式，默认不勾）
+                                              / checkbox, unchecked by default
+-- 读取 / read: params.name（字符串 / string，下拉/复选框返回原始值如 on/off）
+
+对话框多语言 / Dialog translations（翻译存脚本内，不存 Pecia lang 文件）
+--------------------------------------------------
+--!pui.title = Dialog Title            -- 对话框标题 / dialog title
+--!pui.title.zh-CN = 对话框标题
+--!pui.<param> = Label text            -- 参数标签 / parameter label
+--!pui.<param>.zh-CN = 标签文本
+--!pui.<param>.<option> = Option text  -- 下拉选项显示文本（值不变）/ option label
+--!pui.<param>.<option>.zh-CN = 选项文本
+-- 回退链：精确语言 → base(en) → 原始值（参数名/选项值）
+-- Lookup: exact lang → base(en) → raw value
+-- 标题未定义时回退 Pecia 自带 "Script Parameters"
+
+脚本文件夹 / Script folders（scripts/ 下两级子文件夹）
+--------------------------------------------------
+-- 每个文件夹可放 folder.ini 提供文件夹名多语言：
+--   name = Lines
+--   name.zh-CN = 每行
+-- 回退链：name.<lang> → name → 文件夹原名（无 ini 时）
+-- 二级子文件夹同样支持
+
+输出 / Output
+--------------------------------------------------
+print(...)                    -- 输出到控制台输出区 / to console output
+
+标准库 / Standard libraries（全部可用 / all available）
+--------------------------------------------------
+string table math io os utf8 coroutine debug package
+
+提示 / Tips:
+  文档为 UTF-8，字符串长度按字节；中文用 utf8 库按字符处理。
+  Docs are UTF-8; string length is in bytes. Use the utf8
+  library to handle Chinese by character.

@@ -1,0 +1,23 @@
+[package]
+name = "mermaid-ffi"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "C ABI shell for mermaid-rs-renderer (mmdr): mermaid text and arbitrary SVG to RGBA bitmap, in-process."
+
+[lib]
+name = "mermaid_ffi"
+crate-type = ["staticlib"]
+
+[dependencies]
+mermaid-rs-renderer = { version = "0.3.1", features = ["png"] }
+usvg = "0.47.0"
+resvg = "0.47.0"
+fontdb = "0.23"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[profile.release.package."*"]
+codegen-units = 1

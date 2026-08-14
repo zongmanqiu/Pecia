@@ -1,0 +1,10 @@
+// pecia.rc - Windows resource script
+#include <windows.h>
+#include "resource.h"
+
+// Application icon (path is relative to this .rc file's location)
+// main/image/ holds all image assets; ../image/ resolves from build/.
+IDI_PECIA ICON "../image/pecia.ico"
+
+// Application manifest - enable modern controls + UTF-8 active codepage
+1 24 "pecia.manifest"

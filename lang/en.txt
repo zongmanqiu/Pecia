@@ -1,0 +1,278 @@
+ ﻿# Pecia Language File - English
+# ============================================================
+
+name = English
+
+# ── Preview toolbar ──
+preview.refresh = Refresh
+preview.toc = Contents
+preview.toc.empty = (no headings)
+
+# ── File menu ──
+menu.file = File
+menu.file.new = New
+menu.file.newwindow = New Window
+menu.file.open = Open...
+menu.file.recent = Recent Files
+menu.file.clearrecent = Clear Recent Files
+menu.file.save = Save
+menu.file.saveas = Save As...
+menu.file.exit = Exit
+
+# ── Edit menu ──
+menu.edit = Edit
+menu.edit.undo = Undo
+menu.edit.redo = Redo
+menu.edit.cut = Cut
+menu.edit.copy = Copy
+menu.edit.paste = Paste
+menu.edit.delete = Delete
+menu.edit.find = Find...
+menu.edit.findnext = Find Next
+menu.edit.findprev = Find Previous
+menu.edit.replace = Replace...
+menu.edit.goto = Go To...
+menu.edit.selectall = Select All
+menu.edit.timedate = Time/Date
+settings.searchurl = Search Engine:
+menu.edit.search = Search Selection
+menu.edit.sendai = Send to AI
+menu.markdown = Markdown
+menu.markdown.preview = Preview
+menu.markdown.scrollsync = Scroll Sync
+menu.markdown.refresh = Refresh
+menu.markdown.autorefresh = Auto Refresh
+menu.markdown.off = Off
+menu.markdown.openinbrowser = Open in Browser
+
+# ── View menu ──
+menu.view = View
+menu.view.scriptbar = Script Bar
+menu.view.statusbar = Status Bar
+menu.view.linenumbers = Line Numbers
+menu.view.multitab = Multi Tab
+
+menu.view.wrap = Word Wrap
+menu.view.font = Font...
+menu.view.highlightline = Highlight Current Line
+menu.view.showwhitespace = Show Space Symbol
+menu.view.statistics = Statistics...
+menu.view.zoom = Zoom
+menu.view.zoomin = Zoom In
+menu.view.zoomout = Zoom Out
+menu.view.zoomreset = Reset Zoom
+menu.view.darkmode = Dark Mode
+
+# ── Statistics dialog ──
+statistics.title = Document Statistics
+statistics.characters = Characters:
+statistics.cjk = CJK Characters:
+statistics.words = Words:
+statistics.paragraphs = Paragraphs:
+statistics.lines = Total Lines:
+statistics.wordchars = Word Characters:
+statistics.emptylines = Empty Lines:
+
+
+# ── Dark mode notice ──
+darkmode.title = Dark Mode
+darkmode.status = Status:
+darkmode.status_on = Enabled
+darkmode.status_off = Disabled
+darkmode.notice = This feature is not yet implemented.
+
+# ── Settings menu ──
+menu.settings = Settings
+menu.settings.options = Options...
+menu.settings.shortcuts = Shortcuts...
+menu.settings.openscriptfolder = Open Script Folder...
+menu.settings.reloadscripts = Reload Scripts
+menu.settings.language = Language
+
+# ── Tools menu ──
+menu.tools = Tools
+menu.tools.lua = Lua Console...
+menu.tools.aichat = AI Chat...
+menu.tools.reloadscripts = Reload Scripts
+
+# ── Script Bar ──
+scriptbar.scripts = Scripts
+scriptbar.scripts.none = (no scripts)
+
+
+# ── Lua script dialog ──
+lua.title = Lua Console
+lua.run = Run
+lua.clear = Clear
+lua.saveas = Save As...
+lua.help = Help
+lua.close = Close
+lua.send = Send
+lua.config = Config
+lua.secai = AI Chat
+lua.secscript = Lua Console
+lua.secoutput = Output
+lua.prompt = AI chat: describe what the script should do (current script, last output and API docs are attached automatically)
+lua.nodoc = No active document
+lua.readonly = The document is read-only
+lua.error = Lua error
+lua.done = Script finished successfully
+lua.toai = To AIChat
+lua.msgscript = This is my Lua script:
+lua.msgoutput = This is my run feedback:
+lua.msgempty = (empty script)
+lua.msgnoout = (no output yet)
+lua.sentai = Sent to AIChat.
+lua.sendfail = Failed to send to AIChat.
+lua.nobridge = Not connected to the main window (open via Tools > Lua Console...)
+lua.localmode = Local mode (not connected - editor:* unavailable)
+
+# ── AI chat window ──
+chat.title = AI Chat
+chat.you = You
+chat.ai = AI
+chat.send = Send
+chat.settings = API...
+chat.todoc = To Pecia
+chat.clear = Clear
+chat.noreply = No AI reply to send yet
+chat.todocfail = Send failed: main window not connected
+chat.tolua = To Lua
+chat.noluacode = No Lua code block found in the reply
+chat.senttolua = Sent to Lua console.
+chat.inserted = Inserted
+chat.attachsel = Append selection
+chat.attachseltip = Automatically attach the current selection when sending (single use)
+chat.attachfail = Cannot read selection: main window not connected
+
+# ── AI assistant dialog ──
+ai.title = AI Script Assistant
+ai.section = API
+ai.glmapi = GLM api
+ai.key = API Key:
+ai.keyhint = Paste your API key (e.g. Zhipu BigModel)
+ai.endpoint = URL:
+ai.model = Model:
+ai.generate = Generate
+ai.insert = Insert to Script
+ai.close = Close
+ai.done = Done. Click "Insert to Script" to use it.
+ai.error = Generation failed - check the API key / network
+ai.noprompt = Please describe what the script should do first.
+ai.nosel = No text selected
+ai.nocontent = Nothing generated yet - click "Generate" first.
+ai.inserted = Inserted into the script editor.
+
+# ── Help menu ──
+menu.help = Help
+menu.help.checkupdates = Check for Updates
+menu.help.about = About
+
+# ── Settings dialog ──
+settings.title = Options
+settings.filetype = File Type
+settings.custom = Custom:
+settings.font = Font:
+settings.fontsize = Font size:
+settings.theme = Theme:
+settings.tabwidth = Tab width:
+settings.longline = Long line:
+settings.autosave = Auto save:
+settings.autosaveitems = Off|30 seconds|60 seconds|120 seconds|300 seconds
+settings.autoindent = Auto indent
+settings.detecturls = Detect URLs
+settings.trimtrailing = Trim trailing whitespace
+settings.group_edit = Editing
+settings.group_save = Save & Exit
+settings.trimleading = Trim leading blank lines
+settings.trimending = Trim ending blank lines
+settings.expandtabs = Expand tabs to spaces
+settings.multitab = Multi tab in title bar
+settings.newtxtdoc = New > Text Document
+settings.addopenwith = Add to file Open with menu
+settings.linenums = Show line numbers
+settings.wrap = Word wrap
+settings.language = Language:
+settings.ok = OK
+settings.cancel = Cancel
+settings.selectall = Select All
+settings.deselectall = Deselect All
+
+# ── Find/Replace bar ──
+find.find = Find
+find.findhint = Find:
+find.replace = Replace
+find.replacehint = Replace:
+find.prev = Prev
+find.next = Next
+find.all = All
+find.matchcase = Match Case
+find.wholeword = Whole Word
+find.wrap = Wrap
+find.replaceall = All
+find.close = Close
+
+# ── Go To bar ──
+gotoline.label = Line:
+gotoline.go = Go
+
+# ── Status bar ──
+status.line = Ln
+status.col = Col
+status.chars = chars
+
+# ------ Shortcuts dialog (Settings > Shortcuts...) ------
+shortcut.dialog.title = Shortcuts
+shortcut.dialog.none = (none)
+shortcut.dialog.recording = Press a key combination...
+shortcut.dialog.reset = Restore Defaults
+shortcut.dialog.filter = Filter
+shortcut.scriptbar = Script Bar
+shortcut.group.menu = Menu
+shortcut.loc.titlebar = Window > Title Bar
+shortcut.loc.tabs = Window > Tabs
+shortcut.loc.button = Window > Button
+shortcut.win.pin = Pin
+shortcut.win.minimize = Minimize
+shortcut.win.maximize = Maximize
+shortcut.win.close = Close
+shortcut.win.nexttab = Next Tab
+shortcut.win.prevtab = Previous Tab
+shortcut.win.closetab = Close Tab
+shortcut.button.run = Run / Send
+shortcut.button.clear = Clear
+shortcut.button.ok = OK
+shortcut.button.todoc = Send to Pecia
+shortcut.button.tolua = Send to Lua
+shortcut.button.toai = Send to AIChat
+shortcut.button.saveas = Save As
+shortcut.button.help = Help
+shortcut.button.settings = Settings
+
+param.title = Script Parameters
+
+# ── 通用对话框按钮 ──
+dlg.ok = OK
+dlg.save = Save
+dlg.dontsave = Don't Save
+dlg.cancel = Cancel
+dlg.yes = Yes
+dlg.no = No
+
+# ── 未保存更改 ──
+confirm.unsaved.title = Unsaved Changes
+confirm.unsaved.msg = The current file has not been saved.\nWould you like to save it now?
+
+# ── 文件操作错误 ──
+error.title = Error
+error.open_failed = Failed to open file\n%s\n%s
+error.largefile.title = Large File
+error.largefile.msg = This file is %.0f MB and will be opened in read-only mode.\nFind and Go To are available for viewing.
+confirm.largefile.title = Large File
+confirm.largefile.msg = This file is %.0f MB. Open in read-only mode?\n  Yes — View only (recommended)\n  No — Full editing (may be slow or hang)\n  Cancel — Cancel opening
+error.too_large = File too large (%.2f GB). Maximum supported: 2 GB.
+error.out_of_memory = Not enough memory to open this file (%.0f MB).
+
+
+settings.cleanuptemp = Clean temp files older than 7 days
+settings.group_ui_sys = Interface & System

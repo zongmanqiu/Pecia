@@ -1,0 +1,18 @@
+# Pecia 第三方依赖下载清单（setup.bat 读取）
+# ------------------------------------------------------------------
+# 格式：库名 | 下载URL | 压缩包顶层目录 | 目标目录(.thirdparty/ 下，可含子目录)
+# 规则：
+#   - 目标目录已存在 -> 跳过（幂等，可重复运行）
+#   - 用户可自行修改 URL（例如改用镜像）
+#   - 无发行版的库（md4c/stb）下载 GitHub master 快照
+# Rust 相关（mmdr / RaTeX / resvg 等 ~140+ crates）：不在此清单，
+#   由 cargo 编译 main/patches/ 下的 FFI crate 时自动从 crates.io 下载
+#   （Cargo.lock 锁定版本；首次需网络，之后缓存离线可编）。
+#   我们的 FFI 壳源码在 main/patches/（mmdr-ffi、RaTeX-0.1.14/ratex-ffi）。
+
+fltk|https://github.com/fltk/fltk/archive/refs/tags/release-1.4.5.zip|fltk-release-1.4.5|fltk-1.4.5
+md4c|https://github.com/mity/md4c/archive/refs/heads/master.zip|md4c-master|md4c-2026.08.04
+litehtml|https://github.com/litehtml/litehtml/archive/refs/tags/v0.10.zip|litehtml-0.10|litehtml-0.10
+lua|https://github.com/lua/lua/archive/refs/tags/v5.5.1.zip|lua-5.5.1|lua-5.5.1
+pcre2|https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.47/pcre2-10.47.zip|pcre2-10.47|pcre2-10.47
+stb|https://github.com/nothings/stb/archive/refs/heads/master.zip|stb-master|stb-2026.08.04

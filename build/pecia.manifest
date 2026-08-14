@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity type="win32" name="Pecia" version="1.0.0.0"/>
+  <description>Pecia Text Editor</description>
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls"
+        version="6.0.0.0" processorArchitecture="*"
+        publicKeyToken="6595b64144ccf1df" language="*"/>
+    </dependentAssembly>
+  </dependency>
+  <!--
+    NOTE: intentionally NO <application>/<windowsSettings> block.
+    Setting activeCodePage=UTF-8 or dpiAwareness=PerMonitorV2 here makes
+    Windows pull in windows.storage.dll, d2d1.dll, combase.dll and the
+    WinRT stack (~30 MB of DLLs). We don't need them - FLTK uses GDI
+    directly and handles UTF-8 internally.
+  -->
+</assembly>

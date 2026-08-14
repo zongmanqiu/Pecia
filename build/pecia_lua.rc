@@ -1,0 +1,10 @@
+// pecia_lua.rc - Windows resource script for PeciaLua only.
+// Uses the Lua icon (lua.ico) instead of the Pecia logo.
+// Paths are relative to this .rc file's location (main/build/).
+#include <windows.h>
+#include "resource.h"
+
+IDI_PECIA ICON "../image/lua.ico"
+
+// Application manifest - enable modern controls + UTF-8 active codepage
+1 24 "pecia.manifest"

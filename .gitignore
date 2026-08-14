@@ -1,0 +1,35 @@
+# ---------------------------------------------------------------------------
+# Pecia .gitignore
+# Repo root = the main/ source folder. Everything tracked here must be pure
+# source + docs + build scripts. Only build-run artifacts that a test/step
+# leaves inside main/ are ignored.
+#
+# IMPORTANT: main/script/scripts/**/folder.ini files ARE source (default
+# script folder-name translations) and MUST stay tracked - so *.ini is NOT
+# blanket-ignored.
+# ---------------------------------------------------------------------------
+
+# CTest artifacts generated under main/build/ (the build scripts themselves
+# are source; only what CTest outputs is disposable).
+build/Testing/
+
+# Generic run-time debris in case anything is generated inside main/.
+*.log
+*.dmp
+*.obj
+*.exe
+*.dll
+*.lib
+*.exp
+*.pdb
+*.map
+*.o
+*.a
+
+# Developer-local tooling.
+.vscode/
+.idea/
+
+# NOTE: .thirdparty/ , build_cmake/ , build/ (exe out), rust_build/ , temp/ ,
+# .bf.c++/ , release/ live OUTSIDE main/ (project-root working artifacts), so
+# they are not represented here.
