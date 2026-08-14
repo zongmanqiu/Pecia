@@ -251,6 +251,8 @@ ShortcutDialog::ShortcutDialog(int w, int h, const char *title, Config *cfg,
     int scrollH = filterTop - scrollY;
 
     SettingsScroll *scroll = new SettingsScroll(0, scrollY, w, scrollH, theme);
+    m_scroll = scroll;   // keep a reference so layoutRows() can find it (it
+                         // is no longer child(0): the TitleBar from DialogBase is)
     scroll->type(Fl_Scroll::VERTICAL);
     scroll->box(FL_FLAT_BOX);
     scroll->color(theme ? theme->colors().bgEditor : FL_WHITE);
@@ -383,7 +385,7 @@ void ShortcutDialog::layoutRows() {
     }
     m_recording = nullptr;
 
-    SettingsScroll *scroll = static_cast<SettingsScroll *>(child(0));
+    SettingsScroll *scroll = m_scroll;   // created in the ctor (not child(0))
     if (!scroll) return;
     scroll->begin();
 
@@ -426,7 +428,7 @@ void ShortcutDialog::layoutRows() {
 // spacer sits right after the last row so scrolling always leaves a
 // dialog_pad gap at the bottom (like the Options dialog).
 void ShortcutDialog::repositionRows() {
-    SettingsScroll *scroll = static_cast<SettingsScroll *>(child(0));
+    SettingsScroll *scroll = m_scroll;
     if (!scroll) return;
     // Reset the top spacer to the scroll top: scrolling moves every
     // child (Fl_Scroll::scroll_to repositions them), so after a scroll

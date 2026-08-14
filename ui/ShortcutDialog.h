@@ -89,6 +89,7 @@ private:
     std::vector<RowState> m_rows;
     std::vector<RowWidget *> m_widgets;
     RowWidget       *m_recording = nullptr;
+    class SettingsScroll *m_scroll = nullptr;   // the rows' scroll container
     class Fl_Input  *m_filterInput = nullptr;
     Fl_Box          *m_hintLabel = nullptr;
     Fl_Box          *m_bottomSpacer = nullptr;
