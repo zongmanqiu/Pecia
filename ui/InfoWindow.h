@@ -1,9 +1,7 @@
-// InfoWindow.h - reusable info dialog with custom title bar and close button.
+// InfoWindow.h - reusable info dialog, built on DialogBase (shared title
+// bar / border).
 #pragma once
 
-#include <FL/Fl.H>
-#include <FL/Fl_Window.H>
-#include <FL/fl_draw.H>
 #include <string>
 #include <vector>
 
@@ -13,13 +11,6 @@ struct InfoRow {
     std::string label;
     std::string value;
 };
-
-class InfoTitleBar;
-class BorderOverlay;
-
-// Factory functions (declared in InfoWindow.cpp)
-InfoTitleBar *createInfoTitleBar(int X, int Y, int W, int H, const char *title, const Theme *theme = nullptr, int fontSize = 16);
-BorderOverlay *createBorderOverlay(int X, int Y, int W, int H, const Theme *theme = nullptr);
 
 class InfoWindow {
 public:

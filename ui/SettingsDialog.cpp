@@ -634,7 +634,7 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
     scroll->scrollbar.color(theme ? theme->colors().scrollbarThumb : fl_rgb_color(170, 170, 170));
     scroll->scrollbar.selection_color(theme ? theme->colors().scrollbarTrack : fl_rgb_color(235, 235, 235));
 
-    // The shared title bar (createInfoTitleBar) is created by DialogBase.
+    // The shared title bar is created by DialogBase (initShell).
     end();
     finalizeShell();
 }
@@ -881,8 +881,7 @@ void SettingsDialog::cbCancel(Fl_Widget * /*w*/, void *data) {
 // ExtensionsDialog - secondary modal dialog for choosing which file
 // extensions Pecia registers itself for in the "Open with" menu.
 // Listed as a single column of checkboxes with "Select All" / "None"
-// shortcuts. The dialog is a self-contained Fl_Double_Window using the
-// same InfoTitleBar/BorderOverlay style as the main Settings dialog.
+// shortcuts. A DialogBase modal dialog (shared title bar / border).
 // ---------------------------------------------------------------------------
 namespace {
 
