@@ -34,6 +34,11 @@ public:
     // settings.ini with the system language.
     static const char *detectSystemLang();
 
+    // Localized reason for an OS error code (`errno`). Uses the errno.<code>
+    // translation keys when present (so the message matches the UI language
+    // regardless of the OS locale); falls back to the raw strerror() text.
+    static const char *strerrorLocalized(int errn);
+
     // Clear all loaded strings (called by load before populating).
     static void clear();
 

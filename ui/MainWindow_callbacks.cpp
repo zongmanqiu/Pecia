@@ -42,6 +42,7 @@
 #include <shobjidl.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 #include <string>
 #include <vector>
 
@@ -647,7 +648,7 @@ void MainWindow::cbTestFileError(Fl_Widget * /*w*/, void *data) {
     if (!self) return;
     char msg[512];
     snprintf(msg, sizeof(msg), I18n::get("error.open_failed"),
-             "C:\\nonexistent\\file.txt", "No such file or directory");
+             "C:\\nonexistent\\file.txt", I18n::strerrorLocalized(ENOENT));
     ConfirmDialog(I18n::get("error.title"), msg, I18n::get("dlg.ok"),
         nullptr, nullptr,
         &self->m_theme, self->m_cfg->getUiFontSize()).run();

@@ -145,7 +145,8 @@ bool Document::loadFile(const char *path) {
     FILE *fp = fl_fopen(path, "rb");
     if (!fp) {
         char _msg[512];
-        snprintf(_msg, sizeof(_msg), I18n::get("error.open_failed"), path, strerror(errno));
+        snprintf(_msg, sizeof(_msg), I18n::get("error.open_failed"), path,
+                 I18n::strerrorLocalized(errno));
         if (UiBridge *b = uiBridge()) b->message(I18n::get("error.title"), _msg, I18n::get("dlg.ok"));
         return false;
     }
@@ -183,8 +184,10 @@ bool Document::loadWithEncoding(const char *path, Encoding enc) {
     FILE *fp = fl_fopen(path, "rb");
     if (!fp) {
         char _msg[512];
-        snprintf(_msg, sizeof(_msg), "Failed to open file\n%s\n%s", path, strerror(errno));
-        if (UiBridge *b = uiBridge()) b->message("Error", _msg, "OK");
+        snprintf(_msg, sizeof(_msg), I18n::get("error.open_failed"), path,
+                 I18n::strerrorLocalized(errno));
+        if (UiBridge *b = uiBridge())
+            b->message(I18n::get("error.title"), _msg, I18n::get("dlg.ok"));
         return false;
     }
     fseek(fp, 0, SEEK_END);
@@ -381,8 +384,10 @@ bool Document::saveWithEncoding(const char *path, Encoding enc) {
     FILE *fp = fl_fopen(path, "wb");
     if (!fp) {
         char _msg[512];
-        snprintf(_msg, sizeof(_msg), "Failed to save file\n%s\n%s", path, strerror(errno));
-        if (UiBridge *b = uiBridge()) b->message("Error", _msg, "OK");
+        snprintf(_msg, sizeof(_msg), I18n::get("error.save_failed"), path,
+                 I18n::strerrorLocalized(errno));
+        if (UiBridge *b = uiBridge())
+            b->message(I18n::get("error.title"), _msg, I18n::get("dlg.ok"));
         ::free((void*)text);
         delete[] expanded;
         delete[] normalized;

@@ -128,7 +128,7 @@ lua.localmode = 本地模式（未连接主程序，editor:* 不可用）
 chat.title = AI 对话
 chat.you = 你
 chat.ai = AI
-chat.send = 发送
+chat.send = 回车
 chat.settings = API...
 chat.todoc = 发送到 Pecia
 chat.clear = 清除
@@ -269,6 +269,14 @@ confirm.largefile.title = 大文件
 confirm.largefile.msg = 该文件 %.0f MB，是否以只读模式打开？\n  是 — 仅查看（推荐）\n  否 — 完整编辑（可能很慢或卡顿）\n  取消 — 取消打开
 error.too_large = 文件过大（%.2f GB），最大支持 2 GB。
 error.out_of_memory = 内存不足，无法打开该文件（%.0f MB）。
+error.save_failed = 无法保存文件\n%s\n%s
+
+# 本地化的系统错误原因（缺少时回退到 strerror 原文）
+errno.2 = 没有这样的文件或目录
+errno.13 = 权限被拒绝
+errno.21 = 是一个目录
+errno.5 = 输入/输出错误
+errno.12 = 内存不足
 
 
 settings.cleanuptemp = 清理7天前的临时文件

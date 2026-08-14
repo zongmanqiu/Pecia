@@ -9,6 +9,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <string>
+#include <errno.h>
 
 #if defined(_WIN32)
 #  ifndef WIN32_LEAN_AND_MEAN
@@ -177,4 +178,14 @@ const char *I18n::getOr(const char *key, const char *fallback) {
 void I18n::clear() {
     s_count = 0;
     s_code[0] = 0;
+}
+
+const char *I18n::strerrorLocalized(int errn) {
+    char key[32];
+    snprintf(key, sizeof(key), "errno.%d", errn);
+    const char *v = get(key);
+    // Only accept a real localized value (not the key echoed back for a
+    // missing key), otherwise fall back to the OS text.
+    if (v != key && v && *v) return v;
+    return strerror(errn);
 }

@@ -131,7 +131,7 @@ lua.localmode = Local mode (not connected - editor:* unavailable)
 chat.title = AI Chat
 chat.you = You
 chat.ai = AI
-chat.send = Send
+chat.send = Enter
 chat.settings = API...
 chat.todoc = To Pecia
 chat.clear = Clear
@@ -272,6 +272,14 @@ confirm.largefile.title = Large File
 confirm.largefile.msg = This file is %.0f MB. Open in read-only mode?\n  Yes — View only (recommended)\n  No — Full editing (may be slow or hang)\n  Cancel — Cancel opening
 error.too_large = File too large (%.2f GB). Maximum supported: 2 GB.
 error.out_of_memory = Not enough memory to open this file (%.0f MB).
+error.save_failed = Failed to save file\n%s\n%s
+
+# Localized OS error reasons (fallback: the raw strerror() text is shown)
+errno.2 = No such file or directory
+errno.13 = Permission denied
+errno.21 = Is a directory
+errno.5 = I/O error
+errno.12 = Out of memory
 
 
 settings.cleanuptemp = Clean temp files older than 7 days

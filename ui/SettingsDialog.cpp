@@ -890,6 +890,7 @@ struct ExtensionsDialog : DialogBase {
     std::vector<Fl_Check_Button*> m_checks;
     Fl_Input *m_customInput = nullptr;
     HoverButton  *m_allBtn = nullptr;
+    HoverButton  *m_okBtn = nullptr;   // for re-positioning allBtn on toggle
     const Theme *m_theme = nullptr;
 
     ExtensionsDialog(int W, int H, const char *title, const Theme *theme, int uiFontSize)
@@ -996,32 +997,27 @@ struct ExtensionsDialog : DialogBase {
         btnBar->color(chromeCol);
 
         const char *kAllLbl   = I18n::get("settings.selectall");
-        const char *kDeselect = I18n::get("settings.deselectall");
         int gap  = 8;
         int okY  = btnY + (TITLE_H - btnH) / 2;
         // created with zero width; fitButtonRow sizes + right-aligns below.
         HoverButton *allBtn = new HoverButton(0, okY, 0, btnH, kAllLbl);
         HoverButton *okBtn  = new HoverButton(0, okY, 0, btnH, I18n::get("settings.ok"));
         m_allBtn = allBtn;
+        m_okBtn = okBtn;
         for (auto *b : { allBtn, okBtn }) {
             b->color(chromeCol);
             b->selection_color(theme ? theme->colors().accentSelection : FL_SELECTION_COLOR);
             b->labelsize(uiFontSize);
             b->labelcolor(theme ? theme->colors().textPrimary : FL_BLACK);
         }
-        // The Select-All button toggles between two labels; pin its width to
-        // the wider of the two so it never jumps while switching.
-        allBtn->copy_label(kDeselect);
-        allBtn->fit();
-        int allW = allBtn->w();
+        // Select-All button starts at its current label width; refreshToggleLabel
+        // re-fits it on every toggle (so it always matches the text shown).
         allBtn->copy_label(kAllLbl);
         allBtn->fit();
-        if (allBtn->w() > allW) { allW = allBtn->w(); allBtn->size(allW, btnH); }
-        allBtn->copy_label(kAllLbl);
         okBtn->fit();
         int okW = okBtn->w();
         int okX  = W - margin - okW;
-        allBtn->position(okX - gap - allW, okY);
+        allBtn->position(okX - gap - allBtn->w(), okY);
         okBtn->position(okX, okY);
         allBtn->callback([](Fl_Widget*, void *data){
             auto *self = static_cast<ExtensionsDialog*>(data);
@@ -1053,6 +1049,13 @@ struct ExtensionsDialog : DialogBase {
         for (auto *cb : m_checks)
             if (!cb->value()) { allSel = false; break; }
         m_allBtn->copy_label(I18n::get(allSel ? "settings.deselectall" : "settings.selectall"));
+        // Re-fit the width to the current label and re-anchor it to the OK
+        // button so it never overflows the hover box when the text changes.
+        if (m_okBtn) {
+            m_allBtn->fit();
+            int gap = 8;
+            m_allBtn->position(m_okBtn->x() - gap - m_allBtn->w(), m_allBtn->y());
+        }
         m_allBtn->redraw();
     }
 };
