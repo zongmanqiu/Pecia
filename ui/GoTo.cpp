@@ -1,4 +1,4 @@
-﻿#include "GoTo.h"
+#include "GoTo.h"
 #include "core/Theme.h"
 #include "ui/ThemeWidgets.h"
 
@@ -123,7 +123,7 @@ void GoTo::setTheme(const Theme *theme) {
     if (m_theme) {
         color(m_theme->colors().bgPanel);
         if (m_lineLabel) m_lineLabel->labelcolor(m_theme->colors().textSecondary);
-        if (m_lineInput) { m_lineInput->color(FL_WHITE); m_lineInput->box(FL_BORDER_BOX); m_lineInput->selection_color(m_theme->colors().accentSelection); }
+        if (m_lineInput) { m_lineInput->color(m_theme->colors().bgEditor); m_lineInput->box(FL_BORDER_BOX); m_lineInput->selection_color(m_theme->colors().accentSelection); }
         if (m_btnGo) { m_btnGo->color(m_theme->colors().bgPanel); m_btnGo->selection_color(m_theme->colors().accentSelection); m_btnGo->labelcolor(m_theme->colors().textPrimary); m_btnGo->labelsize(m_fontSize); }
         if (m_btnClose) { m_btnClose->color(m_theme->colors().bgPanel); m_btnClose->selection_color(m_theme->colors().accentSelection); m_btnClose->labelcolor(m_theme->colors().textPrimary); m_btnClose->labelsize(m_fontSize); }
     }

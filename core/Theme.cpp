@@ -1,4 +1,4 @@
-// Theme.cpp - Theme implementation
+// Theme.cpp - Theme implementation (preset-aware: light / dark).
 #include "Theme.h"
 #include "Config.h"
 #include <stdio.h>
@@ -38,7 +38,7 @@ static void writeThemeColor(Config &cfg, const char *key, Fl_Color color) {
     cfg.writeStr(key, buf);
 }
 
-// ---- Light defaults -----------------------------------------------------
+// ---- Light preset (default / current look) --------------------------------
 static ThemeColors lightDefaults() {
     ThemeColors tc;
     tc.bgChrome        = fl_rgb_color(235, 235, 235);
@@ -51,11 +51,39 @@ static ThemeColors lightDefaults() {
     tc.accentSelection = fl_rgb_color(191, 255, 255);
     tc.searchHighlight = fl_rgb_color(255, 191, 255);
     tc.lineHighlight   = fl_rgb_color(255, 255, 191);
-tc.linkHover        = fl_rgb_color(6, 69, 173);   // #0645AD
+    tc.linkHover       = fl_rgb_color(6, 69, 173);   // #0645AD
     tc.hoverBtn        = fl_rgb_color(225, 225, 225);
     tc.hoverClose      = fl_rgb_color(255, 0, 0);
     tc.borderColor     = fl_rgb_color(127, 127, 127);
     return tc;
+}
+
+// ---- Dark preset (modern, low-contrast) -----------------------------------
+static ThemeColors darkDefaults() {
+    ThemeColors tc;
+    // Dark gray chrome/frame, slightly lighter editor, near-white text.
+    tc.bgChrome        = fl_rgb_color(45, 50, 56);
+    tc.scrollbarThumb  = fl_rgb_color(90, 98, 108);
+    tc.scrollbarTrack  = fl_rgb_color(35, 39, 45);
+    tc.bgPanel         = fl_rgb_color(38, 42, 48);
+    tc.bgEditor        = fl_rgb_color(30, 33, 38);
+    tc.textPrimary     = fl_rgb_color(220, 222, 226);
+    tc.textSecondary   = fl_rgb_color(135, 141, 150);
+    tc.accentSelection = fl_rgb_color(70, 120, 200);   // subdued blue selection
+    tc.searchHighlight = fl_rgb_color(120, 70, 150);   // muted magenta
+    tc.lineHighlight   = fl_rgb_color(60, 70, 40);     // muted olive line highlight
+    tc.linkHover       = fl_rgb_color(90, 160, 255);   // brighter link on dark
+    tc.hoverBtn        = fl_rgb_color(60, 66, 74);
+    tc.hoverClose      = fl_rgb_color(200, 45, 50);
+    tc.borderColor     = fl_rgb_color(70, 75, 82);
+    return tc;
+}
+
+bool ThemeColors::applyPreset(const char *name) {
+    if (!name) return false;
+    if (strcmp(name, THEME_PRESET_LIGHT) == 0) { *this = lightDefaults(); return true; }
+    if (strcmp(name, THEME_PRESET_DARK)  == 0) { *this = darkDefaults();  return true; }
+    return false;
 }
 
 // ---- ThemeColors Serialization -------------------------------------------
@@ -98,12 +126,34 @@ void ThemeColors::saveTo(Config &cfg) const {
 
 Theme::Theme() {
     m_colors = lightDefaults();
+    m_preset = THEME_PRESET_LIGHT;
 }
 
+// Load theme: pick the active preset from theme.name, apply its defaults,
+// then let any per-key theme.* value already in the ini override. So a user
+// who hand-edits theme.bg_editor in settings.ini keeps that override while
+// the rest of the colors follow the selected preset.
 void Theme::load(const Config &cfg) {
+    char name[16];
+    cfg.readStr("theme.name", name, sizeof(name), THEME_PRESET_LIGHT);
+    if (!m_colors.applyPreset(name)) {
+        // Unknown preset in ini -> fall back to light and remember it.
+        name[0] = 0;
+        m_colors = lightDefaults();
+        strncpy(name, THEME_PRESET_LIGHT, sizeof(name) - 1);
+        name[sizeof(name) - 1] = 0;
+    }
+    m_preset = name;
     m_colors.loadFrom(cfg);
 }
 
 void Theme::save(Config &cfg) {
+    cfg.writeStr("theme.name", m_preset.c_str());
     m_colors.saveTo(cfg);
+}
+
+void Theme::setPreset(const char *name, Config &cfg) {
+    if (!m_colors.applyPreset(name)) return;   // reject unknown preset
+    m_preset = name ? name : "";
+    cfg.writeStr("theme.name", m_preset.c_str());
 }

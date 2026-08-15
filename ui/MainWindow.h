@@ -224,6 +224,8 @@ public:
     // reloads the I18n table, persists the choice, and refreshes the
     // status bar so the new language takes effect immediately.
     static void cbSetLanguage(Fl_Widget *w, void *data);
+    // Switch the color theme preset (light/dark). user_data = preset name.
+    static void cbSetTheme(Fl_Widget *w, void *data);
     // Open a file from the Recent Files submenu. The index is passed in
     // user_data; we look it up in Config::recentGet().
     static void cbOpenRecent(Fl_Widget *w, void *data);
@@ -488,6 +490,11 @@ public:
     // by another Pecia process.
     void syncFromConfig();
     void scheduleAutoSave();
+
+    // Reload the theme preset from m_cfg and re-colour the whole window
+    // (chrome, menus, status bar, tabs and every open editor). Called by
+    // cbSetTheme and after a settings.ini-driven theme change.
+    void applyThemeColors();
 
     // Persisted scheme
     void applyScheme(const char *name);

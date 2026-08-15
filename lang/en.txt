@@ -61,6 +61,9 @@ menu.view.zoom = Zoom
 menu.view.zoomin = Zoom In
 menu.view.zoomout = Zoom Out
 menu.view.zoomreset = Reset Zoom
+menu.view.theme = Theme
+menu.view.theme.light = Light
+menu.view.theme.dark = Dark
 menu.view.darkmode = Dark Mode
 
 # ── Statistics dialog ──

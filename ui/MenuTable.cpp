@@ -121,6 +121,12 @@ Fl_Menu_Item g_menu[] = {
     { "Zoom In",     FL_COMMAND | '+', MainWindow::cbZoomIn,    nullptr },
     { "Reset Zoom",  FL_COMMAND | '0', MainWindow::cbZoomReset, nullptr },
     { nullptr },
+    // Theme submenu - radio items (like Language/Font). Selects a color
+    // preset (light/dark); the active one is synced from Config on startup.
+    { "Theme", 0, nullptr, nullptr, FL_SUBMENU | FL_MENU_DIVIDER },
+    { "Light", 0, MainWindow::cbSetTheme, (void *)THEME_PRESET_LIGHT, FL_MENU_RADIO },
+    { "Dark",  0, MainWindow::cbSetTheme, (void *)THEME_PRESET_DARK,  FL_MENU_RADIO },
+    { nullptr },
     { "Statistics...",      0, MainWindow::cbStatistics,             nullptr, 0 },
     { nullptr },
 

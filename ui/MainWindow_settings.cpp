@@ -24,6 +24,7 @@
 #include <FL/Fl_Menu_Bar.H>
 #include <FL/Fl_Text_Editor.H>
 #include <FL/Fl_Text_Buffer.H>
+#include <FL/Fl_Output.H>
 #include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 #include <FL/fl_string_functions.h>
@@ -95,6 +96,9 @@ void MainWindow::buildMenuKeys() {
         { "View/Zoom/        Zoom Out",    "menu.view.zoomout" },
         { "View/Zoom/        Zoom In",     "menu.view.zoomin" },
         { "View/Zoom/        Reset Zoom",  "menu.view.zoomreset" },
+        { "View/Theme",            "menu.view.theme" },
+        { "View/Theme/Light",      "menu.view.theme.light" },
+        { "View/Theme/Dark",       "menu.view.theme.dark" },
         { "View/Multi Tab",               "menu.view.multitab" },
 
         { "Tools",                         "menu.tools" },
@@ -178,6 +182,58 @@ void MainWindow::applyLanguageToMenu() {
     m_menu->redraw();
     // Re-translate toolbar button labels too (File, Edit, View, ...).
     updateScriptBarLabels();
+}
+
+// Re-apply the active theme colors to the whole main window: chrome, menus,
+// status bar, tabs, and every open editor. Called after a preset switch.
+void MainWindow::applyThemeColors() {
+    m_theme.load(*m_cfg);   // re-read theme.name + any ini overrides
+
+    // Window root / chrome
+    color(m_theme.colors().bgChrome);
+    m_titleBar->color(m_theme.colors().bgChrome);
+    m_titleBar->setTheme(&m_theme);
+    m_menu->color(m_theme.colors().bgPanel);
+    m_menu->textcolor(m_theme.colors().textPrimary);
+    m_menu->selection_color(m_theme.colors().accentSelection);
+    for (int i = 0; i < m_menu->size(); ++i) {
+        Fl_Menu_Item *item = (Fl_Menu_Item *)m_menu->menu() + i;
+        if (item->text) item->labelcolor(m_theme.colors().textPrimary);
+    }
+    m_status->color(m_theme.colors().bgChrome);
+    m_status->textcolor(m_theme.colors().textPrimary);
+    if (m_scriptBar) {
+        m_scriptBar->color(m_theme.colors().bgChrome);
+        m_scriptBar->selection_color(m_theme.colors().accentSelection);
+        m_scriptBar->textcolor(m_theme.colors().textPrimary);
+    }
+    // In-editor bars pick up the new palette too.
+    if (m_findBar) m_findBar->setTheme(&m_theme);
+    if (m_goToBar) m_goToBar->setTheme(&m_theme);
+    // Tabs background should match the editor so the selection border blends in.
+    m_tabs->color(m_theme.colors().bgEditor);
+    m_tabs->selection_color(m_theme.colors().bgEditor);
+
+    // Every open editor: theme colors + rebuilt highlight style table.
+    for (auto &t : m_tabsList) {
+        if (t.page) t.page->color(m_theme.colors().bgEditor);   // tab page
+        t.editor->setTheme(&m_theme);
+        t.editor->color(m_theme.colors().bgEditor);
+        t.editor->reapplyHighlightData();   // also re-applies line highlight
+        t.editor->redraw();
+    }
+
+    redraw();
+}
+
+// View > Theme - switch the color preset (light/dark).
+void MainWindow::cbSetTheme(Fl_Widget * /*w*/, void *data) {
+    MainWindow *self = static_cast<MainWindow *>(data);
+    if (!self || !data || !self->m_cfg) return;
+    const char *name = (const char *)data;
+    self->m_theme.setPreset(name, *self->m_cfg);   // persist theme.name
+    self->m_theme.save(*self->m_cfg);              // persist the full palette
+    self->applyThemeColors();
 }
 
 // --------------------------------------------------------------------------

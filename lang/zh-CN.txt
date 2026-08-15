@@ -60,6 +60,9 @@ menu.view.zoom = 缩放
 menu.view.zoomin = 放大
 menu.view.zoomout = 缩小
 menu.view.zoomreset = 重置缩放
+menu.view.theme = 主题
+menu.view.theme.light = 亮色
+menu.view.theme.dark = 暗色
 menu.view.darkmode = 深色模式
 
 # ── 统计信息对话框 ──

@@ -263,8 +263,8 @@ MainWindow::MainWindow(int w, int h, const char *title)
     m_tabs->box(FL_FLAT_BOX);   // no inner border; only outer window border remains
     // Use the same background color as the text editor so that any
     // Fl_Tabs selection border area blends in seamlessly.
-    m_tabs->color(FL_BACKGROUND2_COLOR);
-    m_tabs->selection_color(FL_BACKGROUND2_COLOR);
+    m_tabs->color(m_theme.colors().bgEditor);
+    m_tabs->selection_color(m_theme.colors().bgEditor);
     // Disable Fl_Tabs' default resizable (which is itself). With
     // resizable()==this, Fl_Group::resize() re-layouts children using
     // its bounds array, but Fl_Tabs children use window-absolute
@@ -452,6 +452,17 @@ MainWindow::MainWindow(int w, int h, const char *title)
             m_menu->setonly(fi);
             break;
         }
+    }
+
+    // Sync the Theme radio submenu with the persisted preset. Reads the
+    // same theme.name value earlier loaded into m_theme.presetName().
+    {
+        Fl_Menu_Item *themeItem = nullptr;
+        if (strcmp(m_theme.presetName().c_str(), THEME_PRESET_DARK) == 0)
+            themeItem = (Fl_Menu_Item *)m_menu->find_item("View/Theme/Dark");
+        else
+            themeItem = (Fl_Menu_Item *)m_menu->find_item("View/Theme/Light");
+        if (themeItem) m_menu->setonly(themeItem);
     }
 
     // Build the menu-key mapping *before* any translation is applied
