@@ -94,8 +94,8 @@ public:
     // QR image size / gap (must match draw). SVG images are pre-scaled to an
     // Fl_RGB_Image at this resolution so they render fully (Fl_SVG_Image's own
     // on-the-fly downscale can draw only part of the art).
-    static constexpr int kQrSize = 110;
-    static constexpr int kQrGap  = 14;
+    static constexpr int kQrSize = 140;
+    static constexpr int kQrGap  = 16;
 
     AboutPanel(int X, int Y, int W, int H, const Theme *theme, int fs,
                std::vector<std::string> lines)
@@ -252,8 +252,10 @@ public:
 
         end();
         finalizeShell();
-        // Let the panel follow the window width for the show-time fit below.
-        resizable(m_panel);
+        // The panel is explicitly resized to the full window width inside
+        // centerAndShow(); do NOT attach it as the window resizable, otherwise
+        // shrinking the window in centerAndShow() would also shrink the panel
+        // and leave it narrower than the window (content off-centre).
     }
 
     ~AboutDialog() override = default;
@@ -265,6 +267,11 @@ public:
         int want = m_panel ? m_panel->contentWidth() : 0;
         int newW = want > 0 ? want : AboutPanel::kMinW;
         if (newW < AboutPanel::kMinW) newW = AboutPanel::kMinW;
+        // Reference the modal 1px border: the content sits 1px inside the
+        // window, so the panel spans the full width to keep every line and the
+        // QR block centered on the true window centre.
+        const int bd = 1;
+        m_panel->resize(bd, TITLE_H, newW - 2 * bd, h() - TITLE_H - bd);
         size(newW, h());
         position((Fl::w() - newW) / 2, (Fl::h() - h()) / 2);
         show();
