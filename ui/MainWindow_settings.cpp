@@ -227,12 +227,35 @@ void MainWindow::applyThemeColors() {
 }
 
 // View > Theme - switch the color preset (light/dark).
+// NOTE: like every FLTK menu in this project, the item's user_data was
+// overwritten by copy(g_menu, this) to be the MainWindow pointer, so the
+// chosen preset must be identified from the selected item's label text
+// (mirrors cbSetLanguage), NOT from a user_data string. The actual switch
+// is deferred to the next loop tick (s_applyThemeDeferred) so FLTK has
+// finished tearing down the pulldown menu first.
 void MainWindow::cbSetTheme(Fl_Widget * /*w*/, void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
-    if (!self || !data || !self->m_cfg) return;
-    const char *name = (const char *)data;
-    self->m_theme.setPreset(name, *self->m_cfg);   // persist theme.name
-    self->m_theme.save(*self->m_cfg);              // persist the full palette
+    if (!self || !self->m_cfg) return;
+    Fl_Menu_Item *item = (Fl_Menu_Item *)self->m_menu->mvalue();
+    if (!item || !item->text) return;
+    const char *name = THEME_PRESET_LIGHT;
+    if (strstr(item->text, "Dark") || strstr(item->text, "暗")) {
+        name = THEME_PRESET_DARK;
+    } else if (strstr(item->text, "Light") || strstr(item->text, "亮")) {
+        name = THEME_PRESET_LIGHT;
+    }
+    self->m_pendingTheme = name;
+    Fl::remove_timeout(s_applyThemeDeferred, self);
+    Fl::add_timeout(0.0, s_applyThemeDeferred, self);
+}
+
+void MainWindow::s_applyThemeDeferred(void *data) {
+    MainWindow *self = static_cast<MainWindow *>(data);
+    if (!self || self->m_pendingTheme.empty()) return;
+    const std::string name = self->m_pendingTheme;
+    self->m_pendingTheme.clear();
+    self->m_theme.setPreset(name.c_str(), *self->m_cfg);   // persist theme.name
+    self->m_theme.save(*self->m_cfg);                      // persist the palette
     self->applyThemeColors();
 }
 

@@ -549,6 +549,12 @@ public:
     const char *m_pendingLangCode = nullptr;
     static void s_applyLangDeferred(void *data);
 
+    // Deferred theme switch (mirrors the language pattern): the preset is
+    // stashed and applied on the next event-loop tick via the static
+    // callback, so FLTK has fully torn down the pulldown menu first.
+    std::string m_pendingTheme;
+    static void s_applyThemeDeferred(void *data);
+
     // Deferred line-number width refresh (named callback so it can be
     // removed in the destructor; an anonymous lambda timeout would fire on
     // a destroyed 'this' if the window closes within the 0.0s window).
