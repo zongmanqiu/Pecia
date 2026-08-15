@@ -35,6 +35,11 @@ public:
     // registry (called at startup and by the settings.ini watcher).
     void applyShortcuts();
 
+    // Reload the theme from Config and re-apply the palette (window shell,
+    // script editor, output display, buttons). Called by the settings.ini
+    // watcher so the console tracks the main window's View > Theme switch.
+    void retheme();
+
     int handle(int event) FL_OVERRIDE;
     void onCaptionClose() FL_OVERRIDE { cbClose(nullptr, this); }
 

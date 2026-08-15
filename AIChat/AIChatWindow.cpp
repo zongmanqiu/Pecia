@@ -174,6 +174,34 @@ AIChatWindow::AIChatWindow(Config *appCfg,
 // change. Updates button labels, the attach-selection checkbox (label +
 // tooltip), and the title bar. Button widths are re-measured because
 // translations have different lengths.
+void AIChatWindow::retheme() {
+    if (!m_appCfg) return;
+    const Theme &th = DialogBase::retheme(*m_appCfg);   // reload owned theme + shell chrome
+    const ThemeColors &tc = th.colors();
+
+    // Chat display + input editor + checkbox + buttons pick up the palette.
+    if (m_chatDisp) {
+        m_chatDisp->color(tc.bgEditor);
+        m_chatDisp->textcolor(tc.textPrimary);
+        m_chatDisp->selection_color(tc.accentSelection);
+    }
+    if (m_inputEdit) {
+        m_inputEdit->color(tc.bgEditor);
+        m_inputEdit->textcolor(tc.textPrimary);
+        m_inputEdit->selection_color(tc.accentSelection);
+        m_inputEdit->cursor_color(tc.textPrimary);
+    }
+    if (m_attachSel) {
+        m_attachSel->labelcolor(tc.textPrimary);
+        m_attachSel->color(tc.bgChrome);
+        m_attachSel->selection_color(tc.accentSelection);
+    }
+    for (auto *b : { m_sendBtn, m_toDocBtn, m_toLuaBtn, m_clearBtn, m_settingsBtn }) {
+        if (b) b->labelcolor(tc.textPrimary);
+    }
+    redraw();
+}
+
 void AIChatWindow::refreshLabels() {
     if (m_sendBtn)      m_sendBtn->copy_label(I18n::get("chat.send"));
     if (m_toDocBtn)     m_toDocBtn->copy_label(I18n::get("chat.todoc"));

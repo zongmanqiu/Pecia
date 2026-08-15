@@ -51,6 +51,20 @@ DialogBase::~DialogBase() {
     delete m_ownedTheme;   // nullptr in modal/dialog mode (external theme)
 }
 
+const Theme &DialogBase::retheme(const Config &cfg) {
+    if (m_ownedTheme) {
+        m_ownedTheme->load(cfg);
+        // Re-apply the shared shell palette (window bg + title bar).
+        color(m_ownedTheme->colors().bgEditor);
+        if (m_titleBar) {
+            m_titleBar->color(m_ownedTheme->colors().bgChrome);
+            m_titleBar->setTheme(m_ownedTheme);
+        }
+        return *m_ownedTheme;
+    }
+    return *m_theme;   // modal dialog with external theme: nothing to reload
+}
+
 void DialogBase::setCaptionButtons(int mask) {
     if (m_titleBar) m_titleBar->setEnabledButtons(mask);
 }

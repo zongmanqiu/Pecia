@@ -175,6 +175,29 @@ void LuaToolWindow::refreshLabels() {
     redraw();
 }
 
+void LuaToolWindow::retheme() {
+    if (!m_appCfg) return;
+    const Theme &th = DialogBase::retheme(*m_appCfg);   // reload owned theme + shell chrome
+    const ThemeColors &tc = th.colors();
+
+    if (m_scriptEdit) {
+        m_scriptEdit->color(tc.bgEditor);
+        m_scriptEdit->textcolor(tc.textPrimary);
+        m_scriptEdit->selection_color(tc.accentSelection);
+        m_scriptEdit->cursor_color(tc.textPrimary);
+    }
+    if (m_outDisp) {
+        m_outDisp->color(tc.bgEditor);
+        m_outDisp->textcolor(tc.textPrimary);
+        m_outDisp->selection_color(tc.accentSelection);
+    }
+    for (auto *b : { m_runBtn, m_clearBtn, m_saveAsBtn, m_toAiBtn, m_helpBtn }) {
+        if (b) { b->color(tc.bgChrome); b->labelcolor(tc.textPrimary); b->selection_color(tc.accentSelection); }
+    }
+    if (m_outHdr) m_outHdr->labelcolor(tc.textPrimary);
+    redraw();
+}
+
 LuaToolWindow::~LuaToolWindow() {
     Fl::remove_timeout(cursorBlinkCb, this);
     saveScript();

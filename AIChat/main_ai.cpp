@@ -105,6 +105,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmdLine, int) {
         // Shortcut keys may have changed in the main window's
         // Shortcuts dialog: rebuild the local dispatch registry.
         win.applyShortcuts();
+        // The theme may have changed (main window View > Theme): reload
+        // and re-apply the palette so this window stays in sync.
+        win.retheme();
     });
     appCfg.startWatcher();
 

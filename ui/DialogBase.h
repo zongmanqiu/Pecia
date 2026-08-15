@@ -58,6 +58,12 @@ public:
     const Theme *theme() const { return m_theme; }
     int          uiFontSize() const { return m_fontSize; }
 
+    // Tool windows (standalone processes) reload their owned theme from
+    // Config and re-apply the window/title-bar palette. Returns the loaded
+    // theme so subclasses can refresh their own themed widgets; call then
+    // redraw. Modal dialogs (external theme) do nothing.
+    const Theme &retheme(const Config &cfg);
+
     // Override which caption buttons are shown. Tool windows pass
     // TitleBar::BTN_MASK_ALL; simple modal dialogs pass BTN_MASK_CLOSE_ONLY.
     // Per-mode default is already applied; call this to change it.
