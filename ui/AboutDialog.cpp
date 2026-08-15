@@ -63,17 +63,15 @@ Fl_Image *placeholderImage(const char *caption) {
 }
 
 // The entire About content, self-drawn in one widget so nothing can drift.
+// A single centered column of lines (empty entries = blank lines). The first
+// non-empty line is the app title (large), the rest are body lines. QRs sit
+// centered at the bottom. Width adapts to the widest line (with side padding),
+// clamped to a minimum width that fits the QRs.
 class AboutPanel : public Fl_Widget {
 public:
     AboutPanel(int X, int Y, int W, int H, const Theme *theme, int fs,
-               const char *title, const char *tag,
-               std::vector<std::pair<const char *, const char *>> rows,
-               const char *donate)
-        : Fl_Widget(X, Y, W, H), m_theme(theme), m_fs(fs)
-        , m_title(title ? title : ""), m_tag(tag ? tag : "")
-        , m_donate(donate ? donate : "") {
-        for (auto &r : rows)
-            m_rows.push_back({ std::string(r.first), std::string(r.second) });
+               std::vector<std::string> lines)
+        : Fl_Widget(X, Y, W, H), m_theme(theme), m_fs(fs), m_lines(std::move(lines)) {
         box(FL_NO_BOX);
         m_qr0 = loadImage("donate_wechat.png");
         if (!m_qr0) m_qr0 = placeholderImage("WeChat");
@@ -86,66 +84,66 @@ public:
         delete m_qr1;
     }
 
+    static constexpr int kSidePad   = 18;   // min distance from left/right edges
+    static constexpr int kMinW      = 420;  // min width (keeps QRs tidy)
+    static constexpr int kMinH      = 460;
+
+    // Widest line (pixels) at the current font. Called at show time when the
+    // graphics context is ready so fl_measure is reliable.
+    int contentWidth() const {
+        fl_font(FL_HELVETICA, m_fs);
+        int maxW = 0;
+        for (const auto &s : m_lines) {
+            int tw = 0, th = 0;
+            fl_measure(s.c_str(), tw, th);
+            if (tw > maxW) maxW = tw;
+        }
+        return maxW + 2 * kSidePad;
+    }
+
     void draw() FL_OVERRIDE {
-        // All coordinates are relative to this panel (x(), y(), w()), so the
-        // layout never depends on absolute window coordinates.
-        const int cw = w();
-        const int pad = 20;
-        const int rowh = 26;
+        fl_push_clip(x(), y(), w(), h());
+        const int cx = x() + w() / 2;
+        int y = this->y() + 12;
 
-        // 1. Big centered title.
-        fl_font(FL_HELVETICA_BOLD, m_fs + 14);
-        fl_color(m_theme ? m_theme->colors().textPrimary : FL_BLACK);
-        int ty = y() + 26;
-        if (!m_title.empty())
-            fl_draw(m_title.c_str(), x(), ty, cw, m_fs + 14, FL_ALIGN_CENTER);
-
-        // 2. Tagline.
         fl_font(FL_HELVETICA, m_fs);
-        fl_color(m_theme ? m_theme->colors().textSecondary : fl_rgb_color(140, 140, 140));
-        if (!m_tag.empty())
-            fl_draw(m_tag.c_str(), x(), ty + (m_fs + 18), cw, m_fs, FL_ALIGN_CENTER);
-
-        // 3. Info rows: label (secondary, left) + value (primary, right).
-        fl_font(FL_HELVETICA, m_fs);
-        int infoY = y() + (m_fs + 18) + (m_fs + 14) + 30;
-        int colL = x() + pad;
-        int colR = x() + cw - pad;
-        for (size_t i = 0; i < m_rows.size(); ++i) {
-            int ly = infoY + (int)i * rowh + m_fs + 4;
-            fl_color(m_theme ? m_theme->colors().textSecondary : fl_rgb_color(140, 140, 140));
-            fl_draw(m_rows[i].first.c_str(), colL, ly);
-            int vw = (int)fl_width(m_rows[i].second.c_str());
+        for (size_t i = 0; i < m_lines.size(); ++i) {
+            const std::string &s = m_lines[i];
+            if (s.empty()) {
+                y += m_fs / 2 + 4;   // a compact blank line
+                continue;
+            }
+            // First line = app title (large, bold); rest body text.
+            bool isTitle = (i == 0);
+            fl_font(isTitle ? FL_HELVETICA_BOLD : FL_HELVETICA,
+                    isTitle ? m_fs + 14 : m_fs);
             fl_color(m_theme ? m_theme->colors().textPrimary : FL_BLACK);
-            fl_draw(m_rows[i].second.c_str(), colR - vw, ly);
+            fl_draw(s.c_str(), cx - (int)fl_width(s.c_str()) / 2, y + (isTitle ? m_fs + 14 : m_fs));
+            y += (isTitle ? m_fs + 14 : m_fs) + 8;   // line height + small gap
         }
 
-        // 4. Donate (centered).
-        int donateY = infoY + (int)m_rows.size() * rowh + 30;
-        fl_font(FL_HELVETICA, m_fs);
-        fl_color(m_theme ? m_theme->colors().textPrimary : FL_BLACK);
-        if (!m_donate.empty())
-            fl_draw(m_donate.c_str(), x(), donateY, cw, m_fs, FL_ALIGN_CENTER);
-
-        // 5. Two QR images side by side, centered.
+        // Two QR images side by side, centered at the bottom (clipped).
         if (m_qr0 && m_qr1) {
-            const int QR_SZ = 150;
-            const int gap = 16;
-            int totalW = 2 * QR_SZ + gap;
-            int x0 = x() + (cw - totalW) / 2;
-            int qry = donateY + m_fs + 24;
-            fl_color(FL_BLACK);
-            fl_draw_box(FL_FLAT_BOX, x0, qry, QR_SZ, QR_SZ, FL_WHITE);
-            m_qr0->draw(x0, qry, QR_SZ, QR_SZ, 0, 0);
-            m_qr1->draw(x0 + QR_SZ + gap, qry, QR_SZ, QR_SZ, 0, 0);
+            const int QR_SZ = 110;
+            const int qrGap = 14;
+            int totalW = 2 * QR_SZ + qrGap;
+            int x0 = x() + (w() - totalW) / 2;
+            if (x0 >= x() && x0 + totalW <= x() + w()) {
+                y += 10;
+                fl_color(FL_BLACK);
+                fl_draw_box(FL_FLAT_BOX, x0, y, QR_SZ, QR_SZ, FL_WHITE);
+                m_qr0->draw(x0, y, QR_SZ, QR_SZ, 0, 0);
+                fl_draw_box(FL_FLAT_BOX, x0 + QR_SZ + qrGap, y, QR_SZ, QR_SZ, FL_WHITE);
+                m_qr1->draw(x0 + QR_SZ + qrGap, y, QR_SZ, QR_SZ, 0, 0);
+            }
         }
+        fl_pop_clip();
     }
 
 private:
     const Theme *m_theme;
     int m_fs;
-    std::string m_title, m_tag, m_donate;
-    std::vector<std::pair<std::string, std::string>> m_rows;
+    std::vector<std::string> m_lines;
     Fl_Image *m_qr0 = nullptr;
     Fl_Image *m_qr1 = nullptr;
 };
@@ -154,43 +152,71 @@ private:
 class AboutDialog : public DialogBase {
 public:
     AboutDialog(const Theme *theme, int uiFontSize)
-        : DialogBase(500, 600, I18n::get("menu.help.about"),
+        : DialogBase(460, 600, I18n::get("menu.help.about"),
                      theme, uiFontSize, ModalDialog) {
         begin();
         initShell(I18n::get("menu.help.about"));
 
         const int fs = uiFontSize ? uiFontSize : 14;
-        const int W = 500;
-        const int H = 600;
+        const int W = AboutPanel::kMinW;
+        const int H = AboutPanel::kMinH;
 
         const char *appName = I18n::get("app.name");
         std::string title = (appName && *appName && strcmp(appName, "app.name") != 0)
-                                ? std::string(appName) : "Pecia 1.0.0";
+                                ? std::string(appName) : "Pecia";
+        title += " 1.0.0";
         const char *tagRaw = I18n::get("about.tagline");
-        std::string tag = (tagRaw && *tagRaw && strcmp(tagRaw, "about.tagline") != 0)
-                              ? std::string(tagRaw) : "";
-        std::vector<std::pair<const char*, const char*>> rows = {
-            { I18n::get("about.author"),  "邱宗满 (Qiu Zongman)" },
-            { I18n::get("about.email"),   "qiuzongman@foxmail.com" },
-            { I18n::get("about.project"), "https://gitee.com/qiuzongman/pecia" },
-            { I18n::get("about.license"), "AGPL-3.0" },
-            { I18n::get("about.ai"),      "DeepSeek" },
+        std::string slogan = (tagRaw && *tagRaw && strcmp(tagRaw, "about.tagline") != 0)
+                                 ? std::string(tagRaw) : "";
+        bool zh = I18n::currentCode() && strcmp(I18n::currentCode(), "zh-CN") == 0;
+        std::string copyright = zh ? "Copyright © 2025 邱宗满"
+                                   : "Copyright © 2025 Qiu Zongman";
+        std::string license = "Licensed under AGPL-3.0";
+        std::string stack = "Built with C++ & FLTK  \xC2\xB7  AI: DeepSeek";
+        if (zh) stack = "开发工具：C++ & FLTK  \xC2\xB7  AI: DeepSeek";
+        std::string project = "https://gitee.com/qiuzongman/pecia";
+        const char *donateRaw = I18n::get("about.donate");
+        std::string donate = (donateRaw && *donateRaw && strcmp(donateRaw, "about.donate") != 0)
+                                 ? std::string(donateRaw) : "";
+
+        std::vector<std::string> lines = {
+            title,      // 1. name + version
+            slogan,     // 2. slogan
+            "",         // 3. blank
+            copyright,  // 4. copyright w/ author
+            license,    // 5. license
+            "",         // 6. blank
+            stack,      // 7. dev tools + AI
+            "",         // 8. blank
+            project,    // 9. gitee URL
+            "",         // 10. blank
+            donate,     // 11. sponsor
         };
-        const char *donate = I18n::get("about.donate");
-        new AboutPanel(0, TITLE_H, W, H - TITLE_H, theme, fs,
-                       title.c_str(), tag.c_str(), rows,
-                       (donate && *donate && strcmp(donate, "about.donate") != 0) ? donate : "");
+
+        m_panel = new AboutPanel(0, TITLE_H, W, H - TITLE_H, theme, fs, std::move(lines));
 
         end();
         finalizeShell();
+        // Let the panel follow the window width for the show-time fit below.
+        resizable(m_panel);
     }
 
     ~AboutDialog() override = default;
 
     void centerAndShow() {
-        position((Fl::w() - w()) / 2, (Fl::h() - h()) / 2);
+        // Fit the window width to the widest line (measured once the graphics
+        // context is ready), clamped to a minimum that keeps the QRs tidy and
+        // a side margin from the window edges.
+        int want = m_panel ? m_panel->contentWidth() : 0;
+        int newW = want > 0 ? want : AboutPanel::kMinW;
+        if (newW < AboutPanel::kMinW) newW = AboutPanel::kMinW;
+        size(newW, h());
+        position((Fl::w() - newW) / 2, (Fl::h() - h()) / 2);
         show();
     }
+
+private:
+    AboutPanel *m_panel = nullptr;
 };
 
 } // namespace
