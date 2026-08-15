@@ -112,15 +112,20 @@ class AboutPanel : public Fl_Widget {
 public:
     // Width / layout constants (referenced by AboutDialog for window sizing).
     static constexpr int kSidePad  = 10;   // min distance from left/right edges
-    // Minimum window width: must fit the two QRs (2 * kQrSize) plus the QR gap
-    // plus 10px of side padding on each side.
-    static constexpr int kMinW     = 2 * 160 + 5 + 2 * 10;  // = 345
-    static constexpr int kMinH     = 490;
     // QR image size / gap (must match draw). SVG images are pre-scaled to an
     // Fl_RGB_Image at this resolution so they render fully (Fl_SVG_Image's own
     // on-the-fly downscale can draw only part of the art).
     static constexpr int kQrSize = 160;
-    static constexpr int kQrGap  = 5;
+    // Gap between the two QR codes. Kept generous so one code is not
+    // accidentally scanned while aiming at the other.
+    static constexpr int kQrGap  = 28;
+    // Minimum window width: must fit the two QRs (2 * kQrSize) plus the QR gap
+    // plus kSidePad on each side.
+    static constexpr int kMinW     = 2 * kQrSize + kQrGap + 2 * kSidePad;  // = 368
+    static constexpr int kMinH     = 490;
+    // Desired breathing room between the QR block and the window's bottom
+    // border line (used when computing the adaptive window height).
+    static constexpr int kBottomPad = 5;
 
     AboutPanel(int X, int Y, int W, int H, const Theme *theme, int fs,
                std::vector<std::string> lines)
@@ -177,6 +182,29 @@ public:
             if (tw > maxW) maxW = tw;
         }
         return maxW + 2 * kSidePad;
+    }
+
+    // Height of the content (relative to the panel top = top padding + text
+    // lines + QR block), mirroring the exact layout advance logic in draw().
+    // Used by centerAndShow() to size the window so a fixed bottom margin is
+    // kept whatever the font size / title bar height.
+    int contentHeight() const {
+        int y = 12;   // top padding (matches draw()'s starting offset)
+        for (size_t i = 0; i < m_lines.size(); ++i) {
+            const std::string &s = m_lines[i];
+            if (s.empty()) {
+                y += 2 * (m_fs / 2 + 4);
+                continue;
+            }
+            bool isTitle = (i == 0);
+            y += (isTitle ? m_fs + 14 : m_fs) + 8;
+            (void)s;
+        }
+        if (m_qr0 && m_qr1) {
+            // qy = (y at end of last line) + m_fs + 8, then the QR box height.
+            y += m_fs + 8 + kQrSize;
+        }
+        return y;
     }
 
     void draw() FL_OVERRIDE {
@@ -238,7 +266,7 @@ private:
 class AboutDialog : public DialogBase {
 public:
     AboutDialog(const Theme *theme, int uiFontSize)
-        : DialogBase(345, 520, I18n::get("menu.help.about"),
+        : DialogBase(AboutPanel::kMinW, 520, I18n::get("menu.help.about"),
                      theme, uiFontSize, ModalDialog) {
         begin();
         initShell(I18n::get("menu.help.about"));
@@ -305,9 +333,14 @@ public:
         // window, so the panel spans the full width to keep every line and the
         // QR block centered on the true window centre.
         const int bd = 1;
-        m_panel->resize(bd, TITLE_H, newW - 2 * bd, h() - TITLE_H - bd);
-        size(newW, h());
-        position((Fl::w() - newW) / 2, (Fl::h() - h()) / 2);
+        // Size the height from the actual content so the bottom margin stays a
+        // small fixed value regardless of the ui font size / title bar height.
+        const int bottomPad = AboutPanel::kBottomPad;
+        const int ch = m_panel ? m_panel->contentHeight() : AboutPanel::kMinH;
+        const int newH = ch + bottomPad + TITLE_H + 2 * bd;
+        m_panel->resize(bd, TITLE_H, newW - 2 * bd, newH - TITLE_H - bd);
+        size(newW, newH);
+        position((Fl::w() - newW) / 2, (Fl::h() - newH) / 2);
         show();
     }
 
