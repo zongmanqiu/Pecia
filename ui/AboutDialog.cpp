@@ -12,6 +12,7 @@
 
 #include <FL/Fl_Widget.H>
 #include <FL/Fl_PNG_Image.H>
+#include <FL/Fl_SVG_Image.H>
 #include <FL/Fl_Image_Surface.H>
 #include <FL/fl_draw.H>
 #include <FL/platform.H>
@@ -27,23 +28,40 @@
 
 namespace {
 
-// Load exeDir/image/<name> as a Fl_Image*. Returns nullptr if unavailable.
-Fl_Image *loadImage(const char *name) {
+// Load exeDir/image/<base> as a Fl_Image*, trying .svg then .png. The caller
+// passes the URL-encoded base name (no extension). Returns nullptr if absent.
+Fl_Image *loadImageBase(const char *base) {
     wchar_t exe[MAX_PATH];
     wchar_t path[MAX_PATH];
     if (GetModuleFileNameW(nullptr, exe, MAX_PATH) == 0) return nullptr;
     wchar_t *slash = wcsrchr(exe, L'\\');
     if (!slash) return nullptr;
     *(slash + 1) = 0;
-    swprintf(path, MAX_PATH, L"%simage\\%hs", exe, name);
-    if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES) return nullptr;
     char narrow[MAX_PATH * 2];
-    int n = WideCharToMultiByte(CP_UTF8, 0, path, -1, narrow,
-                                (int)sizeof(narrow), nullptr, nullptr);
-    if (n <= 0) return nullptr;
-    Fl_PNG_Image *img = new Fl_PNG_Image(narrow);
-    if (img->w() <= 0) { delete img; return nullptr; }
-    return img;
+    auto narrowize = [&](const wchar_t *p) -> const char * {
+        int n = WideCharToMultiByte(CP_UTF8, 0, p, -1, narrow,
+                                    (int)sizeof(narrow), nullptr, nullptr);
+        return n > 0 ? narrow : nullptr;
+    };
+    swprintf(path, MAX_PATH, L"%simage\\%hs.svg", exe, base);
+    if (GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES) {
+        const char *np = narrowize(path);
+        if (np) {
+            Fl_SVG_Image *img = new Fl_SVG_Image(np);
+            if (img->w() > 0) return img;
+            delete img;
+        }
+    }
+    swprintf(path, MAX_PATH, L"%simage\\%hs.png", exe, base);
+    if (GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES) {
+        const char *np = narrowize(path);
+        if (np) {
+            Fl_PNG_Image *img = new Fl_PNG_Image(np);
+            if (img->w() > 0) return img;
+            delete img;
+        }
+    }
+    return nullptr;
 }
 
 // Placeholder for a missing QR image.
@@ -69,14 +87,30 @@ Fl_Image *placeholderImage(const char *caption) {
 // clamped to a minimum width that fits the QRs.
 class AboutPanel : public Fl_Widget {
 public:
+    // Width / layout constants (referenced by AboutDialog for window sizing).
+    static constexpr int kSidePad  = 18;   // min distance from left/right edges
+    static constexpr int kMinW     = 420;  // min width (keeps QRs tidy)
+    static constexpr int kMinH     = 460;
+    // QR image size / gap (must match draw). SVG images are pre-scaled to an
+    // Fl_RGB_Image at this resolution so they render fully (Fl_SVG_Image's own
+    // on-the-fly downscale can draw only part of the art).
+    static constexpr int kQrSize = 110;
+    static constexpr int kQrGap  = 14;
+
     AboutPanel(int X, int Y, int W, int H, const Theme *theme, int fs,
                std::vector<std::string> lines)
         : Fl_Widget(X, Y, W, H), m_theme(theme), m_fs(fs), m_lines(std::move(lines)) {
         box(FL_NO_BOX);
-        m_qr0 = loadImage("donate_wechat.png");
-        if (!m_qr0) m_qr0 = placeholderImage("WeChat");
-        m_qr1 = loadImage("donate_alipay.png");
-        if (!m_qr1) m_qr1 = placeholderImage("Alipay");
+        m_qr0Name = "微信";
+        m_qr1Name = "支付宝";
+        m_qr0 = qrReady("WeChatPay", m_qr0Name.c_str());
+        m_qr1 = qrReady("ALiPay", m_qr1Name.c_str());
+    }
+
+    // Localized label drawn above each QR (wechatName / alipayName).
+    void setQrCaptions(const char *wechat, const char *alipay) {
+        if (wechat && *wechat) m_qr0Name = wechat;
+        if (alipay && *alipay) m_qr1Name = alipay;
     }
 
     ~AboutPanel() override {
@@ -84,9 +118,20 @@ public:
         delete m_qr1;
     }
 
-    static constexpr int kSidePad   = 18;   // min distance from left/right edges
-    static constexpr int kMinW      = 420;  // min width (keeps QRs tidy)
-    static constexpr int kMinH      = 460;
+    // Build a raster that draws correctly at kQrSize: SVG -> pre-rasterized at
+    // kQrSize (resize() forces the nanosvg rasterization to that resolution,
+    // so drawing it is 1:1 and complete); PNG -> as-is; missing -> placeholder.
+    static Fl_Image *qrReady(const char *base, const char *caption) {
+        Fl_Image *img = loadImageBase(base);
+        if (img) {
+            if (dynamic_cast<Fl_SVG_Image *>(img)) {
+                Fl_SVG_Image *svg = static_cast<Fl_SVG_Image *>(img);
+                svg->resize(kQrSize, kQrSize);
+            }
+            return img;
+        }
+        return placeholderImage(caption);
+    }
 
     // Widest line (pixels) at the current font. Called at show time when the
     // graphics context is ready so fl_measure is reliable.
@@ -122,19 +167,26 @@ public:
             y += (isTitle ? m_fs + 14 : m_fs) + 8;   // line height + small gap
         }
 
-        // Two QR images side by side, centered at the bottom (clipped).
+        // Two QR images side by side, centered at the bottom, each with a
+        // caption above it (clipped to the panel).
         if (m_qr0 && m_qr1) {
-            const int QR_SZ = 110;
-            const int qrGap = 14;
-            int totalW = 2 * QR_SZ + qrGap;
+            const int totalW = 2 * kQrSize + kQrGap;
             int x0 = x() + (w() - totalW) / 2;
             if (x0 >= x() && x0 + totalW <= x() + w()) {
-                y += 10;
+                y += 12;
+                // Captions above each QR (centered over its own QR).
+                fl_font(FL_HELVETICA, m_fs);
+                fl_color(m_theme ? m_theme->colors().textPrimary : FL_BLACK);
+                int cap0 = (int)fl_width(m_qr0Name.c_str());
+                fl_draw(m_qr0Name.c_str(), x0 + kQrSize / 2 - cap0 / 2, y + m_fs);
+                int cap1 = (int)fl_width(m_qr1Name.c_str());
+                fl_draw(m_qr1Name.c_str(), x0 + kQrSize + kQrGap + kQrSize / 2 - cap1 / 2, y + m_fs);
+                int qy = y + m_fs + 8;   // images below the captions
                 fl_color(FL_BLACK);
-                fl_draw_box(FL_FLAT_BOX, x0, y, QR_SZ, QR_SZ, FL_WHITE);
-                m_qr0->draw(x0, y, QR_SZ, QR_SZ, 0, 0);
-                fl_draw_box(FL_FLAT_BOX, x0 + QR_SZ + qrGap, y, QR_SZ, QR_SZ, FL_WHITE);
-                m_qr1->draw(x0 + QR_SZ + qrGap, y, QR_SZ, QR_SZ, 0, 0);
+                fl_draw_box(FL_FLAT_BOX, x0, qy, kQrSize, kQrSize, FL_WHITE);
+                m_qr0->draw(x0, qy, kQrSize, kQrSize, 0, 0);
+                fl_draw_box(FL_FLAT_BOX, x0 + kQrSize + kQrGap, qy, kQrSize, kQrSize, FL_WHITE);
+                m_qr1->draw(x0 + kQrSize + kQrGap, qy, kQrSize, kQrSize, 0, 0);
             }
         }
         fl_pop_clip();
@@ -146,6 +198,7 @@ private:
     std::vector<std::string> m_lines;
     Fl_Image *m_qr0 = nullptr;
     Fl_Image *m_qr1 = nullptr;
+    std::string m_qr0Name, m_qr1Name;
 };
 
 // The dialog itself.
@@ -194,6 +247,8 @@ public:
         };
 
         m_panel = new AboutPanel(0, TITLE_H, W, H - TITLE_H, theme, fs, std::move(lines));
+        // QR captions above each code - always bilingual.
+        m_panel->setQrCaptions("微信 / WeChat", "支付宝 / Alipay");
 
         end();
         finalizeShell();

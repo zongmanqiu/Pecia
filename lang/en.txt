@@ -291,3 +291,5 @@ about.project = Project
 about.license = License
 about.ai = AI Tool
 about.donate = Support me & buy Tokens to keep improving
+about.wechat = WeChat
+about.alipay = Alipay

@@ -288,3 +288,5 @@ about.project = 项目地址
 about.license = 许可
 about.ai = AI工具
 about.donate = 赞助我买Token，继续改进软件
+about.wechat = 微信
+about.alipay = 支付宝
