@@ -281,7 +281,7 @@ errno.12 = 内存不足
 
 settings.cleanuptemp = 清理7天前的临时文件
 settings.group_ui_sys = 界面与系统
-about.tagline = 基于 C++ & FLTK 的轻量文本编辑器
+about.tagline = 小小的，也很可爱
 about.author = 作者
 about.email = 邮箱
 about.project = 项目地址

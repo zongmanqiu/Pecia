@@ -284,7 +284,7 @@ errno.12 = Out of memory
 
 settings.cleanuptemp = Clean temp files older than 7 days
 settings.group_ui_sys = Interface & System
-about.tagline = A lightweight text editor built with C++ & FLTK
+about.tagline = Fun size, fits nice
 about.author = Author
 about.email = Email
 about.project = Project
