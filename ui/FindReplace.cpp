@@ -28,6 +28,18 @@
 // (Shared implementation lives in PassThruInput.h - see GoTo/FindReplace.)
 #include "PassThruInput.h"
 
+namespace {
+
+// The ONE width rule for every Pecia button: HoverButton::fitWidth()
+// (label + 2*kPadX=24, clamped to kMinW=48). Find/Prev/All/Replace buttons
+// must use this too so they match the toolbar, GoTo and Lua/AI buttons —
+// no local fl_width()+padding formulas.
+int hbFit(Fl_Button *b) {
+    return static_cast<HoverButton *>(b)->fitWidth();
+}
+
+}  // namespace
+
 static const int LINE_H = gBarH;   // one bar row (unified height)
 static const int GAP = 6;
 static const int FIELD_H = 22;
@@ -300,7 +312,6 @@ void FindReplace::updateButtonStates() {
 void FindReplace::layout(int w) {
     if (!m_matchCount) return;
 
-    const int BTN_PAD = m_fontSize + 4;
     const int CHK_PAD = 24;
 
     fl_font(FL_HELVETICA, 11);
@@ -316,10 +327,13 @@ void FindReplace::layout(int w) {
     const int labelW = labelOffset(m_fontSize);
     const int replaceInputW = kInputWidth;
 
-    // Calculate widths of all fixed elements on line 1
-    int wNext = (int)fl_width(I18n::get("find.next")) + BTN_PAD;
-    int wPrev = (int)fl_width(I18n::get("find.prev")) + BTN_PAD;
-    int wFindAll = (int)fl_width(I18n::get("find.all")) + BTN_PAD;
+    // Button widths: use the SAME fitWidth() rule as every other Pecia
+    // button (HoverButton: label + 2*kPadX, clamped to kMinW=48), so the
+    // find/prev/all/replace buttons match the toolbar, GoTo and Lua/AI
+    // dialogs exactly instead of a local fl_width+BTN_PAD formula.
+    int wNext = static_cast<HoverButton *>(m_btnNext)->fitWidth();
+    int wPrev = static_cast<HoverButton *>(m_btnPrev)->fitWidth();
+    int wFindAll = static_cast<HoverButton *>(m_btnFindAll)->fitWidth();
     int wCase = (int)fl_width(I18n::get("find.matchcase")) + CHK_PAD;
     int wWhole = (int)fl_width(I18n::get("find.wholeword")) + CHK_PAD;
     int wWrap = (int)fl_width(I18n::get("find.wrap")) + CHK_PAD;
@@ -391,8 +405,8 @@ void FindReplace::layout(int w) {
     m_replaceLabel->resize(cx + 4, m_replaceLabel->y(), labelW - 4, m_replaceLabel->h());
     cx += replaceInputW + GAP;
 
-    int wReplace = (int)fl_width(I18n::get("find.replace")) + BTN_PAD;
-    int wReplaceAll = (int)fl_width(I18n::get("find.replaceall")) + BTN_PAD;
+    int wReplace = hbFit(m_btnReplace);
+    int wReplaceAll = hbFit(m_btnReplaceAll);
 
     if (cx + wReplace + wReplaceAll + GAP <= maxLeftW) {
         m_btnReplace->show();
@@ -451,7 +465,6 @@ void FindReplace::refreshLabels() {
     // Refresh button/checkbox labels after a language change.
     // Also resize them based on the new label width.
     fl_font(FL_HELVETICA, 11);
-    const int BTN_PAD = m_fontSize + 4;
     const int CHK_PAD = 24;
 
     int y1 = m_btnPrev->y();
@@ -461,20 +474,20 @@ void FindReplace::refreshLabels() {
     int cx = m_findInput->x() + m_findInput->w() + GAP;
 
     const char* lblNext = I18n::get("find.next");
-    int wNext = (int)fl_width(lblNext) + BTN_PAD;
     m_btnNext->label(lblNext);
+    int wNext = hbFit(m_btnNext);
     m_btnNext->resize(cx, y1, wNext, m_btnNext->h());
     cx += wNext + GAP;
 
     const char* lblPrev = I18n::get("find.prev");
-    int wPrev = (int)fl_width(lblPrev) + BTN_PAD;
     m_btnPrev->label(lblPrev);
+    int wPrev = hbFit(m_btnPrev);
     m_btnPrev->resize(cx, y1, wPrev, m_btnPrev->h());
     cx += wPrev + GAP;
 
     const char* lblFindAll = I18n::get("find.all");
-    int wFindAll = (int)fl_width(lblFindAll) + BTN_PAD;
     m_btnFindAll->label(lblFindAll);
+    int wFindAll = hbFit(m_btnFindAll);
     m_btnFindAll->resize(cx, y1, wFindAll, m_btnFindAll->h());
     cx += wFindAll + GAP + 6;
 
@@ -503,14 +516,14 @@ void FindReplace::refreshLabels() {
     cx = m_replaceInput->x() + m_replaceInput->w() + GAP;
 
     const char* lblReplace = I18n::get("find.replace");
-    int wReplace = (int)fl_width(lblReplace) + BTN_PAD;
     m_btnReplace->label(lblReplace);
+    int wReplace = hbFit(m_btnReplace);
     m_btnReplace->resize(cx, y2, wReplace, m_btnReplace->h());
     cx += wReplace + GAP;
 
     const char* lblReplaceAll = I18n::get("find.replaceall");
-    int wReplaceAll = (int)fl_width(lblReplaceAll) + BTN_PAD;
     m_btnReplaceAll->label(lblReplaceAll);
+    int wReplaceAll = hbFit(m_btnReplaceAll);
     m_btnReplaceAll->resize(cx, y2, wReplaceAll, m_btnReplaceAll->h());
 
     // Update the hint labels inside the input boxes.
@@ -1169,7 +1182,6 @@ void FindReplace::setFontSize(int sz) {
 
     // Direct resize: recalculate widths at current font size
     fl_font(FL_HELVETICA, m_fontSize);
-    const int BTN_PAD = m_fontSize * 2;
     const int CHK_PAD = m_fontSize + 14;
     int cx = x() + GAP;
 
@@ -1180,9 +1192,9 @@ void FindReplace::setFontSize(int sz) {
     cx += m_findInput->w() + GAP;
 
     // Next, Prev, All
-    int wNext = (int)fl_width(I18n::get("find.next")) + BTN_PAD;
-    int wPrev = (int)fl_width(I18n::get("find.prev")) + BTN_PAD;
-    int wFindAll = (int)fl_width(I18n::get("find.all")) + BTN_PAD;
+    int wNext = hbFit(m_btnNext);
+    int wPrev = hbFit(m_btnPrev);
+    int wFindAll = hbFit(m_btnFindAll);
     m_btnNext->resize(cx, m_btnNext->y(), wNext, m_btnNext->h()); cx += wNext + GAP;
     m_btnPrev->resize(cx, m_btnPrev->y(), wPrev, m_btnPrev->h()); cx += wPrev + GAP;
     m_btnFindAll->resize(cx, m_btnFindAll->y(), wFindAll, m_btnFindAll->h()); cx += wFindAll + GAP;
@@ -1211,8 +1223,8 @@ void FindReplace::setFontSize(int sz) {
     cx = x() + GAP;
     m_replaceInput->resize(cx, m_replaceInput->y(), 120, m_replaceInput->h());
     cx += m_replaceInput->w() + GAP;
-    int wReplace = (int)fl_width(I18n::get("find.replace")) + BTN_PAD;
-    int wReplaceAll = (int)fl_width(I18n::get("find.replaceall")) + BTN_PAD;
+    int wReplace = hbFit(m_btnReplace);
+    int wReplaceAll = hbFit(m_btnReplaceAll);
     m_btnReplace->resize(cx, m_btnReplace->y(), wReplace, m_btnReplace->h());   cx += wReplace + GAP;
     m_btnReplaceAll->resize(cx, m_btnReplaceAll->y(), wReplaceAll, m_btnReplaceAll->h()); cx += wReplaceAll;
 
