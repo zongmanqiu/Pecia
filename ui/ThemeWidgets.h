@@ -12,6 +12,7 @@
 #include <FL/Fl_Scrollbar.H>
 #include <FL/Fl_Button.H>
 #include <FL/Fl_Choice.H>
+#include <FL/Fl_Input.H>
 #include <FL/fl_draw.H>
 #include <initializer_list>
 #include <string>
@@ -202,6 +203,31 @@ public:
         }
 
         draw_label();
+    }
+};
+
+// Single-line input styled like the main window's editor/inputs: bordered,
+// theme background/text and a cursor colour matching the main window's
+// textPrimary. Replaces bare Fl_Input so every dialog input looks (and has
+// the same caret colour as) the main editor.
+class ThemedInput : public Fl_Input {
+public:
+    ThemedInput(int x, int y, int w, int h, const ThemeColors &tc,
+                const char *lbl = nullptr)
+        : Fl_Input(x, y, w, h, lbl) {
+        box(FL_BORDER_BOX);
+        color(tc.bgEditor);
+        textcolor(tc.textPrimary);
+        cursor_color(tc.textPrimary);
+        selection_color(tc.accentSelection);
+    }
+
+    // Re-apply colours from a (possibly newly reloaded) theme.
+    void themify(const ThemeColors &tc) {
+        color(tc.bgEditor);
+        textcolor(tc.textPrimary);
+        cursor_color(tc.textPrimary);
+        selection_color(tc.accentSelection);
     }
 };
 

@@ -294,8 +294,8 @@ public:
         std::string slogan = (tagRaw && *tagRaw && strcmp(tagRaw, "about.tagline") != 0)
                                  ? std::string(tagRaw) : "";
         bool zh = I18n::currentCode() && strcmp(I18n::currentCode(), "zh-CN") == 0;
-        std::string copyright = zh ? "Copyright © 2025 邱宗满"
-                                   : "Copyright © 2025 Qiu Zongman";
+        std::string copyright = zh ? "Copyright © 2026 邱宗满"
+                                   : "Copyright © 2026 Qiu Zongman";
         std::string license = I18n::getOr("about.licenseLine", "Licensed under AGPL-3.0");
         std::string stack = "Built with C++ & FLTK  \xC2\xB7  AI: DeepSeek";
         if (zh) stack = "开发工具：C++ & FLTK  \xC2\xB7  AI: DeepSeek";

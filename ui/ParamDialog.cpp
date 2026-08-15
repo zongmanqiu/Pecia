@@ -137,12 +137,13 @@ ParamDialog::ParamDialog(const char *title,
             m_choices.push_back(ch);
             m_params.push_back(prm);
         } else {
-            Fl_Input *in = new Fl_Input(MARGIN + lblW + GAP, y, IN_W, ROW_H, nullptr);
-            in->box(FL_BORDER_BOX);
+            // Unified themed input: theme background/text/caret/selection
+            // (same look as the main editor and every other Pecia input).
+            ThemeColors tc;
+            if (m_theme) tc = m_theme->colors();
+            else         tc.applyPreset(THEME_PRESET_LIGHT);
+            ThemedInput *in = new ThemedInput(MARGIN + lblW + GAP, y, IN_W, ROW_H, tc, nullptr);
             in->textsize(fs);
-            in->color(theme ? theme->colors().bgEditor : FL_WHITE);
-            in->textcolor(theme ? theme->colors().textPrimary : FL_BLACK);
-            in->selection_color(theme ? theme->colors().accentSelection : FL_SELECTION_COLOR);
             in->value(prm.defValue.c_str());
             in->when(FL_WHEN_ENTER_KEY);   // Enter in an input -> callback
             in->callback(cbKey, this);

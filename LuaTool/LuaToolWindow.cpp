@@ -87,8 +87,9 @@ LuaToolWindow::LuaToolWindow(Config *appCfg,
     m_scriptEdit->textfont(font);
     m_scriptEdit->textsize(fontSize);
     m_scriptEdit->wrap_mode(Fl_Text_Display::WRAP_AT_BOUNDS, 0);
-    m_scriptEdit->color(FL_WHITE);
-    m_scriptEdit->textcolor(FL_BLACK);
+    // NOTE: do NOT override color()/textcolor() here — ThemedTextEditor
+    // already derives theme colors from `tc`, and retheme() re-applies them.
+    // Hard-coding FL_WHITE/FL_BLACK made the console ignore the theme.
 
     Fl_Color chromeCol = tc.bgChrome;
     Fl_Color btnFg = tc.textPrimary;
@@ -133,8 +134,7 @@ LuaToolWindow::LuaToolWindow(Config *appCfg,
     m_outDisp->buffer(m_outBuf);
     m_outDisp->textfont(font);
     m_outDisp->textsize(fontSize);
-    m_outDisp->color(FL_WHITE);
-    m_outDisp->textcolor(FL_BLACK);
+    // Theme colors come from ThemedTextDisplay + retheme(); no white override.
 
     end();
     resizable(m_scriptEdit);

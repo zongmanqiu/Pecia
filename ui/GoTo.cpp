@@ -123,7 +123,7 @@ void GoTo::setTheme(const Theme *theme) {
     if (m_theme) {
         color(m_theme->colors().bgPanel);
         if (m_lineLabel) m_lineLabel->labelcolor(m_theme->colors().textSecondary);
-        if (m_lineInput) { m_lineInput->color(m_theme->colors().bgEditor); m_lineInput->box(FL_BORDER_BOX); m_lineInput->selection_color(m_theme->colors().accentSelection); }
+        if (m_lineInput) { m_lineInput->color(m_theme->colors().bgEditor); m_lineInput->box(FL_BORDER_BOX); m_lineInput->cursor_color(m_theme->colors().textPrimary); m_lineInput->selection_color(m_theme->colors().accentSelection); }
         if (m_btnGo) { m_btnGo->color(m_theme->colors().bgPanel); m_btnGo->selection_color(m_theme->colors().accentSelection); m_btnGo->labelcolor(m_theme->colors().textPrimary); m_btnGo->labelsize(m_fontSize); }
         if (m_btnClose) { m_btnClose->color(m_theme->colors().bgPanel); m_btnClose->selection_color(m_theme->colors().accentSelection); m_btnClose->labelcolor(m_theme->colors().textPrimary); m_btnClose->labelsize(m_fontSize); }
     }
@@ -145,8 +145,10 @@ void GoTo::activate() {
 void GoTo::layout(int w) {
     const int labelW = gotoLabelWidth();
 
-    // Go button width
-    int goW = (int)fl_width(I18n::get("gotoline.go")) + 10;
+    // Go button width - use the same fit() sizing as every other Pecia
+    // button (kPadX padding + kMinW floor) so it matches the toolbar/
+    // Lua/AI buttons instead of a cramped label+"10".
+    int goW = m_btnGo ? static_cast<HoverButton *>(m_btnGo)->fitWidth() : 48;
 
     // Same fixed width as FindReplace 鈥?all three input boxes
     // (Find, Replace, GoTo) are identical.

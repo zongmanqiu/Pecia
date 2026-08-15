@@ -1148,8 +1148,8 @@ void FindReplace::setTheme(const Theme *theme) {
             m_matchCount->textcolor(m_theme->colors().textPrimary);
             m_matchCount->labelcolor(m_theme->colors().textPrimary);
         }
-        if (m_findInput) { m_findInput->color(m_theme->colors().bgEditor); m_findInput->box(FL_BORDER_BOX); m_findInput->selection_color(m_theme->colors().accentSelection); }
-        if (m_replaceInput) { m_replaceInput->color(m_theme->colors().bgEditor); m_replaceInput->box(FL_BORDER_BOX); m_replaceInput->selection_color(m_theme->colors().accentSelection); }
+        if (m_findInput) { m_findInput->color(m_theme->colors().bgEditor); m_findInput->box(FL_BORDER_BOX); m_findInput->cursor_color(m_theme->colors().textPrimary); m_findInput->selection_color(m_theme->colors().accentSelection); }
+        if (m_replaceInput) { m_replaceInput->color(m_theme->colors().bgEditor); m_replaceInput->box(FL_BORDER_BOX); m_replaceInput->cursor_color(m_theme->colors().textPrimary); m_replaceInput->selection_color(m_theme->colors().accentSelection); }
     }
     redraw();
 }

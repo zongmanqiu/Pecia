@@ -599,11 +599,13 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
     m_longLineInput->box(FL_BORDER_BOX);
     m_longLineInput->color(choiceBg);
     m_longLineInput->textcolor(choiceFg);
+    m_longLineInput->cursor_color(choiceFg);   // caret matches the main editor
     m_longLineInput->labelsize(uiFontSize);
     m_longLineInput->selection_color(theme ? theme->colors().accentSelection : FL_SELECTION_COLOR);
     m_searchUrlInput->box(FL_BORDER_BOX);          // 与长行标记同款式
     m_searchUrlInput->color(choiceBg);
     m_searchUrlInput->textcolor(choiceFg);
+    m_searchUrlInput->cursor_color(choiceFg);      // caret matches the main editor
     m_searchUrlInput->labelsize(uiFontSize);
     m_searchUrlInput->selection_color(theme ? theme->colors().accentSelection : FL_SELECTION_COLOR);
 
