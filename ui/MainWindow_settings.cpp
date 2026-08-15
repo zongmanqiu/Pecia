@@ -200,12 +200,21 @@ void MainWindow::applyThemeColors() {
         Fl_Menu_Item *item = (Fl_Menu_Item *)m_menu->menu() + i;
         if (item->text) item->labelcolor(m_theme.colors().textPrimary);
     }
+    m_menu->redraw();
     m_status->color(m_theme.colors().bgChrome);
     m_status->textcolor(m_theme.colors().textPrimary);
+    m_status->redraw();
     if (m_scriptBar) {
         m_scriptBar->color(m_theme.colors().bgChrome);
         m_scriptBar->selection_color(m_theme.colors().accentSelection);
         m_scriptBar->textcolor(m_theme.colors().textPrimary);
+        // Re-colour every script-bar menu item label too, then force a
+        // redraw so the toolbar updates immediately (not just on relaunch).
+        for (int i = 0; i < m_scriptBar->size(); ++i) {
+            Fl_Menu_Item *item = (Fl_Menu_Item *)m_scriptBar->menu() + i;
+            if (item->text) item->labelcolor(m_theme.colors().textPrimary);
+        }
+        m_scriptBar->redraw();
     }
     // In-editor bars pick up the new palette too.
     if (m_findBar) m_findBar->setTheme(&m_theme);

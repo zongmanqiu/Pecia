@@ -119,6 +119,10 @@ public:
     // Gap between the two QR codes. Kept generous so one code is not
     // accidentally scanned while aiming at the other.
     static constexpr int kQrGap  = 28;
+    // White frame thickness drawn around each QR so it stays distinct from
+    // a dark theme background (the QR's white canvas blends into the panel
+    // otherwise).
+    static constexpr int kQrBorder = 2;
     // Minimum window width: must fit the two QRs (2 * kQrSize) plus the QR gap
     // plus kSidePad on each side.
     static constexpr int kMinW     = 2 * kQrSize + kQrGap + 2 * kSidePad;  // = 368
@@ -243,10 +247,17 @@ public:
                 int cap1 = (int)fl_width(m_qr1Name.c_str());
                 fl_draw(m_qr1Name.c_str(), x0 + kQrSize + kQrGap + kQrSize / 2 - cap1 / 2, y + m_fs);
                 int qy = y + m_fs + 8;   // images below the captions
-                fl_color(FL_BLACK);
-                fl_draw_box(FL_FLAT_BOX, x0, qy, kQrSize, kQrSize, FL_WHITE);
+                // Draw each QR with a white frame (kQrBorder px) around it so
+                // the code stays distinct on a dark theme background. The
+                // white frame box is kQrSize + 2*kQrBorder, and the QR art
+                // (kQrSize) sits centred inside it.
+                const int frame0x = x0 - kQrBorder;
+                const int frame1x = x0 + kQrSize + kQrGap - kQrBorder;
+                const int frameY = qy - kQrBorder;
+                const int frameSz = kQrSize + 2 * kQrBorder;
+                fl_draw_box(FL_FLAT_BOX, frame0x, frameY, frameSz, frameSz, FL_WHITE);
+                fl_draw_box(FL_FLAT_BOX, frame1x, frameY, frameSz, frameSz, FL_WHITE);
                 m_qr0->draw(x0, qy, kQrSize, kQrSize, 0, 0);
-                fl_draw_box(FL_FLAT_BOX, x0 + kQrSize + kQrGap, qy, kQrSize, kQrSize, FL_WHITE);
                 m_qr1->draw(x0 + kQrSize + kQrGap, qy, kQrSize, kQrSize, 0, 0);
             }
         }

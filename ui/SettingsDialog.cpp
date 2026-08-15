@@ -557,11 +557,13 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
 
     // Style all checkboxes — same as FindReplace "Match case".
     Fl_Color chkBg = theme ? theme->colors().bgEditor : FL_WHITE;
+    Fl_Color chkFg = theme ? theme->colors().textPrimary : FL_BLACK;
     auto styleChk = [&](Fl_Check_Button *cb) {
         cb->box(FL_NO_BOX);
         cb->down_box(FL_BORDER_BOX);
         cb->color(chkBg);
         cb->selection_color(theme ? theme->colors().accentSelection : FL_SELECTION_COLOR);
+        cb->labelcolor(chkFg);
         cb->labelsize(uiFontSize);
     };
     styleChk(m_autoIndentChk);
@@ -585,17 +587,23 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
 
     // Choice boxes: rectangular flat border
     Fl_Color choiceBg = theme ? theme->colors().bgEditor : FL_WHITE;
+    Fl_Color choiceFg = theme ? theme->colors().textPrimary : FL_BLACK;
     for (auto *ch : { m_tabWidthChoice, m_autoSaveChoice }) {
         ch->box(FL_BORDER_BOX);
         ch->down_box(FL_BORDER_BOX);
         ch->color(choiceBg);
+        ch->textcolor(choiceFg);
         ch->labelsize(uiFontSize);
         ch->selection_color(theme ? theme->colors().accentSelection : FL_SELECTION_COLOR);
     }
     m_longLineInput->box(FL_BORDER_BOX);
+    m_longLineInput->color(choiceBg);
+    m_longLineInput->textcolor(choiceFg);
     m_longLineInput->labelsize(uiFontSize);
     m_longLineInput->selection_color(theme ? theme->colors().accentSelection : FL_SELECTION_COLOR);
     m_searchUrlInput->box(FL_BORDER_BOX);          // 与长行标记同款式
+    m_searchUrlInput->color(choiceBg);
+    m_searchUrlInput->textcolor(choiceFg);
     m_searchUrlInput->labelsize(uiFontSize);
     m_searchUrlInput->selection_color(theme ? theme->colors().accentSelection : FL_SELECTION_COLOR);
 

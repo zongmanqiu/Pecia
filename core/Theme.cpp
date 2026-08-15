@@ -75,7 +75,7 @@ static ThemeColors darkDefaults() {
     tc.linkHover       = fl_rgb_color(90, 160, 255);   // brighter link on dark
     tc.hoverBtn        = fl_rgb_color(60, 66, 74);
     tc.hoverClose      = fl_rgb_color(200, 45, 50);
-    tc.borderColor     = fl_rgb_color(70, 75, 82);
+    tc.borderColor     = fl_rgb_color(120, 126, 134);   // lighter so the 1px frame reads on dark
     return tc;
 }
 

@@ -291,6 +291,6 @@ about.project = 项目地址
 about.license = 许可
 about.licenseLine = 依据 AGPL-3.0 协议许可
 about.ai = AI工具
-about.donate = 赞助我
+about.donate = 赞助
 about.wechat = 微信
 about.alipay = 支付宝

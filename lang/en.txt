@@ -294,6 +294,6 @@ about.project = Project
 about.license = License
 about.licenseLine = Licensed under AGPL-3.0
 about.ai = AI Tool
-about.donate = Sponsor me
+about.donate = Sponsor
 about.wechat = WeChat
 about.alipay = Alipay

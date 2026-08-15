@@ -140,6 +140,7 @@ ParamDialog::ParamDialog(const char *title,
             Fl_Input *in = new Fl_Input(MARGIN + lblW + GAP, y, IN_W, ROW_H, nullptr);
             in->box(FL_BORDER_BOX);
             in->textsize(fs);
+            in->color(theme ? theme->colors().bgEditor : FL_WHITE);
             in->textcolor(theme ? theme->colors().textPrimary : FL_BLACK);
             in->selection_color(theme ? theme->colors().accentSelection : FL_SELECTION_COLOR);
             in->value(prm.defValue.c_str());
