@@ -1,6 +1,17 @@
 cmake_minimum_required(VERSION 3.16)
 project(Pecia VERSION 1.0.0 LANGUAGES C CXX)
 
+# ── Supported target is strictly Windows x64 (64-bit) only. ────────────────
+# The project is deliberately single-platform / single-arch: it uses Windows
+# named pipes, Win32 APIs, .rc resources and FLTK's Win32 backend, and 32-bit
+# x86 support was retired. Hard-fail the configure if someone tries to target
+# anything else so we never silently ship a 32-bit build.
+if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+    message(FATAL_ERROR
+        "Pecia supports only Windows x64 (64-bit). "
+        "Configure with a 64-bit toolchain (e.g. Generator/Ninja -A x64). "
+        "Current pointer size: ${CMAKE_SIZEOF_VOID_P} bytes.")
+endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
