@@ -20,6 +20,7 @@
 #if defined(_WIN32)
 #include <shellapi.h>
 #include <windows.h>
+#include "resource.h"   // ID_QR_WECHAT / ID_QR_ALIPAY (embedded QR SVGs)
 #endif
 
 #include <cstring>
@@ -27,6 +28,28 @@
 #include <vector>
 
 namespace {
+
+// Load an SVG QR code embedded as a Windows RCDATA resource (see pecia.rc and
+// resource.h). Returns an Fl_SVG_Image built from the in-memory bytes, or
+// nullptr if the resource is absent. Fl_SVG_Image copies the data internally,
+// so the transient buffer does not need to outlive this call.
+Fl_Image *loadImageResource(int resid) {
+#if defined(_WIN32)
+    HRSRC hrsc = FindResourceW(nullptr, MAKEINTRESOURCEW(resid), MAKEINTRESOURCEW(10)); // RT_RCDATA
+    if (!hrsc) return nullptr;
+    HGLOBAL hg = LoadResource(nullptr, hrsc);
+    if (!hg) return nullptr;
+    void *data = LockResource(hg);
+    DWORD len = SizeofResource(nullptr, hrsc);
+    if (!data || len == 0) return nullptr;
+    Fl_SVG_Image *img = new Fl_SVG_Image(nullptr, static_cast<const unsigned char *>(data),
+                                         static_cast<size_t>(len));
+    // Construction fails silently into an empty image on a parse error.
+    if (img->w() > 0) return img;
+    delete img;
+#endif
+    return nullptr;
+}
 
 // Load exeDir/image/<base> as a Fl_Image*, trying .svg then .png. The caller
 // passes the URL-encoded base name (no extension). Returns nullptr if absent.
@@ -88,14 +111,16 @@ Fl_Image *placeholderImage(const char *caption) {
 class AboutPanel : public Fl_Widget {
 public:
     // Width / layout constants (referenced by AboutDialog for window sizing).
-    static constexpr int kSidePad  = 18;   // min distance from left/right edges
-    static constexpr int kMinW     = 420;  // min width (keeps QRs tidy)
-    static constexpr int kMinH     = 460;
+    static constexpr int kSidePad  = 10;   // min distance from left/right edges
+    // Minimum window width: must fit the two QRs (2 * kQrSize) plus the QR gap
+    // plus 10px of side padding on each side.
+    static constexpr int kMinW     = 2 * 160 + 5 + 2 * 10;  // = 345
+    static constexpr int kMinH     = 490;
     // QR image size / gap (must match draw). SVG images are pre-scaled to an
     // Fl_RGB_Image at this resolution so they render fully (Fl_SVG_Image's own
     // on-the-fly downscale can draw only part of the art).
-    static constexpr int kQrSize = 140;
-    static constexpr int kQrGap  = 16;
+    static constexpr int kQrSize = 160;
+    static constexpr int kQrGap  = 5;
 
     AboutPanel(int X, int Y, int W, int H, const Theme *theme, int fs,
                std::vector<std::string> lines)
@@ -103,8 +128,8 @@ public:
         box(FL_NO_BOX);
         m_qr0Name = "微信";
         m_qr1Name = "支付宝";
-        m_qr0 = qrReady("WeChatPay", m_qr0Name.c_str());
-        m_qr1 = qrReady("ALiPay", m_qr1Name.c_str());
+        m_qr0 = qrReady(ID_QR_WECHAT, "WeChatPay", m_qr0Name.c_str());
+        m_qr1 = qrReady(ID_QR_ALIPAY, "ALiPay", m_qr1Name.c_str());
     }
 
     // Localized label drawn above each QR (wechatName / alipayName).
@@ -121,12 +146,20 @@ public:
     // Build a raster that draws correctly at kQrSize: SVG -> pre-rasterized at
     // kQrSize (resize() forces the nanosvg rasterization to that resolution,
     // so drawing it is 1:1 and complete); PNG -> as-is; missing -> placeholder.
-    static Fl_Image *qrReady(const char *base, const char *caption) {
-        Fl_Image *img = loadImageBase(base);
+    // Prefers the QR SVG embedded in the exe (resid) and falls back to an
+    // exe-adjacent image/<base> file for compatibility.
+    static Fl_Image *qrReady(int resid, const char *base, const char *caption) {
+        Fl_Image *img = loadImageResource(resid);
         if (img) {
             if (dynamic_cast<Fl_SVG_Image *>(img)) {
-                Fl_SVG_Image *svg = static_cast<Fl_SVG_Image *>(img);
-                svg->resize(kQrSize, kQrSize);
+                static_cast<Fl_SVG_Image *>(img)->resize(kQrSize, kQrSize);
+            }
+            return img;
+        }
+        img = loadImageBase(base);
+        if (img) {
+            if (dynamic_cast<Fl_SVG_Image *>(img)) {
+                static_cast<Fl_SVG_Image *>(img)->resize(kQrSize, kQrSize);
             }
             return img;
         }
@@ -155,7 +188,7 @@ public:
         for (size_t i = 0; i < m_lines.size(); ++i) {
             const std::string &s = m_lines[i];
             if (s.empty()) {
-                y += m_fs / 2 + 4;   // a compact blank line
+                y += 2 * (m_fs / 2 + 4);   // a blank gap worth two empty lines
                 continue;
             }
             // First line = app title (large, bold); rest body text.
@@ -173,8 +206,8 @@ public:
             const int totalW = 2 * kQrSize + kQrGap;
             int x0 = x() + (w() - totalW) / 2;
             if (x0 >= x() && x0 + totalW <= x() + w()) {
-                y += 12;
-                // Captions above each QR (centered over its own QR).
+                // No blank gap between the sponsor line and the QR captions;
+                // the captions sit directly on the following line.
                 fl_font(FL_HELVETICA, m_fs);
                 fl_color(m_theme ? m_theme->colors().textPrimary : FL_BLACK);
                 int cap0 = (int)fl_width(m_qr0Name.c_str());
@@ -205,7 +238,7 @@ private:
 class AboutDialog : public DialogBase {
 public:
     AboutDialog(const Theme *theme, int uiFontSize)
-        : DialogBase(460, 600, I18n::get("menu.help.about"),
+        : DialogBase(345, 520, I18n::get("menu.help.about"),
                      theme, uiFontSize, ModalDialog) {
         begin();
         initShell(I18n::get("menu.help.about"));
@@ -224,7 +257,7 @@ public:
         bool zh = I18n::currentCode() && strcmp(I18n::currentCode(), "zh-CN") == 0;
         std::string copyright = zh ? "Copyright © 2025 邱宗满"
                                    : "Copyright © 2025 Qiu Zongman";
-        std::string license = "Licensed under AGPL-3.0";
+        std::string license = I18n::getOr("about.licenseLine", "Licensed under AGPL-3.0");
         std::string stack = "Built with C++ & FLTK  \xC2\xB7  AI: DeepSeek";
         if (zh) stack = "开发工具：C++ & FLTK  \xC2\xB7  AI: DeepSeek";
         std::string project = "https://gitee.com/qiuzongman/pecia";
@@ -240,15 +273,16 @@ public:
             license,    // 5. license
             "",         // 6. blank
             stack,      // 7. dev tools + AI
-            "",         // 8. blank
-            project,    // 9. gitee URL
-            "",         // 10. blank
-            donate,     // 11. sponsor
+            project,    // 8. gitee URL  (directly under dev tools)
+            "",         // 9. blank
+            donate,     // 10. sponsor
         };
 
         m_panel = new AboutPanel(0, TITLE_H, W, H - TITLE_H, theme, fs, std::move(lines));
-        // QR captions above each code - always bilingual.
-        m_panel->setQrCaptions("微信 / WeChat", "支付宝 / Alipay");
+        // QR captions above each code - one localized word per QR, in the
+        // active interface language only (no bilingual "WeChat / 微信" pairing).
+        m_panel->setQrCaptions(I18n::getOr("about.wechat", "微信"),
+                               I18n::getOr("about.alipay", "支付宝"));
 
         end();
         finalizeShell();

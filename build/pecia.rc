@@ -6,5 +6,10 @@
 // main/image/ holds all image assets; ../image/ resolves from build/.
 IDI_PECIA ICON "../image/pecia.ico"
 
+// Donation QR codes embedded as raw resources so the About dialog loads them
+// from inside the exe (no exe-adjacent image/ folder required at runtime).
+ID_QR_WECHAT RCDATA "../image/WeChatPay.svg"
+ID_QR_ALIPAY RCDATA "../image/ALiPay.svg"
+
 // Application manifest - enable modern controls + UTF-8 active codepage
 1 24 "pecia.manifest"
