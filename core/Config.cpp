@@ -132,6 +132,57 @@ void Config::loadAll(std::vector<std::pair<std::string, std::string>> &entries) 
     }
 }
 
+// Chinese one-line description of a settings.ini key, written as a "# "
+// comment line directly above the key when saveAll() writes the file, so a
+// user opening settings.ini can see what each parameter does. Unknown keys
+// return nullptr (no comment). The parser already ignores '#' lines.
+static const char *configKeyDesc(const char *key) {
+    if (!key) return nullptr;
+    if (strcmp(key,"ai_api_key")==0) return "大模型 API 密钥（留空不发请求）";
+    if (strcmp(key,"ai_endpoint")==0) return "大模型接口地址";
+    if (strcmp(key,"ai_model")==0) return "大模型名称";
+    if (strcmp(key,"always_on_top")==0) return "窗口是否总是置顶 (1=是 0=否)";
+    if (strcmp(key,"auto_indent")==0) return "是否自动缩进 (1=是 0=否)";
+    if (strcmp(key,"auto_save_interval")==0) return "自动保存间隔（秒）";
+    if (strcmp(key,"bar_height")==0) return "标题栏/工具栏高度（像素）";
+    if (strcmp(key,"btn_height")==0) return "按钮高度（像素）";
+    if (strcmp(key,"cleanup_temp_old")==0) return "退出时清理 7 天前的临时文件 (1=是 0=否)";
+    if (strcmp(key,"detect_urls")==0) return "是否自动识别并高亮网址 (1=是 0=否)";
+    if (strcmp(key,"dialog_pad")==0) return "对话框内容边距（像素）";
+    if (strcmp(key,"editor_font")==0) return "编辑器字体名";
+    if (strcmp(key,"expand_tabs_on_save")==0) return "保存时是否把 Tab 转为空格 (1=是 0=否)";
+    if (strcmp(key,"font_id")==0) return "编辑器字体 ID";
+    if (strcmp(key,"font_size")==0) return "编辑器字号";
+    if (strcmp(key,"highlight_current_line")==0) return "是否高亮当前行 (1=是 0=否)";
+    if (strcmp(key,"lang")==0) return "界面语言 (en / zh-CN)";
+    if (strcmp(key,"last_dir")==0) return "上次打开/保存文件的目录";
+    if (strcmp(key,"line_numbers")==0) return "是否显示行号 (1=是 0=否)";
+    if (strcmp(key,"long_line_marker")==0) return "长行标记列数 (0=关闭)";
+    if (strcmp(key,"multi_tab")==0) return "是否启用多标签页 (1=是 0=否)";
+    if (strcmp(key,"open_with_exts")==0) return "加入右键“打开方式”的扩展名（逗号分隔）";
+    if (strcmp(key,"preview_auto_refresh")==0) return "Markdown 预览自动刷新间隔（毫秒，0=关闭）";
+    if (strcmp(key,"preview_scroll_sync")==0) return "预览与编辑滚动是否同步 (1=是 0=否)";
+    if (strcmp(key,"scheme")==0) return "FLTK 界面风格 (gtk+)";
+    if (strcmp(key,"search_engine_url")==0) return "搜索引擎 URL 模板（%s 为选中内容）";
+    if (strcmp(key,"show_statusbar")==0) return "是否显示状态栏 (1=是 0=否)";
+    if (strcmp(key,"show_toolbar")==0) return "是否显示脚本/工具栏 (1=是 0=否)";
+    if (strcmp(key,"show_whitespace")==0) return "是否显示空格符号 (1=是 0=否)";
+    if (strcmp(key,"tab_width")==0) return "Tab 宽度（空格数）";
+    if (strcmp(key,"text_bar_height")==0) return "文字栏高度（像素）";
+    if (strcmp(key,"theme.name")==0) return "当前主题名（颜色见 theme/ 文件夹，如 light/dark/green）";
+    if (strcmp(key,"trim_ending_blank")==0) return "保存时是否删除行尾多余空行 (1=是 0=否)";
+    if (strcmp(key,"trim_leading_blank")==0) return "保存时是否删除行首空行 (1=是 0=否)";
+    if (strcmp(key,"trim_trailing_whitespace")==0) return "保存时是否删除行尾空白 (1=是 0=否)";
+    if (strcmp(key,"ui_font_size")==0) return "界面字号";
+    if (strcmp(key,"win_x")==0) return "主窗口 X 坐标";
+    if (strcmp(key,"win_y")==0) return "主窗口 Y 坐标";
+    if (strcmp(key,"win_w")==0) return "主窗口宽度";
+    if (strcmp(key,"win_h")==0) return "主窗口高度";
+    if (strcmp(key,"win_flags")==0) return "主窗口标志位";
+    if (strcmp(key,"wrap")==0) return "是否自动换行 (1=是 0=否)";
+    return nullptr;
+}
+
 void Config::saveAll() {
     // Make sure the parent directory exists. On a normal install the
     // exe lives in its own directory which is already there, but for
@@ -181,6 +232,8 @@ void Config::saveAll() {
     if (!out.is_open()) return;
     out << "[" << SECTION << "]\n";
     for (const auto &kv : merged) {
+        if (const char *desc = configKeyDesc(kv.first.c_str()))
+            out << "# " << desc << "\n";
         out << kv.first << "=" << kv.second << "\n";
     }
     out.flush();
@@ -203,6 +256,8 @@ void Config::saveAll() {
         if (direct.is_open()) {
             direct << "[" << SECTION << "]\n";
             for (const auto &kv : merged) {
+                if (const char *desc = configKeyDesc(kv.first.c_str()))
+                    direct << "# " << desc << "\n";
                 direct << kv.first << "=" << kv.second << "\n";
             }
             direct.flush();
