@@ -16,6 +16,12 @@ PreviewPanel::PreviewPanel()
     , m_stop(false)
 {
     m_container->set_viewport_size(100, 100);
+    // Wire the container's anchor-scroll callback to the preview view so that
+    // clicking a TOC entry (scrollToAnchor -> on_anchor_click) actually moves
+    // the view. Without this the callback stays null and the jump no-ops.
+    m_container->set_scroll_callback([this](int y) {
+        if (m_view) m_view->scroll_to(y);
+    });
     // 远程图片下载完成 → 重绘预览（下载线程回主线程后触发）
     m_container->set_remote_done_callback([this]() {
         if (m_view) {
@@ -177,8 +183,12 @@ void PreviewPanel::applyResult(const std::string &html, std::vector<PreviewHeadi
 
 void PreviewPanel::scrollToAnchor(const std::string &id)
 {
-    if (m_container && m_view->has_content())
-        m_container->on_anchor_click(id.c_str(), nullptr);
+    // on_anchor_click expects a fragment URL starting with '#'. TOC ids are
+    // bare ("toc-N"), so prepend the '#' here or the jump would silently no-op.
+    if (m_container && m_view->has_content() && !id.empty()) {
+        std::string href = "#" + id;
+        m_container->on_anchor_click(href.c_str(), nullptr);
+    }
 }
 
 void PreviewPanel::setFontScale(float scale)
