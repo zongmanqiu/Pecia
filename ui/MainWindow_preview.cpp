@@ -19,6 +19,7 @@
 #include <FL/Fl_Scroll.H>
 #include <FL/Fl_Tabs.H>
 #include <FL/fl_draw.H>
+#include <FL/fl_utf8.h>
 #include <FL/platform.H>
 #include <shellapi.h>
 
@@ -114,6 +115,11 @@ void MainWindow::cleanupOldTempDirs()
     FindClose(hFind);
 }
 
+namespace {
+constexpr int kPopupW    = 280;  // 目录弹出层固定宽度：6 级缩进下正文仍可见约 8-10 个中文字
+constexpr int kIndentPx  = 4;    // 每级标题横向缩进（像素），替换原来的空格前缀
+} // namespace
+
 // 菜单样式的目录列表控件：主题背景/文字/悬停、行 hover 高亮（原生 FLTK 菜单无滚动条/限高，
 // 自绘控件在 Fl_Scroll 内即可两全：菜单观感 + 限高滚动）。点击行回调。
 class MenuList : public Fl_Widget {
@@ -143,11 +149,12 @@ public:
         fl_rectf(x(), y(), w(), h());
         for (int i = 0; i < (int)items.size(); ++i) {
             int ry = y() + i * rowH;
-            // Heading hierarchy WITHOUT adding theme colors: H1 keeps the
-            // primary text in bold; H2 uses normal primary; H3+ steps down to
-            // the existing secondary text. Indentation comes from the leading
-            // spaces already baked into items (see rebuildPreviewToc).
+            // Heading hierarchy WITHOUT adding theme colors: H1 stays bold
+            // primary, H2 normal primary, H3+ steps down to secondary.
+            // Indentation is drawn as a real pixel offset per level (not
+            // spacer spaces), so long indents no longer inflate popup width.
             int lvl = (i < (int)levels.size() && levels[i] >= 1) ? levels[i] : 1;
+            const int indent = (lvl - 1) * kIndentPx;
             bool bold = (lvl == 1);
             bool sub = (lvl >= 3);
             fl_font(bold ? FL_HELVETICA_BOLD : FL_HELVETICA, 14);
@@ -159,8 +166,47 @@ public:
             } else {
                 fl_color(sub ? fgSub : fg);
             }
-            fl_draw(items[i].c_str(), x() + 8, ry, w() - 16, rowH, FL_ALIGN_LEFT);
+            // Right margin leaves room for the scrollbar; clip long headings
+            // so the popup keeps a stable fixed width (see kPopupW).
+            const int left  = x() + 8 + indent;
+            int avail = x() + w() - 16 - left;
+            if (avail < 8) avail = 8;   // extreme indent guard
+            drawItemCaption(items[i], left, ry, avail, rowH);
         }
+    }
+
+    // Draw one caption, truncating with an ellipsis if it exceeds avail.
+    static void drawItemCaption(const std::string &text, int x0, int y0,
+                                int avail, int h0) {
+        const char *beg = text.c_str();
+        int tw = 0, th = 0;
+        fl_measure(beg, tw, th);
+        if (tw <= avail) {
+            fl_draw(beg, x0, y0, avail, h0, FL_ALIGN_LEFT);
+            return;
+        }
+        // Leave room for an ellipsis and walk UTF-8 chars forward.
+        int ew = 0, eh = 0;
+        fl_measure("\u2026", ew, eh);
+        const int budget = avail - ew < 8 ? 8 : avail - ew;
+        int acc = 0;
+        int n = 0;                       // clipped byte length
+        const char *p = beg;
+        const char *end = beg + text.size();
+        while (p < end) {
+            int len = 1;
+            fl_utf8decode(p, end, &len);   // length of this UTF-8 char
+            std::string one(p, (size_t)len);
+            int cw = 0, ch = 0;
+            fl_measure(one.c_str(), cw, ch);
+            if (acc + cw > budget) break;
+            acc += cw;
+            n += len;
+            p += len;
+        }
+        std::string clipped(beg, n);
+        fl_draw(clipped.c_str(), x0, y0, avail, h0, FL_ALIGN_LEFT);
+        fl_draw("\u2026", x0 + acc, y0, avail - acc, h0, FL_ALIGN_LEFT);
     }
 
     int handle(int e) override {
@@ -712,19 +758,11 @@ void MainWindow::showTocPopup()
         if (m_tocPopup) m_tocPopup->hide();
     };
 
-    // 宽 = 最长项 + 边距（右侧留滚动条空间），高 = min(项数,10) * 行高 + 边框
-    int maxW = 60;
-    fl_font(FL_HELVETICA, 14);
-    for (const auto &l : p->list->items) {
-        int tw = 0, th = 0;
-        fl_measure(l.c_str(), tw, th);
-        if (tw > maxW) maxW = tw;
-    }
+    // 宽固定（长标题在 MenuList::draw 里省略号截断，不撑宽）；右侧留滚动条空间。
+    // 高 = min(项数,10) * 行高 + 边框。
     const int n = (int)p->list->items.size();
     const int shown = n <= 0 ? 1 : (n > 10 ? 10 : n);
-    // Default width at least 200px (taller/indented headings widen it); the
-    // scrollbar sits in the right margin.
-    const int W = maxW + 26 < 200 ? 200 : maxW + 26;
+    const int W = kPopupW;
     const int H = shown * p->list->rowH + 2;
     p->resize(0, 0, W, H);
     p->scroll->resize(0, 0, W, H);
@@ -742,8 +780,10 @@ void MainWindow::showTocPopup()
     p->show();
 }
 
-// 重建目录数据（渲染完成回调，主线程）：标题按层级加缩进前缀存入 m_tocLabels，
-// 锚点 id 存 m_tocIds（showTocPopup 时按行号对应）。
+// 重建目录数据（渲染完成回调，主线程）：标题正文与层级分别存入 m_tocLabels /
+// m_tocLevels，锚点 id 存 m_tocIds（showTocPopup 时按行号对应）。
+// 不再往文本里塞空格缩进——层级改用像素左移（MenuList::draw 的 kIndentPx），
+// 避免长缩进把弹窗宽度撑大。
 void MainWindow::rebuildPreviewToc(const std::vector<PreviewHeading> &headings)
 {
     m_tocLabels.clear();
@@ -754,7 +794,7 @@ void MainWindow::rebuildPreviewToc(const std::vector<PreviewHeading> &headings)
     m_tocIds.reserve(headings.size());
     for (const auto &h : headings) {
         int lv = h.level < 1 ? 1 : (h.level > 6 ? 6 : h.level);
-        m_tocLabels.push_back(std::string((size_t)(lv - 1) * 4, ' ') + h.text);
+        m_tocLabels.push_back(h.text);
         m_tocLevels.push_back(lv);
         m_tocIds.push_back(h.id);
     }
