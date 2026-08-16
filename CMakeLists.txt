@@ -412,6 +412,18 @@ add_dependencies(Pecia pecia_copy_lang)
 add_dependencies(PeciaLua pecia_copy_lang)
 add_dependencies(PeciaAIChat pecia_copy_lang)
 
+# Copy the theme palette files (like lang/ ) so Theme reads them from the
+# exe-adjacent theme/ folder at runtime (settings.ini only records theme.name).
+add_custom_target(pecia_copy_theme ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/theme"
+        "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/theme"
+    COMMENT "Copying theme files to output directory"
+)
+add_dependencies(Pecia pecia_copy_theme)
+add_dependencies(PeciaLua pecia_copy_theme)
+add_dependencies(PeciaAIChat pecia_copy_theme)
+
 # Copy the default Lua scripts (built-in script/ folder shipped in main/)
 # next to the executable. The copy merges into build/script - user-added
 # files are kept; files with the same name as a built-in script get
@@ -758,6 +770,7 @@ set_tests_properties(ui_smoke PROPERTIES TIMEOUT 60)
 
 # The smoke test needs lang/ + the resource header next to its binary.
 add_dependencies(test_ui_smoke pecia_copy_lang)
+add_dependencies(test_ui_smoke pecia_copy_theme)
 
 # ---------------------------------------------------------------------------
 # Tool-window smoke test - constructs the two standalone tool windows
@@ -826,6 +839,7 @@ target_link_libraries(test_ui_tool_smoke PRIVATE
 add_test(NAME ui_tool_smoke COMMAND test_ui_tool_smoke)
 set_tests_properties(ui_tool_smoke PROPERTIES TIMEOUT 60)
 add_dependencies(test_ui_tool_smoke pecia_copy_lang)
+add_dependencies(test_ui_tool_smoke pecia_copy_theme)
 
 # Pipe wire protocol: locks the frame format (4-byte tag + u32 LE length
 # + payload, OK/ERR reply) used by the Lua console Save As -> reload

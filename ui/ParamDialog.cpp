@@ -141,7 +141,7 @@ ParamDialog::ParamDialog(const char *title,
             // (same look as the main editor and every other Pecia input).
             ThemeColors tc;
             if (m_theme) tc = m_theme->colors();
-            else         tc.applyPreset(THEME_PRESET_LIGHT);
+            // else keep ThemeColors defaults (light) as fallback.
             ThemedInput *in = new ThemedInput(MARGIN + lblW + GAP, y, IN_W, ROW_H, tc, nullptr);
             in->textsize(fs);
             in->value(prm.defValue.c_str());

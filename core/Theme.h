@@ -1,8 +1,10 @@
 // Theme.h - Semantic color and style management.
-// Many UI elements deliberately share one color (e.g. bgChrome is the
-// title/menu/status/toolbar/line-number background). The 14 semantic keys
-// map 1:1 to `theme.*` ini keys; a theme preset (light/dark) is just a full
-// set of defaults for those keys, and any key present in the ini overrides it.
+//
+// Theme colors live in per-theme files under exeDir/theme/<name>.txt (like
+// language files under exeDir/lang/). settings.ini only records the chosen
+// theme via `theme.name`; the palette itself comes from the theme file. The
+// built-in light defaults below are only a fallback when a theme file is
+// missing/corrupt, so the app always opens.
 #pragma once
 
 #include <FL/fl_draw.H>
@@ -29,12 +31,10 @@ struct ThemeColors {
     Fl_Color hoverClose       = fl_rgb_color(255, 0, 0);    // close button hover
     Fl_Color borderColor      = fl_rgb_color(127, 127, 127); // window outer border
 
-    // Fill this object with the built-in default values for the named
-    // preset ("light" / "dark"). Returns true on success.
-    bool applyPreset(const char *name);
-
-    void loadFrom(const Config &cfg);
-    void saveTo(Config &cfg) const;
+    // Parse a theme file (key = value lines: bg_chrome = #RRGGBB, ...),
+    // setting only the keys it contains; missing keys keep current values.
+    // Returns the number of keys applied (< 0 on open failure).
+    int loadFromFile(const char *path);
 };
 
 class Theme {
@@ -44,12 +44,17 @@ public:
     const ThemeColors &colors() const { return m_colors; }
     const std::string &presetName() const { return m_preset; }
 
-    // Load theme from Config: reads theme.name, fills the matching preset
-    // defaults, then lets any theme.* key already in the ini override them.
+    // Load from Config: reads theme.name, then reads the matching
+    // exeDir/theme/<name>.txt palette. On a missing/corrupt file, falls
+    // back to the built-in light defaults so the window still opens.
     void load(const Config &cfg);
+
+    // Persist only the theme selection (theme.name). Color values live in
+    // the theme file, not settings.ini.
     void save(Config &cfg);
 
-    // Switch to a named preset and save it (does NOT persist color values).
+    // Switch the selected theme and persist theme.name. Does NOT rewrite
+    // color values (they stay in the theme file).
     void setPreset(const char *name, Config &cfg);
 
 private:

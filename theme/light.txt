@@ -1,0 +1,17 @@
+# Pecia 亮色主题（浅色）
+# 键 = 值，值支持 #RRGGBB 或 R,G,B。缺省键使用内置默认值。
+# 本文件是主题颜色的来源：settings.ini 只记录选择的主题名。
+bg_chrome        = #EBEBEB
+scrollbar_thumb  = #AAAAAA
+scrollbar_track  = #EBEBEB
+bg_panel         = #F5F5F5
+bg_editor        = #FFFFFF
+text_primary     = #000000
+text_secondary   = #AAAAAA
+accent_selection = #BFFFFF
+search_highlight = #FFBFFF
+line_highlight   = #FFFFBF
+link_hover       = #0645AD
+hover_btn        = #E1E1E1
+hover_close      = #FF0000
+border_color     = #7F7F7F

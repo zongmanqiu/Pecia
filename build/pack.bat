@@ -7,10 +7,12 @@ REM contain ONLY what the end user needs:
 REM
 REM   release\<version>\
 REM   |-- Pecia.exe
-REM   `-- lang\          (language files)
+REM   |-- lang\          (language files)
+REM   |-- theme\         (theme color files)
+REM   `-- script\        (default Lua scripts)
 REM
 REM Usage:
-REM   pack.bat            package build\Pecia.exe + lang into release\
+REM   pack.bat            package build\Pecia.exe + lang + theme + script into release\
 REM   pack.bat zip        also produce release\Pecia-<version>.zip
 
 setlocal
@@ -36,9 +38,11 @@ echo === Creating release package %VERSION% ===
 REM Fresh output directory (remove leftovers from a previous pack).
 if exist "%OUT%" rmdir /s /q "%OUT%"
 mkdir "%OUT%\lang"
+mkdir "%OUT%\theme"
 
 copy /y "%BUILD%\Pecia.exe" "%OUT%\Pecia.exe" >nul
 copy /y "%BUILD%\lang\*" "%OUT%\lang\" >nul
+copy /y "%BUILD%\theme\*" "%OUT%\theme\" >nul
 if not exist "%BUILD%\script" mkdir "%BUILD%\script"
 mkdir "%OUT%\script" >nul 2>&1
 copy /y "%BUILD%\script\*" "%OUT%\script\" >nul
@@ -56,13 +60,18 @@ if not exist "%OUT%\lang\en.txt" (
     echo ERROR: language files missing after pack
     exit /b 1
 )
+if not exist "%OUT%\theme\light.txt" (
+    echo ERROR: theme files missing after pack
+    exit /b 1
+)
 
 echo.
 echo === Release package ready ===
 echo %OUT%
 echo Files:
 dir /b "%OUT%"
-echo    lang\  (%OUT%\lang)
+echo    lang\   (%OUT%\lang)
+echo    theme\  (%OUT%\theme)
 
 REM Optional: produce a zip next to the package.
 if /I "%1"=="zip" (

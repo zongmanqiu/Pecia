@@ -1,0 +1,17 @@
+# Pecia 暗色主题（深灰 + 蓝强调）
+# 键 = 值，值支持 #RRGGBB 或 R,G,B。缺省键使用内置默认值。
+# 本文件是主题颜色的来源：settings.ini 只记录选择的主题名。
+bg_chrome        = #2D3238
+scrollbar_thumb  = #5A626C
+scrollbar_track  = #23272D
+bg_panel         = #262A30
+bg_editor        = #1E2126
+text_primary     = #DCDEE2
+text_secondary   = #878D96
+accent_selection = #4678C8
+search_highlight = #784696
+line_highlight   = #3C4628
+link_hover       = #5AA0FF
+hover_btn        = #3C424A
+hover_close      = #C82D32
+border_color     = #787E86

@@ -1,44 +1,62 @@
-// Theme.cpp - Theme implementation (preset-aware: light / dark).
+// Theme.cpp - Theme implementation.
+//
+// Colors come from per-theme files under exeDir/theme/<name>.txt (mirroring
+// exeDir/lang/<code>.txt). settings.ini only stores theme.name (the chosen
+// theme); the actual palette is read from the theme file at load time. The
+// light defaults below are a fallback only, so a missing/corrupt theme file
+// never leaves the app invisible.
 #include "Theme.h"
 #include "Config.h"
+#include <FL/filename.H>   // FL_PATH_MAX
 #include <stdio.h>
 #include <string.h>
 
-static Fl_Color parseHexOrRgb(const char *str, Fl_Color fallback) {
-    if (!str || !*str) return fallback;
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
+// Resolve the directory containing the running executable (same rule as
+// Config::getExeDir / I18n's exeDir) so theme/<name>.txt is found next to
+// the exe regardless of the working directory.
+static std::string exeDir() {
+#if defined(_WIN32)
+    wchar_t wbuf[FL_PATH_MAX] = L"";
+    if (GetModuleFileNameW(nullptr, wbuf, FL_PATH_MAX) > 0) {
+        int len = WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, nullptr, 0, nullptr, nullptr);
+        if (len > 0) {
+            std::string utf8(len - 1, '\0');
+            WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, &utf8[0], len, nullptr, nullptr);
+            auto p = utf8.find_last_of("\\/");
+            if (p != std::string::npos) utf8.resize(p);
+            return utf8;
+        }
+    }
+#endif
+    return std::string();
+}
+
+// Parse a color value: "#RRGGBB" or "R,G,B".
+static bool parseColor(const char *str, Fl_Color &out) {
+    if (!str || !*str) return false;
     if (str[0] == '#') {
         unsigned r = 0, g = 0, b = 0;
-        if (sscanf(str + 1, "%02x%02x%02x", &r, &g, &b) == 3)
-            return fl_rgb_color((uchar)r, (uchar)g, (uchar)b);
-        return fallback;
+        if (sscanf(str + 1, "%02x%02x%02x", &r, &g, &b) == 3) {
+            out = fl_rgb_color((uchar)r, (uchar)g, (uchar)b);
+            return true;
+        }
+        return false;
     }
     int r = 0, g = 0, b = 0;
-    if (sscanf(str, "%d,%d,%d", &r, &g, &b) == 3)
-        return fl_rgb_color((uchar)r, (uchar)g, (uchar)b);
-    return fallback;
+    if (sscanf(str, "%d,%d,%d", &r, &g, &b) == 3) {
+        out = fl_rgb_color((uchar)r, (uchar)g, (uchar)b);
+        return true;
+    }
+    return false;
 }
 
-static void formatHex(Fl_Color c, char *buf, int len) {
-    unsigned char r, g, b;
-    Fl::get_color(c, r, g, b);
-    snprintf(buf, len, "#%02X%02X%02X", (unsigned)r, (unsigned)g, (unsigned)b);
-}
-
-static Fl_Color readThemeColor(const Config &cfg, const char *key, Fl_Color fallback) {
-    char defaultHex[8];
-    formatHex(fallback, defaultHex, sizeof(defaultHex));
-    char val[16];
-    cfg.readStr(key, val, sizeof(val), defaultHex);
-    return parseHexOrRgb(val, fallback);
-}
-
-static void writeThemeColor(Config &cfg, const char *key, Fl_Color color) {
-    char buf[8];
-    formatHex(color, buf, sizeof(buf));
-    cfg.writeStr(key, buf);
-}
-
-// ---- Light preset (default / current look) --------------------------------
+// Built-in light defaults: used as the initial object and as the fallback
+// when a theme file is missing or corrupt. NOT the source of truth — the
+// palette normally comes from exeDir/theme/<name>.txt.
 static ThemeColors lightDefaults() {
     ThemeColors tc;
     tc.bgChrome        = fl_rgb_color(235, 235, 235);
@@ -51,109 +69,103 @@ static ThemeColors lightDefaults() {
     tc.accentSelection = fl_rgb_color(191, 255, 255);
     tc.searchHighlight = fl_rgb_color(255, 191, 255);
     tc.lineHighlight   = fl_rgb_color(255, 255, 191);
-    tc.linkHover       = fl_rgb_color(6, 69, 173);   // #0645AD
+    tc.linkHover       = fl_rgb_color(6, 69, 173);
     tc.hoverBtn        = fl_rgb_color(225, 225, 225);
     tc.hoverClose      = fl_rgb_color(255, 0, 0);
     tc.borderColor     = fl_rgb_color(127, 127, 127);
     return tc;
 }
 
-// ---- Dark preset (modern, low-contrast) -----------------------------------
-static ThemeColors darkDefaults() {
-    ThemeColors tc;
-    // Dark gray chrome/frame, slightly lighter editor, near-white text.
-    tc.bgChrome        = fl_rgb_color(45, 50, 56);
-    tc.scrollbarThumb  = fl_rgb_color(90, 98, 108);
-    tc.scrollbarTrack  = fl_rgb_color(35, 39, 45);
-    tc.bgPanel         = fl_rgb_color(38, 42, 48);
-    tc.bgEditor        = fl_rgb_color(30, 33, 38);
-    tc.textPrimary     = fl_rgb_color(220, 222, 226);
-    tc.textSecondary   = fl_rgb_color(135, 141, 150);
-    tc.accentSelection = fl_rgb_color(70, 120, 200);   // subdued blue selection
-    tc.searchHighlight = fl_rgb_color(120, 70, 150);   // muted magenta
-    tc.lineHighlight   = fl_rgb_color(60, 70, 40);     // muted olive line highlight
-    tc.linkHover       = fl_rgb_color(90, 160, 255);   // brighter link on dark
-    tc.hoverBtn        = fl_rgb_color(60, 66, 74);
-    tc.hoverClose      = fl_rgb_color(200, 45, 50);
-    tc.borderColor     = fl_rgb_color(120, 126, 134);   // lighter so the 1px frame reads on dark
-    return tc;
-}
-
-bool ThemeColors::applyPreset(const char *name) {
-    if (!name) return false;
-    if (strcmp(name, THEME_PRESET_LIGHT) == 0) { *this = lightDefaults(); return true; }
-    if (strcmp(name, THEME_PRESET_DARK)  == 0) { *this = darkDefaults();  return true; }
+// Apply one color key to the matching field. Returns true if the key was
+// recognised and the value parsed; an unrecognised key or a bad value is
+// ignored (so a partial/corrupt key never wipes a colour).
+static bool applyKey(ThemeColors &tc, const char *key, const char *val) {
+    Fl_Color c;
+    if (!parseColor(val, c)) return false;
+    if      (strcmp(key, "bg_chrome")    == 0) { tc.bgChrome      = c; return true; }
+    else if (strcmp(key, "scrollbar_thumb")==0){ tc.scrollbarThumb= c; return true; }
+    else if (strcmp(key, "scrollbar_track")==0){ tc.scrollbarTrack= c; return true; }
+    else if (strcmp(key, "bg_panel")     == 0) { tc.bgPanel       = c; return true; }
+    else if (strcmp(key, "bg_editor")    == 0) { tc.bgEditor      = c; return true; }
+    else if (strcmp(key, "text_primary") == 0) { tc.textPrimary   = c; return true; }
+    else if (strcmp(key, "text_secondary")==0){ tc.textSecondary = c; return true; }
+    else if (strcmp(key, "accent_selection")==0){ tc.accentSelection = c; return true; }
+    else if (strcmp(key, "search_highlight")==0){ tc.searchHighlight = c; return true; }
+    else if (strcmp(key, "line_highlight")==0) { tc.lineHighlight = c; return true; }
+    else if (strcmp(key, "link_hover")   == 0) { tc.linkHover     = c; return true; }
+    else if (strcmp(key, "hover_btn")    == 0) { tc.hoverBtn      = c; return true; }
+    else if (strcmp(key, "hover_close")  == 0) { tc.hoverClose    = c; return true; }
+    else if (strcmp(key, "border_color") == 0) { tc.borderColor   = c; return true; }
     return false;
 }
 
-// ---- ThemeColors Serialization -------------------------------------------
-
-void ThemeColors::loadFrom(const Config &cfg) {
-    bgChrome        = readThemeColor(cfg, "theme.bg_chrome",          bgChrome);
-    scrollbarThumb  = readThemeColor(cfg, "theme.scrollbar_thumb",    scrollbarThumb);
-    scrollbarTrack  = readThemeColor(cfg, "theme.scrollbar_track",    scrollbarTrack);
-    bgPanel         = readThemeColor(cfg, "theme.bg_panel",           bgPanel);
-    bgEditor        = readThemeColor(cfg, "theme.bg_editor",          bgEditor);
-    textPrimary     = readThemeColor(cfg, "theme.text_primary",       textPrimary);
-    textSecondary   = readThemeColor(cfg, "theme.text_secondary",     textSecondary);
-    accentSelection = readThemeColor(cfg, "theme.accent_selection",   accentSelection);
-    searchHighlight = readThemeColor(cfg, "theme.search_highlight",   searchHighlight);
-    lineHighlight   = readThemeColor(cfg, "theme.line_highlight",     lineHighlight);
-    linkHover       = readThemeColor(cfg, "theme.link_hover",          linkHover);
-    hoverBtn        = readThemeColor(cfg, "theme.hover_btn",          hoverBtn);
-    hoverClose      = readThemeColor(cfg, "theme.hover_close",        hoverClose);
-    borderColor     = readThemeColor(cfg, "theme.border_color",       borderColor);
+int ThemeColors::loadFromFile(const char *path) {
+    FILE *fp = path ? fopen(path, "rb") : nullptr;
+    if (!fp) return -1;
+    int applied = 0;
+    char line[256];
+    while (fgets(line, sizeof(line), fp)) {
+        // Skip comments and blank lines.
+        char *p = line;
+        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') ++p;
+        if (*p == 0 || *p == '#') continue;
+        // Split key = value at the first '='.
+        char *eq = strchr(p, '=');
+        if (!eq) continue;
+        *eq = 0;
+        char *key = p;
+        char *val = eq + 1;
+        // Trim key trailing spaces.
+        char *e = key + strlen(key);
+        while (e > key && (e[-1] == ' ' || e[-1] == '\t')) *--e = 0;
+        // Trim val leading spaces.
+        while (*val == ' ' || *val == '\t') ++val;
+        // Trim val trailing spaces/\r/\n.
+        char *ve = val + strlen(val);
+        while (ve > val && (ve[-1] == ' ' || ve[-1] == '\t' || ve[-1] == '\r' || ve[-1] == '\n')) *--ve = 0;
+        if (applyKey(*this, key, val)) ++applied;
+    }
+    fclose(fp);
+    return applied;
 }
-
-void ThemeColors::saveTo(Config &cfg) const {
-    writeThemeColor(cfg, "theme.bg_chrome",          bgChrome);
-    writeThemeColor(cfg, "theme.scrollbar_thumb",    scrollbarThumb);
-    writeThemeColor(cfg, "theme.scrollbar_track",    scrollbarTrack);
-    writeThemeColor(cfg, "theme.bg_panel",           bgPanel);
-    writeThemeColor(cfg, "theme.bg_editor",          bgEditor);
-    writeThemeColor(cfg, "theme.text_primary",       textPrimary);
-    writeThemeColor(cfg, "theme.text_secondary",     textSecondary);
-    writeThemeColor(cfg, "theme.accent_selection",   accentSelection);
-    writeThemeColor(cfg, "theme.search_highlight",   searchHighlight);
-    writeThemeColor(cfg, "theme.line_highlight",     lineHighlight);
-    writeThemeColor(cfg, "theme.link_hover",          linkHover);
-    writeThemeColor(cfg, "theme.hover_btn",          hoverBtn);
-    writeThemeColor(cfg, "theme.hover_close",        hoverClose);
-    writeThemeColor(cfg, "theme.border_color",       borderColor);
-}
-
-// ---- Theme ---------------------------------------------------------------
 
 Theme::Theme() {
     m_colors = lightDefaults();
     m_preset = THEME_PRESET_LIGHT;
 }
 
-// Load theme: pick the active preset from theme.name, apply its defaults,
-// then let any per-key theme.* value already in the ini override. So a user
-// who hand-edits theme.bg_editor in settings.ini keeps that override while
-// the rest of the colors follow the selected preset.
 void Theme::load(const Config &cfg) {
     char name[16];
     cfg.readStr("theme.name", name, sizeof(name), THEME_PRESET_LIGHT);
-    if (!m_colors.applyPreset(name)) {
-        // Unknown preset in ini -> fall back to light and remember it.
-        name[0] = 0;
-        m_colors = lightDefaults();
+    // Only the known built-in themes are accepted; anything else falls back
+    // to light so an unknown theme.name can never hide the UI.
+    if (strcmp(name, THEME_PRESET_DARK) != 0) {
         strncpy(name, THEME_PRESET_LIGHT, sizeof(name) - 1);
         name[sizeof(name) - 1] = 0;
     }
     m_preset = name;
-    m_colors.loadFrom(cfg);
+
+    // Resolve exeDir/theme/<name>.txt; if we cannot find/read it, keep the
+    // light fallback so the app still opens.
+    std::string dir = exeDir();
+    m_colors = lightDefaults();   // start from fallback, then overlay file
+    if (!dir.empty() && name[0]) {
+        char path[FL_PATH_MAX];
+        snprintf(path, sizeof(path), "%s/theme/%s.txt", dir.c_str(), name);
+        m_colors.loadFromFile(path);
+    }
 }
 
 void Theme::save(Config &cfg) {
+    // settings.ini only records which theme is selected. The color values
+    // live in the theme file, so nothing else is persisted here.
     cfg.writeStr("theme.name", m_preset.c_str());
-    m_colors.saveTo(cfg);
 }
 
 void Theme::setPreset(const char *name, Config &cfg) {
-    if (!m_colors.applyPreset(name)) return;   // reject unknown preset
-    m_preset = name ? name : "";
+    if (!name || !*name) return;
+    if (strcmp(name, THEME_PRESET_LIGHT) != 0 && strcmp(name, THEME_PRESET_DARK) != 0)
+        return;   // reject unknown theme
+    m_preset = name;
     cfg.writeStr("theme.name", m_preset.c_str());
 }
