@@ -44,7 +44,12 @@ public:
         for (const Fl_Menu_Item *m = menu()->first(); m->text; m = m->next()) {
             int W = m->measure(0, this) + 16;
             if (i == hl) {
-                fl_draw_box(box(), X, y(), W, h(), selection_color());
+                Fl_Color hc = selection_color();
+                // When a menu is actually open on this item (pressed), darken
+                // the fill so the active menu reads as pressed vs a plain hover.
+                if (m_menuOpen && i == m_highlight && i == hl)
+                    hc = fl_darker(hc);
+                fl_draw_box(box(), X, y(), W, h(), hc);
             }
             // Draw the label centered within the item's full width (W).
             // We bypass m->draw() because it left-aligns with a 3px offset.

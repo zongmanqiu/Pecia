@@ -116,6 +116,11 @@ public:
         Fl_Color c = color();
         if (Fl::belowmouse() == this || Fl::pushed() == this) {
             c = selection_color();
+            // Distinct press feedback: while actually held down, darken the
+            // fill (fl_darker = 67% base + 33% black) so a click reads as a
+            // deeper press than a plain hover.
+            if (Fl::pushed() == this)
+                c = fl_darker(c);
         }
         draw_box(box(), c);
         draw_label();
