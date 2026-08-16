@@ -116,8 +116,7 @@ void MainWindow::cleanupOldTempDirs()
 }
 
 namespace {
-constexpr int kPopupW    = 280;  // 目录弹出层固定宽度：6 级缩进下正文仍可见约 8-10 个中文字
-constexpr int kIndentPx  = 4;    // 每级标题横向缩进（像素），替换原来的空格前缀
+constexpr int kPopupW = 280;  // 目录弹出层固定宽度：6 级缩进下正文仍可见约 8-10 个中文字
 } // namespace
 
 // 菜单样式的目录列表控件：主题背景/文字/悬停、行 hover 高亮（原生 FLTK 菜单无滚动条/限高，
@@ -129,13 +128,21 @@ public:
     std::function<void(int)> onPick;   // 行号（0-based）
     int rowH = 22;
 
-    MenuList(int x, int y, int w, int h, const ThemeColors &tc, const char *cap = nullptr)
-        : Fl_Widget(x, y, w, h, cap), m_tc(tc) {}
+    MenuList(int x, int y, int w, int h, const ThemeColors &tc, int font,
+             const char *cap = nullptr)
+        : Fl_Widget(x, y, w, h, cap), m_tc(tc), m_font(font) {}
 
     // 内容变化后重算自身高度（Fl_Scroll 据此出现滚动条）
     void itemsChanged() {
         size(w(), (int)items.size() * rowH);
         m_hover = -1;
+        redraw();
+    }
+
+    // Update the monospace face (called when the user changes it mid-session).
+    void setFont(int font) {
+        if (m_font == font) return;
+        m_font = font;
         redraw();
     }
 
@@ -147,17 +154,22 @@ public:
         // Whole area = the preview toolbar background (bgChrome).
         fl_color(bg);
         fl_rectf(x(), y(), w(), h());
+        // Indent = (level-1) × 4 ASCII columns, measured in the editor's
+        // monospace face so every level steps by a clear "4-letter / 2-CJK
+        //  char" gap regardless of which font the user picked.
+        int kw = 0, kh = 0;
+        fl_font(m_font, 14);
+        fl_measure("mmmm", kw, kh);
+        if (kw < 4) kw = 4;   // safety floor
         for (int i = 0; i < (int)items.size(); ++i) {
             int ry = y() + i * rowH;
             // Heading hierarchy WITHOUT adding theme colors: H1 stays bold
             // primary, H2 normal primary, H3+ steps down to secondary.
-            // Indentation is drawn as a real pixel offset per level (not
-            // spacer spaces), so long indents no longer inflate popup width.
             int lvl = (i < (int)levels.size() && levels[i] >= 1) ? levels[i] : 1;
-            const int indent = (lvl - 1) * kIndentPx;
+            const int indent = (lvl - 1) * kw;
             bool bold = (lvl == 1);
             bool sub = (lvl >= 3);
-            fl_font(bold ? FL_HELVETICA_BOLD : FL_HELVETICA, 14);
+            fl_font(bold ? (m_font | FL_BOLD) : m_font, 14);
             if (i == m_hover) {
                 fl_color(hover);
                 fl_rectf(x(), ry, w(), rowH);
@@ -234,6 +246,7 @@ public:
 
 private:
     const ThemeColors &m_tc;
+    int m_font;                 // 编辑器等宽字体 face（与正文一致，缩进按它测量）
     int m_hover = -1;
 };
 
@@ -247,8 +260,8 @@ public:
     Fl_Scroll *scroll;
     MenuList *list;
 
-    TocPopup(const ThemeColors &tc)
-        : Fl_Double_Window(0, 0, 200, 100), m_tc(tc) {
+    TocPopup(const ThemeColors &tc, int font)
+        : Fl_Double_Window(0, 0, kPopupW, 100), m_tc(tc), m_font(font) {
         // Force a true borderless popup (no title bar / native frame) so it
         // reads as a dropdown list attached to the preview toolbar, not as a
         // separate titled window.
@@ -256,7 +269,7 @@ public:
         box(FL_NO_BOX);
         // Background matches the preview toolbar (bgChrome).
         color(tc.bgChrome);
-        scroll = new Fl_Scroll(0, 0, 200, 100);
+        scroll = new Fl_Scroll(0, 0, kPopupW, 100);
         scroll->box(FL_FLAT_BOX);
         scroll->color(tc.bgChrome);
         scroll->scrollbar_size(10);
@@ -264,7 +277,7 @@ public:
         // look as every other Pecia scrollbar (ToolChrome, settings, etc.).
         styleToolScrollbar(&scroll->scrollbar, FL_VERT_SLIDER, tc);
         styleToolScrollbar(&scroll->hscrollbar, FL_HOR_SLIDER, tc);
-        list = new MenuList(0, 0, 200, 100, tc);
+        list = new MenuList(0, 0, kPopupW, 100, tc, font);
         scroll->end();
     }
 
@@ -288,6 +301,7 @@ public:
 
 private:
     const ThemeColors &m_tc;
+    int m_font;                 // 编辑器字体（透传给 MenuList）
 };
 
 namespace {
@@ -741,7 +755,16 @@ void MainWindow::cbPreviewTocBtn(Fl_Widget * /*w*/, void *data)
 void MainWindow::showTocPopup()
 {
     if (!m_preview || !m_previewBar) return;
-    if (!m_tocPopup) m_tocPopup = new TocPopup(m_theme.colors());
+    // Indent / face of every row follows the editor's monospace font.
+    int fontId = FL_COURIER, fontSz = 16;
+    if (m_cfg) m_cfg->getFont(fontId, fontSz);
+    if (!m_tocPopup) {
+        m_tocPopup = new TocPopup(m_theme.colors(), fontId);
+        m_tocPopupFont = fontId;
+    } else if (fontId != m_tocPopupFont) {  // user changed the font mid-session
+        m_tocPopupFont = fontId;
+        m_tocPopup->list->setFont(fontId);
+    }
     TocPopup *p = m_tocPopup;
 
     p->list->items.clear();
