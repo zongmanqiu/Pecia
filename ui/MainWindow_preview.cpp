@@ -180,6 +180,12 @@ public:
     MenuList *list;
 
     TocPopup() : Fl_Menu_Window(0, 0, 200, 100) {
+        // Force a true borderless popup (no title bar / native frame) so it
+        // reads as a dropdown list attached to the preview toolbar, not as a
+        // separate titled window. Without this, Fl_Menu_Window would render
+        // with a normal caption in some FLTK/OS combinations.
+        border(0);
+        box(FL_NO_BOX);
         scroll = new Fl_Scroll(0, 0, 200, 100);
         scroll->box(FL_FLAT_BOX);
         scroll->color(FL_WHITE);
