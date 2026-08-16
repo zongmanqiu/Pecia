@@ -291,7 +291,7 @@ private:
     HoverMenuBar   *m_previewBar = nullptr;  // 预览顶部按钮栏（与主菜单同样式）
     std::vector<Fl_Menu_Item> m_previewBarItems; // 按钮栏菜单项：{刷新},{目录},{nullptr}
     class TocPopup *m_tocPopup = nullptr;    // 目录弹出面板（限高+滚动条）
-    int             m_tocPopupFont = -1;     // 目录面板当前等宽字体（-1=尚未创建）
+    int             m_tocPopupFontSize = -1; // 目录面板当前界面字号（-1=尚未创建）
     std::vector<Fl_Menu_Item> m_tocMenu;     // 目录菜单项（末尾 {nullptr} 终止）
     std::vector<std::string> m_tocLabels;    // 菜单项文本（text 指针指向其 c_str，先 reserve 保地址稳定）
     std::vector<int>         m_tocLevels;    // 与 m_tocLabels 平行的标题层级（1..6，决定缩进/字重/主次色）

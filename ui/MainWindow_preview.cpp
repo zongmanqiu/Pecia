@@ -129,9 +129,9 @@ public:
     std::function<void(int)> onPick;   // 行号（0-based）
     int rowH = 22;
 
-    MenuList(int x, int y, int w, int h, const ThemeColors &tc, int font,
+    MenuList(int x, int y, int w, int h, const ThemeColors &tc, int uiFontSize,
              const char *cap = nullptr)
-        : Fl_Widget(x, y, w, h, cap), m_tc(tc), m_font(font) {}
+        : Fl_Widget(x, y, w, h, cap), m_tc(tc), m_uiFontSize(uiFontSize) {}
 
     // 内容变化后重算自身高度（Fl_Scroll 据此出现滚动条）
     void itemsChanged() {
@@ -140,10 +140,10 @@ public:
         redraw();
     }
 
-    // Update the monospace face (called when the user changes it mid-session).
-    void setFont(int font) {
-        if (m_font == font) return;
-        m_font = font;
+    // Update the UI font size (called when the user changes it mid-session).
+    void setFontSize(int uiFontSize) {
+        if (m_uiFontSize == uiFontSize) return;
+        m_uiFontSize = uiFontSize;
         redraw();
     }
 
@@ -155,13 +155,13 @@ public:
         // Whole area = the preview toolbar background (bgChrome).
         fl_color(bg);
         fl_rectf(x(), y(), w(), h());
-        // Indent = (level-1) × 4 ASCII columns, measured in the editor's
-        // monospace face so every level steps by a clear "4-letter / 2-CJK
-        //  char" gap regardless of which font the user picked.
+        // Indent per level = 2 CJK-char widths, measured in the same UI face
+        // used everywhere else (consistent with menus/dialogs). The popup font
+        // is the shared UI font (FL_HELVETICA + ui font size).
         int kw = 0, kh = 0;
-        fl_font(m_font, 14);
-        fl_measure("mmmm", kw, kh);
-        if (kw < 4) kw = 4;   // safety floor
+        fl_font(FL_HELVETICA, m_uiFontSize);
+        fl_measure("\u6c49\u6c49", kw, kh);   // "汉汉" = 2 汉字宽
+        if (kw < 4) kw = 4;                    // safety floor
         for (int i = 0; i < (int)items.size(); ++i) {
             int ry = y() + i * rowH;
             // Heading hierarchy WITHOUT adding theme colors: H1 stays bold
@@ -170,7 +170,7 @@ public:
             const int indent = (lvl - 1) * kw;
             bool bold = (lvl == 1);
             bool sub = (lvl >= 3);
-            fl_font(bold ? (m_font | FL_BOLD) : m_font, 14);
+            fl_font(bold ? FL_HELVETICA_BOLD : FL_HELVETICA, m_uiFontSize);
             if (i == m_hover) {
                 fl_color(hover);
                 fl_rectf(x(), ry, w(), rowH);
@@ -247,7 +247,7 @@ public:
 
 private:
     const ThemeColors &m_tc;
-    int m_font;                 // 编辑器等宽字体 face（与正文一致，缩进按它测量）
+    int m_uiFontSize;           // Pecia 统一界面字号（与菜单/对话框一致）
     int m_hover = -1;
 };
 
@@ -261,8 +261,8 @@ public:
     Fl_Scroll *scroll;
     MenuList *list;
 
-    TocPopup(const ThemeColors &tc, int font)
-        : Fl_Double_Window(0, 0, kPopupW, 100), m_tc(tc), m_font(font) {
+    TocPopup(const ThemeColors &tc, int uiFontSize)
+        : Fl_Double_Window(0, 0, kPopupW, 100), m_tc(tc), m_uiFontSize(uiFontSize) {
         // Force a true borderless popup (no title bar / native frame) so it
         // reads as a dropdown list attached to the preview toolbar, not as a
         // separate titled window.
@@ -279,7 +279,7 @@ public:
         // look as every other Pecia scrollbar (ToolChrome, settings, etc.).
         styleToolScrollbar(&scroll->scrollbar, FL_VERT_SLIDER, tc);
         styleToolScrollbar(&scroll->hscrollbar, FL_HOR_SLIDER, tc);
-        list = new MenuList(0, 0, kPopupW, 100, tc, font);
+        list = new MenuList(0, 0, kPopupW, 100, tc, uiFontSize);
         scroll->end();
     }
 
@@ -317,7 +317,7 @@ public:
 
 private:
     const ThemeColors &m_tc;
-    int m_font;                 // 编辑器字体（透传给 MenuList）
+    int m_uiFontSize;           // Pecia 统一界面字号（透传给 MenuList）
 };
 
 namespace {
@@ -771,15 +771,15 @@ void MainWindow::cbPreviewTocBtn(Fl_Widget * /*w*/, void *data)
 void MainWindow::showTocPopup()
 {
     if (!m_preview || !m_previewBar) return;
-    // Indent / face of every row follows the editor's monospace font.
-    int fontId = FL_COURIER, fontSz = 16;
-    if (m_cfg) m_cfg->getFont(fontId, fontSz);
+    // The popup shares the same UI font size as every other Pecia dialog /
+    // menu bar (ui_font_size), not the code editor's face.
+    const int uiFontSize = m_cfg ? m_cfg->getUiFontSize() : 16;
     if (!m_tocPopup) {
-        m_tocPopup = new TocPopup(m_theme.colors(), fontId);
-        m_tocPopupFont = fontId;
-    } else if (fontId != m_tocPopupFont) {  // user changed the font mid-session
-        m_tocPopupFont = fontId;
-        m_tocPopup->list->setFont(fontId);
+        m_tocPopup = new TocPopup(m_theme.colors(), uiFontSize);
+        m_tocPopupFontSize = uiFontSize;
+    } else if (uiFontSize != m_tocPopupFontSize) {  // user changed it mid-session
+        m_tocPopupFontSize = uiFontSize;
+        m_tocPopup->list->setFontSize(uiFontSize);
     }
     TocPopup *p = m_tocPopup;
 
