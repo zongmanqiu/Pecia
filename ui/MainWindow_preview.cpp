@@ -116,7 +116,8 @@ void MainWindow::cleanupOldTempDirs()
 }
 
 namespace {
-constexpr int kPopupW = 280;  // 目录弹出层固定宽度：6 级缩进下正文仍可见约 8-10 个中文字
+constexpr int kPopupW = 340;  // 目录弹出层固定宽度：6 级缩进下正文仍可见足够多的中文字，
+                              // 更长标题在 MenuList::draw 里省略号截断（不撑宽、不溢出）
 } // namespace
 
 // 菜单样式的目录列表控件：主题背景/文字/悬停、行 hover 高亮（原生 FLTK 菜单无滚动条/限高，
@@ -270,6 +271,7 @@ public:
         // Background matches the preview toolbar (bgChrome).
         color(tc.bgChrome);
         scroll = new Fl_Scroll(0, 0, kPopupW, 100);
+        scroll->type(Fl_Scroll::VERTICAL);   // 只允许垂直滚动，取消底部水平滚动条
         scroll->box(FL_FLAT_BOX);
         scroll->color(tc.bgChrome);
         scroll->scrollbar_size(10);
