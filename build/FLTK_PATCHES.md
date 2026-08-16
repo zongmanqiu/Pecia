@@ -450,8 +450,8 @@ Lua 脚本 / AI 插入会逐字符/逐操作产生几十条独立撤销记录，
 
 ### 现象
 下拉菜单中的复选项（如“状态栏”“Word Wrap”等）勾框是
-“边框 + 打勾”样式；而 Find 栏的 Match Case 复选框是
-**选中时方框整体填满高亮色、未选时只有空边框透明**，视觉语言不一致。
+“边框 + 打勾”样式；而 Find 栏的 Match Case 复选框（以及所有选项类）
+是**选中时方框整体填充、未选时透明空框**，视觉语言不一致。
 
 ### 修改文件
 `src/Fl_Menu.cxx`（与 Patch 1/2/3/5 同一文件）
@@ -473,35 +473,44 @@ Lua 脚本 / AI 插入会逐字符/逐操作产生几十条独立撤销记录，
 }
 ```
 
-**修改后**（选中填色、未选空框，匹配 Fl_Check_Button + FL_BORDER_BOX）：
+**修改后**（未选透明空框、选中填边框色）：
 ```cpp
 } else { // FL_MENU_TOGGLE && ! FL_MENU_RADIO
-  // Filled square box (matches the find bar "Match Case" check box):
-  // unchecked = hollow border, checked = the box is filled with the
-  // menu's selection (highlight) colour. No checkmark is drawn.
-  Fl_Color cb_col = value() ? (m ? m->selection_color() : FL_SELECTION_COLOR)
-                            : FL_BACKGROUND2_COLOR;
-  fl_draw_box(FL_BORDER_BOX, x+2, y+d, W, W, cb_col);
+  // Matches the find bar "Match Case" check box:
+  //   unchecked = transparent box with only a border (FL_BORDER_FRAME,
+  //   black outline, no fill);
+  //   checked   = the box is filled with the border color, i.e. opaque
+  //   black (FL_BORDER_BOX fills in its argument and outlines in FL_BLACK).
+  if (value()) {
+    fl_draw_box(FL_BORDER_BOX, x+2, y+d, W, W, FL_BLACK);
+  } else {
+    fl_draw_box(FL_BORDER_FRAME, x+2, y+d, W, W, FL_BLACK);
+  }
   x += W + 3;
   w -= W + 3;
 }
 ```
 
 ### 原因
-`Fl_Check_Button`（Find 栏 Match Case）在 `down_box(FL_BORDER_BOX)` 时，
-`Fl_Light_Button::draw()` 走 default 分支：
-`draw_box(FL_BORDER_BOX, ..., value() ? selection_color() : color())`——
-选中＝方框填 `selection_color`，未选＝`color()`（透明空框），**不画勾**。
-菜单复选项改为同一套逻辑，勾框样式与 Find 栏完全一致。
+`FL_BORDER_BOX`（`fl_rectbound`）的绘制是：先以传入色 `bgcolor` 填充整块，
+再以 `FL_BLACK` 画 1px 边框。所有选项类的统一逻辑是：
+**未选 = 透明空框（只画边框、无填充）**，**选中 = 填充色 = 边框色（黑）**。
+这与 Find 栏 `Fl_Check_Button` + `down_box(FL_BORDER_BOX)` 的行为一致：
+`Fl_Light_Button::draw()` 的 default 分支 `draw_box(FL_BORDER_BOX, ..., value() ? selection_color() : color())`，
+且 `Fl_Check_Button` 默认 `selection_color(FL_FOREGROUND_COLOR)`（黑）——选中即黑块。
+
+未选用 `FL_BORDER_FRAME`（`fl_border_frame`，只 `fl_rect` 描边、不填充），
+保证真正“透明”，在深浅色主题下都不受菜单背景影响。
 
 `FL_MENU_RADIO`（单选）保持原“方框 + 圆点”画法，未改动。
 
 ### 如何应用到新版本 FLTK
 1. 打开新版本的 `src/Fl_Menu.cxx`
-2. 将 `FL_MENU_TOGGLE && !FL_MENU_RADIO` 分支改为上述“选中填色、未选空框”逻辑
+2. 将 `FL_MENU_TOGGLE && !FL_MENU_RADIO` 分支改为上述“未选透明空框、
+   选中填边框色（黑）”逻辑
 3. 重新编译 FLTK 库，再构建 Pecia
 
 ### 验证
 - 构建：15/15 单测通过（build.bat 全量）。
-- 打开任意包含复选项的下拉菜单：选中项方框填高亮色、未选项空框，
-  与 Find 栏 Match Case 视觉效果一致。
+- 打开任意包含复选项的下拉菜单：未选项为透明空框（黑边）、
+  选中项为黑色实心方框，与 Find 栏 Match Case 视觉效果一致。
