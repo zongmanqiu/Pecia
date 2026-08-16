@@ -11,6 +11,7 @@
 #include "mdview/preview_panel.h"
 #include "ui/HoverMenuBar.h"
 #include "ui/Layout.h"   // MENU_H
+#include "ui/ThemeWidgets.h"  // styleToolScrollbar / drawToolScrollbar（统一滚动条）
 #include <FL/Fl.H>
 #include <FL/Fl_Browser.H>
 #include <FL/Fl_Menu_Item.H>
@@ -212,15 +213,21 @@ public:
         scroll = new Fl_Scroll(0, 0, 200, 100);
         scroll->box(FL_FLAT_BOX);
         scroll->color(tc.bgChrome);
-        // Scrollbar styled exactly like Pecia's flat theme scrollbars
-        // (10px, no arrows, thumb/track from the theme).
         scroll->scrollbar_size(10);
-        scroll->scrollbar.type(FL_VERT_SLIDER);
-        scroll->scrollbar.box(FL_FLAT_BOX);
-        scroll->scrollbar.color(tc.scrollbarThumb);
-        scroll->scrollbar.selection_color(tc.scrollbarTrack);
+        // Scrollbar uses the exact same shared styling + custom-drawn flat
+        // look as every other Pecia scrollbar (ToolChrome, settings, etc.).
+        styleToolScrollbar(&scroll->scrollbar, FL_VERT_SLIDER, tc);
+        styleToolScrollbar(&scroll->hscrollbar, FL_HOR_SLIDER, tc);
         list = new MenuList(0, 0, 200, 100, tc);
         scroll->end();
+    }
+
+    // Draw children first, then overlay-draw the scrollbar in Pecia's flat
+    // theme style (track + thumb) instead of FLTK's native slider groove.
+    void draw() FL_OVERRIDE {
+        Fl_Double_Window::draw();
+        drawToolScrollbar(&scroll->scrollbar, false, m_tc);
+        drawToolScrollbar(&scroll->hscrollbar, true, m_tc);
     }
 
     // 点击面板外部 → 关闭
