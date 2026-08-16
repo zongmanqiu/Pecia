@@ -113,7 +113,7 @@ void MainWindow::cleanupOldTempDirs()
     FindClose(hFind);
 }
 
-// 菜单样式的目录列表控件：白底、行 hover 高亮（原生 FLTK 菜单无滚动条/限高，
+// 菜单样式的目录列表控件：主题背景/文字/悬停、行 hover 高亮（原生 FLTK 菜单无滚动条/限高，
 // 自绘控件在 Fl_Scroll 内即可两全：菜单观感 + 限高滚动）。点击行回调。
 class MenuList : public Fl_Widget {
 public:
@@ -121,7 +121,8 @@ public:
     std::function<void(int)> onPick;   // 行号（0-based）
     int rowH = 22;
 
-    MenuList(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
+    MenuList(int x, int y, int w, int h, const ThemeColors &tc, const char *cap = nullptr)
+        : Fl_Widget(x, y, w, h, cap), m_tc(tc) {}
 
     // 内容变化后重算自身高度（Fl_Scroll 据此出现滚动条）
     void itemsChanged() {
@@ -131,16 +132,23 @@ public:
     }
 
     void draw() override {
-        fl_color(FL_WHITE);
+        Fl_Color bg = m_tc.bgChrome;
+        Fl_Color fg = m_tc.textPrimary;
+        Fl_Color hover = m_tc.accentSelection;
+        // Whole area = the preview toolbar background (bgChrome).
+        fl_color(bg);
         fl_rectf(x(), y(), w(), h());
         fl_font(FL_HELVETICA, 14);
         for (int i = 0; i < (int)items.size(); ++i) {
             int ry = y() + i * rowH;
             if (i == m_hover) {
-                fl_color(0xD0, 0xE0, 0xF0);   // 浅蓝 hover（菜单风格）
+                fl_color(hover);
                 fl_rectf(x(), ry, w(), rowH);
+                // keep the label legible over the hover fill
+                fl_color(fl_contrast(fg, hover));
+            } else {
+                fl_color(fg);
             }
-            fl_color(FL_BLACK);
             fl_draw(items[i].c_str(), x() + 8, ry, w() - 16, rowH, FL_ALIGN_LEFT);
         }
     }
@@ -169,27 +177,39 @@ public:
     }
 
 private:
+    const ThemeColors &m_tc;
     int m_hover = -1;
 };
 
 // 目录弹出面板：Fl_Menu_Window（点击外部自动关闭）+ Fl_Scroll（限高+滚动条）
 // + MenuList（菜单样式列表）。高度限制见 showTocPopup（最多 10 行）。
+// 颜色与预览工具栏（bgChrome/textPrimary/accentSelection）及主编辑器滚动条完全一致。
 class TocPopup : public Fl_Menu_Window {
 public:
     Fl_Scroll *scroll;
     MenuList *list;
 
-    TocPopup() : Fl_Menu_Window(0, 0, 200, 100) {
+    TocPopup(const ThemeColors &tc)
+        : Fl_Menu_Window(0, 0, 200, 100), m_tc(tc) {
         // Force a true borderless popup (no title bar / native frame) so it
         // reads as a dropdown list attached to the preview toolbar, not as a
         // separate titled window. Without this, Fl_Menu_Window would render
         // with a normal caption in some FLTK/OS combinations.
         border(0);
         box(FL_NO_BOX);
+        // Background matches the preview toolbar (bgChrome).
+        color(tc.bgChrome);
         scroll = new Fl_Scroll(0, 0, 200, 100);
         scroll->box(FL_FLAT_BOX);
-        scroll->color(FL_WHITE);
-        list = new MenuList(0, 0, 200, 100);
+        scroll->color(tc.bgChrome);
+        // Scrollbar styled exactly like Pecia's flat theme scrollbars
+        // (10px, no arrows, thumb/track from the theme).
+        scroll->scrollbar_size(10);
+        scroll->scrollbar.type(FL_VERT_SLIDER);
+        scroll->scrollbar.box(FL_FLAT_BOX);
+        scroll->scrollbar.color(tc.scrollbarThumb);
+        scroll->scrollbar.selection_color(tc.scrollbarTrack);
+        list = new MenuList(0, 0, 200, 100, tc);
         scroll->end();
     }
 
@@ -202,6 +222,9 @@ public:
         }
         return Fl_Menu_Window::handle(e);
     }
+
+private:
+    const ThemeColors &m_tc;
 };
 
 namespace {
@@ -654,7 +677,7 @@ void MainWindow::cbPreviewTocBtn(Fl_Widget * /*w*/, void *data)
 void MainWindow::showTocPopup()
 {
     if (!m_preview || !m_previewBar) return;
-    if (!m_tocPopup) m_tocPopup = new TocPopup();
+    if (!m_tocPopup) m_tocPopup = new TocPopup(m_theme.colors());
     TocPopup *p = m_tocPopup;
 
     p->list->items.clear();
@@ -679,7 +702,9 @@ void MainWindow::showTocPopup()
     }
     const int n = (int)p->list->items.size();
     const int shown = n <= 0 ? 1 : (n > 10 ? 10 : n);
-    const int W = maxW + 26;
+    // Default width at least 200px (taller/indented headings widen it); the
+    // scrollbar sits in the right margin.
+    const int W = maxW + 26 < 200 ? 200 : maxW + 26;
     const int H = shown * p->list->rowH + 2;
     p->resize(0, 0, W, H);
     p->scroll->resize(0, 0, W, H);
