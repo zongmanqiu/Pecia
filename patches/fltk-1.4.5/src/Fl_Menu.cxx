@@ -329,13 +329,16 @@ void Fl_Menu_Item::draw(int x, int y, int w, int h, const Fl_Menu_* m,
       x += W;     // no extra gap between the radio dot and the label
       w -= W;
     } else { // FL_MENU_TOGGLE && ! FL_MENU_RADIO
-      // Matches the find bar "Match Case" check box:
+      // Matches the find bar "Match Case" check box / all Pecia option boxes:
       //   unchecked = transparent box with only a border (FL_BORDER_FRAME,
-      //   black outline, no fill);
-      //   checked   = the box is filled with the border color, i.e. opaque
-      //   black (FL_BORDER_BOX fills in its argument and outlines in FL_BLACK).
+      //   no fill);
+      //   checked   = the box is filled with the menu's selection (highlight)
+      //   colour — the same accent colour used for buttons on hover and for
+      //   text selection (Fl_Check_Button sets selection_color() to
+      //   accentSelection). FL_BORDER_BOX keeps its black outline.
       if (value()) {
-        fl_draw_box(FL_BORDER_BOX, x+2, y+d, W, W, FL_BLACK);
+        fl_draw_box(FL_BORDER_BOX, x+2, y+d, W, W,
+                    (m ? m->selection_color() : FL_SELECTION_COLOR));
       } else {
         fl_draw_box(FL_BORDER_FRAME, x+2, y+d, W, W, FL_BLACK);
       }
