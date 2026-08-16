@@ -329,11 +329,12 @@ void Fl_Menu_Item::draw(int x, int y, int w, int h, const Fl_Menu_* m,
       x += W;     // no extra gap between the radio dot and the label
       w -= W;
     } else { // FL_MENU_TOGGLE && ! FL_MENU_RADIO
-      // Flat bordered checkbox + check (chosen style: flat square box).
-      fl_draw_box(FL_BORDER_BOX, x+2, y+d, W, W, FL_BACKGROUND2_COLOR);
-      if (value()) {
-        fl_draw_check(Fl_Rect(x+3, y+d+1, W-2, W-2), check_color);
-      }
+      // Filled square box (matches the find bar "Match Case" check box):
+      // unchecked = hollow border, checked = the box is filled with the
+      // menu's selection (highlight) colour. No checkmark is drawn.
+      Fl_Color cb_col = value() ? (m ? m->selection_color() : FL_SELECTION_COLOR)
+                                : FL_BACKGROUND2_COLOR;
+      fl_draw_box(FL_BORDER_BOX, x+2, y+d, W, W, cb_col);
       x += W + 3;
       w -= W + 3;
     }

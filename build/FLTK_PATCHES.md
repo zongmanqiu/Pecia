@@ -1,4 +1,4 @@
-﻿# FLTK Patches（本项目对 FLTK 源码的修改记录）
+# FLTK Patches（本项目对 FLTK 源码的修改记录）
 
 本文件记录 Pecia 项目对第三方依赖 FLTK 源码的所有修改。
 **目的**：将来若升级/替换 FLTK 版本，可按本文件逐条重新应用这些修改。
@@ -443,3 +443,65 @@ Lua 脚本 / AI 插入会逐字符/逐操作产生几十条独立撤销记录，
 2. 按上述 7 点移植（头文件声明 + 成员 + 事件标记 + undo/redo 循环 +
    apply 期间不记录历史 + 合并边界条件）
 3. 重新编译 FLTK 库，再重建 Pecia
+
+---
+
+## Patch 7：菜单复选项改为 Fill 式方框（对齐 Find 栏 Match Case）（2026-08）
+
+### 现象
+下拉菜单中的复选项（如“状态栏”“Word Wrap”等）勾框是
+“边框 + 打勾”样式；而 Find 栏的 Match Case 复选框是
+**选中时方框整体填满高亮色、未选时只有空边框透明**，视觉语言不一致。
+
+### 修改文件
+`src/Fl_Menu.cxx`（与 Patch 1/2/3/5 同一文件）
+
+### 修改内容
+**位置**：`Fl_Menu_Item::draw()` 中 `FL_MENU_TOGGLE && !FL_MENU_RADIO` 分支
+（原约第 331-339 行）。
+
+**修改前**（方框 + 打勾）：
+```cpp
+} else { // FL_MENU_TOGGLE && ! FL_MENU_RADIO
+  // Flat bordered checkbox + check (chosen style: flat square box).
+  fl_draw_box(FL_BORDER_BOX, x+2, y+d, W, W, FL_BACKGROUND2_COLOR);
+  if (value()) {
+    fl_draw_check(Fl_Rect(x+3, y+d+1, W-2, W-2), check_color);
+  }
+  x += W + 3;
+  w -= W + 3;
+}
+```
+
+**修改后**（选中填色、未选空框，匹配 Fl_Check_Button + FL_BORDER_BOX）：
+```cpp
+} else { // FL_MENU_TOGGLE && ! FL_MENU_RADIO
+  // Filled square box (matches the find bar "Match Case" check box):
+  // unchecked = hollow border, checked = the box is filled with the
+  // menu's selection (highlight) colour. No checkmark is drawn.
+  Fl_Color cb_col = value() ? (m ? m->selection_color() : FL_SELECTION_COLOR)
+                            : FL_BACKGROUND2_COLOR;
+  fl_draw_box(FL_BORDER_BOX, x+2, y+d, W, W, cb_col);
+  x += W + 3;
+  w -= W + 3;
+}
+```
+
+### 原因
+`Fl_Check_Button`（Find 栏 Match Case）在 `down_box(FL_BORDER_BOX)` 时，
+`Fl_Light_Button::draw()` 走 default 分支：
+`draw_box(FL_BORDER_BOX, ..., value() ? selection_color() : color())`——
+选中＝方框填 `selection_color`，未选＝`color()`（透明空框），**不画勾**。
+菜单复选项改为同一套逻辑，勾框样式与 Find 栏完全一致。
+
+`FL_MENU_RADIO`（单选）保持原“方框 + 圆点”画法，未改动。
+
+### 如何应用到新版本 FLTK
+1. 打开新版本的 `src/Fl_Menu.cxx`
+2. 将 `FL_MENU_TOGGLE && !FL_MENU_RADIO` 分支改为上述“选中填色、未选空框”逻辑
+3. 重新编译 FLTK 库，再构建 Pecia
+
+### 验证
+- 构建：15/15 单测通过（build.bat 全量）。
+- 打开任意包含复选项的下拉菜单：选中项方框填高亮色、未选项空框，
+  与 Find 栏 Match Case 视觉效果一致。
