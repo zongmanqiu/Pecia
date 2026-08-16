@@ -1,0 +1,16 @@
+# red 主题 (源自 lx-music 的 primary 主色, 亮色)
+# 键 = 值, 值支持 #RRGGBB 或 R,G,B
+bg_chrome        = #FAE9E8
+scrollbar_thumb  = #E89997
+scrollbar_track  = #F9E3E3
+bg_panel         = #FCF2F2
+bg_editor        = #FFFFFF
+text_primary     = #212121
+text_secondary   = #9CA3AF
+accent_selection = #EDABAA
+search_highlight = #F7DAD9
+line_highlight   = #F9E5E4
+link_hover       = #8B2D2A
+hover_btn        = #F7DAD9
+hover_close      = #E03232
+border_color     = #E68F8D

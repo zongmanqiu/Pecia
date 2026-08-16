@@ -1,0 +1,16 @@
+# orange 主题 (源自 lx-music 的 primary 主色, 亮色)
+# 键 = 值, 值支持 #RRGGBB 或 R,G,B
+bg_chrome        = #FEF5E7
+scrollbar_thumb  = #FAD190
+scrollbar_track  = #FEF2E1
+bg_panel         = #FEF9F1
+bg_editor        = #FFFFFF
+text_primary     = #212121
+text_secondary   = #9CA3AF
+accent_selection = #FBD9A4
+search_highlight = #FDEED7
+line_highlight   = #FEF3E3
+link_hover       = #9F6F22
+hover_btn        = #FDEED7
+hover_close      = #E03232
+border_color     = #F9CD86

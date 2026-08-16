@@ -1,0 +1,16 @@
+# blue2 主题 (源自 lx-music 的 primary 主色, 亮色)
+# 键 = 值, 值支持 #RRGGBB 或 R,G,B
+bg_chrome        = #EAECF9
+scrollbar_thumb  = #9EA9E5
+scrollbar_track  = #E5E7F8
+bg_panel         = #F3F4FC
+bg_editor        = #FFFFFF
+text_primary     = #212121
+text_secondary   = #9CA3AF
+accent_selection = #B0B8EA
+search_highlight = #DCE0F6
+line_highlight   = #E6E9F8
+link_hover       = #334087
+hover_btn        = #DCE0F6
+hover_close      = #E03232
+border_color     = #95A1E3

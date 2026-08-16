@@ -1,0 +1,16 @@
+# purple 主题 (源自 lx-music 的 primary 主色, 亮色)
+# 键 = 值, 值支持 #RRGGBB 或 R,G,B
+bg_chrome        = #F3EBF6
+scrollbar_thumb  = #C8A4D7
+scrollbar_track  = #F0E6F4
+bg_panel         = #F8F3FA
+bg_editor        = #FFFFFF
+text_primary     = #212121
+text_secondary   = #9CA3AF
+accent_selection = #D2B4DE
+search_highlight = #EBDEF0
+line_highlight   = #F1E8F5
+link_hover       = #653A76
+hover_btn        = #EBDEF0
+hover_close      = #E03232
+border_color     = #C39BD3

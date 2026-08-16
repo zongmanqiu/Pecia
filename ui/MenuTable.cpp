@@ -121,13 +121,19 @@ Fl_Menu_Item g_menu[] = {
     { "Zoom In",     FL_COMMAND | '+', MainWindow::cbZoomIn,    nullptr },
     { "Reset Zoom",  FL_COMMAND | '0', MainWindow::cbZoomReset, nullptr },
     { nullptr },
-    // Theme submenu - fixed radio items (like Language/Font). Selects the
-    // active theme (light/dark); the theme NAME maps to a theme/*.txt file.
-    // (Kept as plain radio items instead of a dynamic submenu to avoid the
-    // FL_SUBMENU_POINTER lifetime hazards seen during menu rendering.)
+    // Theme submenu - fixed radio items (like Language). Each item's label
+    // is a theme file stem in theme/ (which is also theme.name); pick it to
+    // switch to that theme. Kept as plain radio items (not a dynamic
+    // submenu) for stability.
     { "Theme", 0, nullptr, nullptr, FL_SUBMENU | FL_MENU_DIVIDER },
-    { "Light", 0, MainWindow::cbSetTheme, nullptr, FL_MENU_RADIO },
-    { "Dark",  0, MainWindow::cbSetTheme, nullptr, FL_MENU_RADIO },
+    { "light", 0, MainWindow::cbSetTheme, nullptr, FL_MENU_RADIO },
+    { "dark",  0, MainWindow::cbSetTheme, nullptr, FL_MENU_RADIO },
+    { "green", 0, MainWindow::cbSetTheme, nullptr, FL_MENU_RADIO },
+    { "blue2", 0, MainWindow::cbSetTheme, nullptr, FL_MENU_RADIO },
+    { "orange",0, MainWindow::cbSetTheme, nullptr, FL_MENU_RADIO },
+    { "red",   0, MainWindow::cbSetTheme, nullptr, FL_MENU_RADIO },
+    { "purple",0, MainWindow::cbSetTheme, nullptr, FL_MENU_RADIO },
+    { "ming",  0, MainWindow::cbSetTheme, nullptr, FL_MENU_RADIO },
     { nullptr },
     { "Statistics...",      0, MainWindow::cbStatistics,             nullptr, 0 },
     { nullptr },

@@ -1,0 +1,16 @@
+# ming 主题 (源自 lx-music 的 primary 主色, 亮色)
+# 键 = 值, 值支持 #RRGGBB 或 R,G,B
+bg_chrome        = #E7EEEF
+scrollbar_thumb  = #8FAFB6
+scrollbar_track  = #E0E9EB
+bg_panel         = #F1F5F6
+bg_editor        = #FFFFFF
+text_primary     = #212121
+text_secondary   = #9CA3AF
+accent_selection = #A3BEC4
+search_highlight = #D6E2E5
+line_highlight   = #E2EBED
+link_hover       = #214850
+hover_btn        = #D6E2E5
+hover_close      = #E03232
+border_color     = #85A8B0

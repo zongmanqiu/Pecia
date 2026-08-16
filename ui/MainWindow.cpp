@@ -454,15 +454,15 @@ MainWindow::MainWindow(int w, int h, const char *title)
         }
     }
 
-    // Sync the Theme radio submenu with the persisted theme. Reads the
-    // same theme.name value earlier loaded into m_theme.presetName().
-    // Runs here (English labels intact) so find_item() works.
+    // Sync the Theme radio submenu with the persisted theme: mark checked
+    // the item whose label equals the theme name (the file stem). Walk the
+    // menu tree (runs here while English labels are intact) and setonly()
+    // the matching radio under "View/Theme".
     {
-        Fl_Menu_Item *themeItem = nullptr;
-        if (strcmp(m_theme.presetName().c_str(), THEME_PRESET_DARK) == 0)
-            themeItem = (Fl_Menu_Item *)m_menu->find_item("View/Theme/Dark");
-        else
-            themeItem = (Fl_Menu_Item *)m_menu->find_item("View/Theme/Light");
+        const char *cur = m_theme.presetName().c_str();
+        char path[72];
+        snprintf(path, sizeof(path), "View/Theme/%s", cur);
+        Fl_Menu_Item *themeItem = (Fl_Menu_Item *)m_menu->find_item(path);
         if (themeItem) m_menu->setonly(themeItem);
     }
 

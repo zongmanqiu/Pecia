@@ -97,8 +97,6 @@ void MainWindow::buildMenuKeys() {
         { "View/Zoom/        Zoom In",     "menu.view.zoomin" },
         { "View/Zoom/        Reset Zoom",  "menu.view.zoomreset" },
         { "View/Theme",            "menu.view.theme" },
-        { "View/Theme/Light",      "menu.view.theme.light" },
-        { "View/Theme/Dark",       "menu.view.theme.dark" },
         { "View/Multi Tab",               "menu.view.multitab" },
 
         { "Tools",                         "menu.tools" },
@@ -235,22 +233,18 @@ void MainWindow::applyThemeColors() {
     redraw();
 }
 
-// View > Theme - switch the color theme. The radio items are labelled
-// "Light"/"Dark"; identify the theme from the selected item's text (the
-// item's user_data is just the MainWindow pointer, as with every g_menu
-// item). The switch is deferred to the next loop tick so FLTK has torn
-// down the pulldown menu first.
+// View > Theme - switch the color theme. Each radio item's label IS the
+// theme file stem (theme name), so pick it directly. The switch is deferred
+// to the next loop tick so FLTK has torn down the pulldown menu first.
 void MainWindow::cbSetTheme(Fl_Widget * /*w*/, void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
     if (!self || !self->m_cfg) return;
     Fl_Menu_Item *item = (Fl_Menu_Item *)self->m_menu->mvalue();
-    if (!item || !item->text) return;
-    const char *name = THEME_PRESET_LIGHT;
-    if (strstr(item->text, "Dark") || strstr(item->text, "暗")) {
-        name = THEME_PRESET_DARK;
-    } else if (strstr(item->text, "Light") || strstr(item->text, "亮")) {
-        name = THEME_PRESET_LIGHT;
-    }
+    if (!item || !item->text || !*item->text) return;
+    std::string name;
+    for (const char *s = item->text; *s; ++s)   // trim indent / keep stem
+        if (*s != ' ') name += *s;
+    if (name.empty()) return;
     self->m_pendingTheme = name;
     Fl::remove_timeout(s_applyThemeDeferred, self);
     Fl::add_timeout(0.0, s_applyThemeDeferred, self);
