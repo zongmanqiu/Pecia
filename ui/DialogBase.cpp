@@ -47,6 +47,7 @@ void DialogBase::commonCtor() {
 }
 
 DialogBase::~DialogBase() {
+    Fl::remove_timeout(fixToolTaskbarCb, this);
     delete m_frame;
     delete m_ownedTheme;   // nullptr in modal/dialog mode (external theme)
 }
@@ -145,7 +146,36 @@ void DialogBase::onCaptionTogglePin() {
 }
 
 void DialogBase::applyToolChrome() {
-    if (m_mode == ToolWindow) setupToolChrome(this, m_theme);
+    if (m_mode == ToolWindow) {
+        setupToolChrome(this, m_theme);
+#if defined(_WIN32)
+        // Deferred re-apply so the taskbar button appears even on the very
+        // first launch (same race the main window solves in fixTaskbarCb).
+        Fl::remove_timeout(fixToolTaskbarCb, this);
+        Fl::add_timeout(0.25, fixToolTaskbarCb, this);
+#endif
+    }
+}
+
+// One-shot: re-apply WS_EX_APPWINDOW + activate so a tool window's taskbar
+// button shows immediately. border(0) sets WS_EX_TOOLWINDOW which hides the
+// window from the taskbar; on a first-launch race the one-shot apply in
+// setupToolChrome can be lost before the taskbar sees a WM_ACTIVATE.
+void DialogBase::fixToolTaskbarCb(void *data) {
+    auto *self = static_cast<DialogBase *>(data);
+    if (!self) return;
+#if defined(_WIN32)
+    HWND hwnd = fl_xid(self);
+    if (!hwnd) return;
+    LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+    ex &= ~WS_EX_TOOLWINDOW;
+    ex |= WS_EX_APPWINDOW;
+    SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex);
+    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                 SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    SetForegroundWindow(hwnd);
+#endif
 }
 
 void DialogBase::draw() {

@@ -74,6 +74,14 @@ public:
     void applyToolChrome();
 
 protected:
+    // One-shot timeout that re-applies WS_EX_APPWINDOW after a tool window
+    // is shown (mirrors MainWindow::fixTaskbarCb). border(0) sets
+    // WS_EX_TOOLWINDOW, which keeps the window off the taskbar; a deferred
+    // re-apply + SetForegroundWindow makes the taskbar button show even on
+    // the very first launch. Tool windows only.
+    static void fixToolTaskbarCb(void *data);
+
+protected:
     // Build the shared title bar + (tool mode) WindowFrame. Call FIRST,
     // before adding any content widget.
     void initShell(const char *title);
