@@ -512,6 +512,11 @@ Find 栏 Match Case 等）选中时**方框整体填充 `accentSelection` 高亮
 
 `FL_MENU_RADIO`（单选）保持原“方框 + 圆点”画法，未改动。
 
+**补充（单选也统一）**：用户认为主题/字体/语言等单选标记也应与复选
+完全同观感，故 `FL_MENU_RADIO` 分支同样改为“未选透明空框、选中 fill
+accentSelection”，不再画圆点。单选与复选在形状上不再区分
+（用户接受该 Trade-off）。同时删除了不再使用的 `check_color` 局部变量。
+
 ### 如何应用到新版本 FLTK
 1. 打开新版本的 `src/Fl_Menu.cxx`
 2. 将 `FL_MENU_TOGGLE && !FL_MENU_RADIO` 分支改为上述“未选透明空框、

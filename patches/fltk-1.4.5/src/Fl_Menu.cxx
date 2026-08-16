@@ -311,22 +311,19 @@ void Fl_Menu_Item::draw(int x, int y, int w, int h, const Fl_Menu_* m,
     int d = (h - FL_NORMAL_SIZE + 1) / 2;
     int W = h - 2 * d;
 
-    Fl_Color check_color = labelcolor_;
-    if (Fl::is_scheme("gtk+"))
-      check_color = FL_SELECTION_COLOR;
-    check_color = fl_contrast(check_color, FL_BACKGROUND2_COLOR);
-
     if (flags & FL_MENU_RADIO) {
-      // Chosen style: flat square border box + dot (matches the checkbox
-      // style above; dot keeps the single-select semantics).
-      fl_draw_box(FL_BORDER_BOX, x+2, y+d, W, W, FL_BACKGROUND2_COLOR);
+      // Chosen style: identical to the toggle/checkbox style — the user wants
+      // single-select (theme/font/language) markers to look exactly like the
+      // multi-select boxes: unchecked = transparent border, checked = filled
+      // with the accent highlight colour. Shape no longer distinguishes
+      // single vs multi (accepted Trade-off).
       if (value()) {
-        int tW = (W - Fl::box_dw(FL_ROUND_DOWN_BOX)) / 2 + 1;
-        if ((W - tW) & 1) tW++; // Make sure difference is even to center
-        int td = (W - tW) / 2;
-        fl_draw_radio(x + td + 1, y + d + td - 1, tW + 2, check_color);
-      } // FL_MENU_RADIO && value()
-      x += W;     // no extra gap between the radio dot and the label
+        fl_draw_box(FL_BORDER_BOX, x+2, y+d, W, W,
+                    (m ? m->selection_color() : FL_SELECTION_COLOR));
+      } else {
+        fl_draw_box(FL_BORDER_FRAME, x+2, y+d, W, W, FL_BLACK);
+      }
+      x += W;     // no extra gap between the box and the label
       w -= W;
     } else { // FL_MENU_TOGGLE && ! FL_MENU_RADIO
       // Matches the find bar "Match Case" check box / all Pecia option boxes:
