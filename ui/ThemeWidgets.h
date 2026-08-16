@@ -360,11 +360,12 @@ public:
 
     int handle(int event) FL_OVERRIDE {
 #if defined(_WIN32)
-        // Install the in-place IME hook once the window HWND exists (focus
-        // or any key press) so pinyin composition is drawn in place and the
-        // IME's floating window (its second caret) stays hidden — matching
-        // the main editor. Drop any active composition on unfocus.
-        if (event == FL_FOCUS || event == FL_KEYBOARD)
+        // Install the in-place IME hook once the window HWND exists (focus,
+        // any key press, or simply entering the widget) so pinyin composition
+        // is drawn in place and the IME's floating window (its second caret)
+        // stays hidden — matching the main editor. Drop any active
+        // composition on unfocus.
+        if (event == FL_FOCUS || event == FL_KEYBOARD || event == FL_ENTER)
             ImeInPlace::attach(this);
         else if (event == FL_UNFOCUS)
             ImeInPlace::detach(this);
