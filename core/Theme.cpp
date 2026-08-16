@@ -137,22 +137,22 @@ Theme::Theme() {
 void Theme::load(const Config &cfg) {
     char name[16];
     cfg.readStr("theme.name", name, sizeof(name), THEME_PRESET_LIGHT);
-    // Only the known built-in themes are accepted; anything else falls back
-    // to light so an unknown theme.name can never hide the UI.
-    if (strcmp(name, THEME_PRESET_DARK) != 0) {
-        strncpy(name, THEME_PRESET_LIGHT, sizeof(name) - 1);
-        name[sizeof(name) - 1] = 0;
-    }
-    m_preset = name;
+    // Accept any theme name; if no matching theme file exists, light.txt is
+    // the fallback (via lightDefaults or by re-resolving below).
+    m_preset = name ? name : THEME_PRESET_LIGHT;
 
-    // Resolve exeDir/theme/<name>.txt; if we cannot find/read it, keep the
-    // light fallback so the app still opens.
+    // Resolve exeDir/theme/<name>.txt; start from the light fallback, then
+    // overlay the theme file. If the file is missing we keep light.
     std::string dir = exeDir();
-    m_colors = lightDefaults();   // start from fallback, then overlay file
-    if (!dir.empty() && name[0]) {
+    m_colors = lightDefaults();
+    if (!dir.empty() && !m_preset.empty()) {
         char path[FL_PATH_MAX];
-        snprintf(path, sizeof(path), "%s/theme/%s.txt", dir.c_str(), name);
-        m_colors.loadFromFile(path);
+        snprintf(path, sizeof(path), "%s/theme/%s.txt", dir.c_str(), m_preset.c_str());
+        if (m_colors.loadFromFile(path) < 0) {
+            // Missing/corrupt file -> light fallback and remember it.
+            m_preset = THEME_PRESET_LIGHT;
+            m_colors = lightDefaults();
+        }
     }
 }
 
@@ -164,8 +164,6 @@ void Theme::save(Config &cfg) {
 
 void Theme::setPreset(const char *name, Config &cfg) {
     if (!name || !*name) return;
-    if (strcmp(name, THEME_PRESET_LIGHT) != 0 && strcmp(name, THEME_PRESET_DARK) != 0)
-        return;   // reject unknown theme
     m_preset = name;
     cfg.writeStr("theme.name", m_preset.c_str());
 }

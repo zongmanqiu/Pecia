@@ -121,12 +121,11 @@ Fl_Menu_Item g_menu[] = {
     { "Zoom In",     FL_COMMAND | '+', MainWindow::cbZoomIn,    nullptr },
     { "Reset Zoom",  FL_COMMAND | '0', MainWindow::cbZoomReset, nullptr },
     { nullptr },
-    // Theme submenu - radio items (like Language/Font). Selects a color
-    // preset (light/dark); the active one is synced from Config on startup.
-    { "Theme", 0, nullptr, nullptr, FL_SUBMENU | FL_MENU_DIVIDER },
-    { "Light", 0, MainWindow::cbSetTheme, (void *)THEME_PRESET_LIGHT, FL_MENU_RADIO },
-    { "Dark",  0, MainWindow::cbSetTheme, (void *)THEME_PRESET_DARK,  FL_MENU_RADIO },
-    { nullptr },
+    // Theme submenu - radio items backed by a dynamically-scanned array.
+    // FL_SUBMENU_POINTER: FLTK reads the submenu from the parent item's
+    // user_data (a MainWindow-owned array rebuilt from exeDir/theme/*.txt,
+    // so adding a theme file adds a menu entry - like Language/Recent Files).
+    { "Theme", 0, nullptr, nullptr, FL_SUBMENU_POINTER | FL_MENU_DIVIDER },
     { "Statistics...",      0, MainWindow::cbStatistics,             nullptr, 0 },
     { nullptr },
 

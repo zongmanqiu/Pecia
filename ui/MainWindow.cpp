@@ -454,16 +454,10 @@ MainWindow::MainWindow(int w, int h, const char *title)
         }
     }
 
-    // Sync the Theme radio submenu with the persisted preset. Reads the
-    // same theme.name value earlier loaded into m_theme.presetName().
-    {
-        Fl_Menu_Item *themeItem = nullptr;
-        if (strcmp(m_theme.presetName().c_str(), THEME_PRESET_DARK) == 0)
-            themeItem = (Fl_Menu_Item *)m_menu->find_item("View/Theme/Dark");
-        else
-            themeItem = (Fl_Menu_Item *)m_menu->find_item("View/Theme/Light");
-        if (themeItem) m_menu->setonly(themeItem);
-    }
+    // Build the View>Theme submenu by scanning exeDir/theme/*.txt (one radio
+    // entry per theme file) and sync the active theme's radio check. Must run
+    // here (English labels still intact) so the cached parent pointer is set.
+    rebuildThemeMenu();
 
     // Build the menu-key mapping *before* any translation is applied
     // so find_item() can still match the English labels in g_menu, then
@@ -590,6 +584,16 @@ MainWindow::~MainWindow() {
         }
         delete[] m_recentMenu;
         m_recentMenu = nullptr;
+    }
+    // Free the theme submenu array + the strdup'd theme-name user_data
+    // (allocated in rebuildThemeMenu).
+    if (m_themeMenu) {
+        for (int i = 0; i < m_themeMenuSize; ++i) {
+            if (m_themeMenu[i].text) free((void *)m_themeMenu[i].text);
+            if (m_themeMenu[i].user_data()) free((void *)m_themeMenu[i].user_data());
+        }
+        delete[] m_themeMenu;
+        m_themeMenu = nullptr;
     }
     // Free the script toolbar menu array (the toolbar widget itself is
     // deleted by FLTK after this destructor via the window). The array

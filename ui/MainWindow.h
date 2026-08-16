@@ -430,6 +430,20 @@ public:
     // list is empty - a single disabled "(empty)" entry is shown.
     void refreshRecentMenu();
 
+    // Theme submenu backing array. The View>Theme entry uses
+    // FL_SUBMENU_POINTER, so FLTK reads this array as the submenu. It is
+    // rebuilt by scanning exeDir/theme/*.txt, so each theme file becomes a
+    // radio entry (the file's stem is both the label and the theme name).
+    Fl_Menu_Item   *m_themeMenu = nullptr;
+    int             m_themeMenuSize = 0;
+    // Cached pointer to the "View/Theme" parent item, captured in the
+    // constructor (while the menu is still English) so rebuildThemeMenu()
+    // can set its user_data to the new array without an English find_item()
+    // (which would fail after the menu is translated).
+    Fl_Menu_Item   *m_themeMenuItem = nullptr;
+    // Scan exeDir/theme/*.txt and rebuild m_themeMenu; free the old array.
+    void rebuildThemeMenu();
+
 
 
     // Tab management
