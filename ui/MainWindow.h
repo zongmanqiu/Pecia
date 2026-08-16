@@ -293,6 +293,7 @@ private:
     class TocPopup *m_tocPopup = nullptr;    // 目录弹出面板（限高+滚动条）
     std::vector<Fl_Menu_Item> m_tocMenu;     // 目录菜单项（末尾 {nullptr} 终止）
     std::vector<std::string> m_tocLabels;    // 菜单项文本（text 指针指向其 c_str，先 reserve 保地址稳定）
+    std::vector<int>         m_tocLevels;    // 与 m_tocLabels 平行的标题层级（1..6，决定缩进/字重/主次色）
     std::vector<std::string> m_tocIds;       // 菜单项锚点 id（user_data 指向其 c_str，先 reserve 保地址稳定）
     bool            m_previewActive = false;  // 预览模式是否开启
     float           m_previewRatio = 0.5f;    // 左栏（编辑区）占比

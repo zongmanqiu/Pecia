@@ -118,6 +118,7 @@ void MainWindow::cleanupOldTempDirs()
 class MenuList : public Fl_Widget {
 public:
     std::vector<std::string> items;
+    std::vector<int> levels;          // 与 items 平行的标题层级（1..6），决定缩进/字重/主次色
     std::function<void(int)> onPick;   // 行号（0-based）
     int rowH = 22;
 
@@ -134,20 +135,28 @@ public:
     void draw() override {
         Fl_Color bg = m_tc.bgChrome;
         Fl_Color fg = m_tc.textPrimary;
+        Fl_Color fgSub = m_tc.textSecondary;
         Fl_Color hover = m_tc.accentSelection;
         // Whole area = the preview toolbar background (bgChrome).
         fl_color(bg);
         fl_rectf(x(), y(), w(), h());
-        fl_font(FL_HELVETICA, 14);
         for (int i = 0; i < (int)items.size(); ++i) {
             int ry = y() + i * rowH;
+            // Heading hierarchy WITHOUT adding theme colors: H1 keeps the
+            // primary text in bold; H2 uses normal primary; H3+ steps down to
+            // the existing secondary text. Indentation comes from the leading
+            // spaces already baked into items (see rebuildPreviewToc).
+            int lvl = (i < (int)levels.size() && levels[i] >= 1) ? levels[i] : 1;
+            bool bold = (lvl == 1);
+            bool sub = (lvl >= 3);
+            fl_font(bold ? FL_HELVETICA_BOLD : FL_HELVETICA, 14);
             if (i == m_hover) {
                 fl_color(hover);
                 fl_rectf(x(), ry, w(), rowH);
                 // keep the label legible over the hover fill
-                fl_color(fl_contrast(fg, hover));
+                fl_color(fl_contrast(sub ? fgSub : fg, hover));
             } else {
-                fl_color(fg);
+                fl_color(sub ? fgSub : fg);
             }
             fl_draw(items[i].c_str(), x() + 8, ry, w() - 16, rowH, FL_ALIGN_LEFT);
         }
@@ -365,6 +374,7 @@ void MainWindow::destroyPreviewCb(void *data)
     win->m_tocPopup = nullptr;
     win->m_previewBarItems.clear();
     win->m_tocLabels.clear();
+    win->m_tocLevels.clear();
     win->m_tocIds.clear();
     if (win->m_previewDivider) { win->remove(win->m_previewDivider); delete win->m_previewDivider; win->m_previewDivider = nullptr; }
     if (win->m_preview) { win->remove(win->m_preview->view()); delete win->m_preview; win->m_preview = nullptr; }
@@ -683,8 +693,10 @@ void MainWindow::showTocPopup()
     p->list->items.clear();
     if (m_tocLabels.empty()) {
         p->list->items.push_back(I18n::get("preview.toc.empty"));
+        p->list->levels.clear();        // 单个占位行，draw 按默认层级 1（正常字重/主色）渲染
     } else {
         p->list->items = m_tocLabels;
+        p->list->levels = m_tocLevels;
     }
     p->list->onPick = [this](int row) {
         if (row >= 0 && row < (int)m_tocIds.size())
@@ -727,12 +739,15 @@ void MainWindow::showTocPopup()
 void MainWindow::rebuildPreviewToc(const std::vector<PreviewHeading> &headings)
 {
     m_tocLabels.clear();
+    m_tocLevels.clear();
     m_tocIds.clear();
     m_tocLabels.reserve(headings.size());
+    m_tocLevels.reserve(headings.size());
     m_tocIds.reserve(headings.size());
     for (const auto &h : headings) {
         int lv = h.level < 1 ? 1 : (h.level > 6 ? 6 : h.level);
         m_tocLabels.push_back(std::string((size_t)(lv - 1) * 4, ' ') + h.text);
+        m_tocLevels.push_back(lv);
         m_tocIds.push_back(h.id);
     }
 }
