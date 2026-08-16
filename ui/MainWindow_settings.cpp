@@ -29,16 +29,10 @@
 #include <FL/fl_draw.H>
 #include <FL/fl_string_functions.h>
 #include <FL/Fl_Tabs.H>
-#include <FL/filename.H>   // FL_PATH_MAX
-#if defined(_WIN32)
-#include <windows.h>
-#endif
 #include <stdio.h>
 #include <string.h>
 #include <string>
 #include <vector>
-#include <algorithm>
-#include <filesystem>
 
 void MainWindow::applyScheme(const char *name) {
     if (name && *name) {
@@ -241,18 +235,22 @@ void MainWindow::applyThemeColors() {
     redraw();
 }
 
-// View > Theme - switch the color theme.
-// The View>Theme submenu is backed by the dynamically-scanned m_themeMenu
-// array (NOT part of g_menu), so each entry's user_data safely carries the
-// theme name (the theme file's stem). The switch is deferred to the next
-// loop tick (s_applyThemeDeferred) so FLTK has torn down the pulldown menu.
+// View > Theme - switch the color theme. The radio items are labelled
+// "Light"/"Dark"; identify the theme from the selected item's text (the
+// item's user_data is just the MainWindow pointer, as with every g_menu
+// item). The switch is deferred to the next loop tick so FLTK has torn
+// down the pulldown menu first.
 void MainWindow::cbSetTheme(Fl_Widget * /*w*/, void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
     if (!self || !self->m_cfg) return;
     Fl_Menu_Item *item = (Fl_Menu_Item *)self->m_menu->mvalue();
     if (!item || !item->text) return;
-    const char *name = (const char *)item->user_data();
-    if (!name || !*name) return;
+    const char *name = THEME_PRESET_LIGHT;
+    if (strstr(item->text, "Dark") || strstr(item->text, "暗")) {
+        name = THEME_PRESET_DARK;
+    } else if (strstr(item->text, "Light") || strstr(item->text, "亮")) {
+        name = THEME_PRESET_LIGHT;
+    }
     self->m_pendingTheme = name;
     Fl::remove_timeout(s_applyThemeDeferred, self);
     Fl::add_timeout(0.0, s_applyThemeDeferred, self);
@@ -266,93 +264,6 @@ void MainWindow::s_applyThemeDeferred(void *data) {
     self->m_theme.setPreset(name.c_str(), *self->m_cfg);   // persist theme.name
     self->m_theme.save(*self->m_cfg);                      // persist the palette
     self->applyThemeColors();
-}
-
-// Rebuild the View>Theme submenu by scanning exeDir/theme/*.txt. Each
-// theme file becomes a radio entry whose label AND user_data are the file's
-// stem (the theme name). FL_SUBMENU_POINTER on the parent "Theme" item makes
-// FLTK read the submenu from m_themeMenu; the parent's user_data is updated
-// so it always points at the fresh array.
-void MainWindow::rebuildThemeMenu() {
-    using namespace std::filesystem;
-    // Locate the exe directory (same rule as Theme/Config) so we scan the
-    // same theme/ folder the Theme loader reads.
-    std::string exeDir;
-#if defined(_WIN32)
-    wchar_t wbuf[FL_PATH_MAX] = L"";
-    if (GetModuleFileNameW(nullptr, wbuf, FL_PATH_MAX) > 0) {
-        int len = WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, nullptr, 0, nullptr, nullptr);
-        if (len > 0) {
-            exeDir.assign(len - 1, '\0');
-            WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, &exeDir[0], len, nullptr, nullptr);
-            auto p = exeDir.find_last_of("\\/");
-            if (p != std::string::npos) exeDir.resize(p);
-        }
-    }
-#endif
-
-    // Free the previous array and its strdup'd names.
-    if (m_themeMenu) {
-        for (int i = 0; i < m_themeMenuSize; ++i)
-            if (m_themeMenu[i].user_data()) free((void *)m_themeMenu[i].user_data());
-        delete[] m_themeMenu;
-        m_themeMenu = nullptr;
-    }
-    m_themeMenuSize = 0;
-
-    // Collect theme names (file stems) from exeDir/theme/*.txt.
-    std::vector<std::string> names;
-    path themeDir = exeDir.empty() ? path() : (path(exeDir) / "theme");
-    std::error_code ec;
-    if (!themeDir.empty() && is_directory(themeDir, ec)) {
-        for (const auto &ent : directory_iterator(themeDir, ec)) {
-            if (!ent.is_regular_file(ec)) continue;
-            path p = ent.path();
-            if (p.extension() != ".txt") continue;
-            names.push_back(p.stem().string());
-        }
-    }
-    std::sort(names.begin(), names.end());
-
-    if (names.empty()) {
-        // No theme files -> single disabled "(none)" entry + terminator.
-        m_themeMenuSize = 2;
-        m_themeMenu = new Fl_Menu_Item[m_themeMenuSize];
-        memset(m_themeMenu, 0, sizeof(Fl_Menu_Item) * m_themeMenuSize);
-        m_themeMenu[0].text = _strdup("(none)");
-        m_themeMenu[0].flags = FL_MENU_INACTIVE;
-    } else {
-        m_themeMenuSize = (int)names.size() + 1;   // entries + terminator
-        m_themeMenu = new Fl_Menu_Item[m_themeMenuSize];
-        memset(m_themeMenu, 0, sizeof(Fl_Menu_Item) * m_themeMenuSize);
-        for (size_t i = 0; i < names.size(); ++i) {
-            m_themeMenu[i].text = _strdup(names[i].c_str());
-            m_themeMenu[i].user_data_ = _strdup(names[i].c_str());
-            m_themeMenu[i].callback_ = cbSetTheme;
-            m_themeMenu[i].flags = FL_MENU_RADIO;
-        }
-    }
-
-    // Point the parent "View/Theme" item's user_data at the new array, using
-    // the cached pointer (English-path find_item() would fail post-translation).
-    if (m_themeMenuItem)
-        m_themeMenuItem->user_data(m_themeMenu);
-    else {
-        Fl_Menu_Item *ti = (Fl_Menu_Item *)m_menu->find_item("View/Theme");
-        if (ti) { m_themeMenuItem = ti; ti->user_data(m_themeMenu); }
-    }
-
-    // Sync the radio check to the active theme.
-    if (m_themeMenuItem && !names.empty()) {
-        for (int i = 0; i < m_themeMenuSize - 1; ++i) {
-            if (m_themeMenu[i].user_data() &&
-                strcmp((const char *)m_themeMenu[i].user_data(),
-                       m_theme.presetName().c_str()) == 0) {
-                m_menu->setonly(&m_themeMenu[i]);
-                break;
-            }
-        }
-    }
 }
 
 // --------------------------------------------------------------------------
