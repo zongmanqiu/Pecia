@@ -14,7 +14,7 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Browser.H>
 #include <FL/Fl_Menu_Item.H>
-#include <FL/Fl_Menu_Window.H>
+#include <FL/Fl_Double_Window.H>
 #include <FL/Fl_Scroll.H>
 #include <FL/Fl_Tabs.H>
 #include <FL/fl_draw.H>
@@ -190,20 +190,21 @@ private:
     int m_hover = -1;
 };
 
-// 目录弹出面板：Fl_Menu_Window（点击外部自动关闭）+ Fl_Scroll（限高+滚动条）
-// + MenuList（菜单样式列表）。高度限制见 showTocPopup（最多 10 行）。
-// 颜色与预览工具栏（bgChrome/textPrimary/accentSelection）及主编辑器滚动条完全一致。
-class TocPopup : public Fl_Menu_Window {
+// 目录弹出面板：Fl_Double_Window（双缓冲，避免鼠标移动时 hover 高亮重绘闪烁）
+// + Fl_Scroll（限高+滚动条）+ MenuList（菜单样式列表）。
+// 高度限制见 showTocPopup（最多 10 行）。边框/颜色与预览工具栏及主编辑器滚动条一致。
+// 注：不用 Fl_Menu_Window（= 单缓冲的 Fl_Single_Window），否则随鼠标移动的
+// 高亮行整块重绘会闪屏；点击外部关闭由下方 handle(FL_PUSH) 自行实现。
+class TocPopup : public Fl_Double_Window {
 public:
     Fl_Scroll *scroll;
     MenuList *list;
 
     TocPopup(const ThemeColors &tc)
-        : Fl_Menu_Window(0, 0, 200, 100), m_tc(tc) {
+        : Fl_Double_Window(0, 0, 200, 100), m_tc(tc) {
         // Force a true borderless popup (no title bar / native frame) so it
         // reads as a dropdown list attached to the preview toolbar, not as a
-        // separate titled window. Without this, Fl_Menu_Window would render
-        // with a normal caption in some FLTK/OS combinations.
+        // separate titled window.
         border(0);
         box(FL_NO_BOX);
         // Background matches the preview toolbar (bgChrome).
@@ -229,7 +230,7 @@ public:
             int my = Fl::event_y_root() - y();
             if (mx < 0 || my < 0 || mx >= w() || my >= h()) { hide(); return 1; }
         }
-        return Fl_Menu_Window::handle(e);
+        return Fl_Double_Window::handle(e);
     }
 
 private:
