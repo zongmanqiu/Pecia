@@ -146,7 +146,6 @@ LRESULT CALLBACK imeWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         // Route to the focused editor whose top window owns this HWND.
         Fl_Widget *f = Fl::focus();
         Fl_Text_Editor *ed = dynamic_cast<Fl_Text_Editor *>(f);
-        bool routed = false;
         if (ed) {
             Fl_Window *w = ed->window();
             for (Fl_Window *ww = w; ww; ww = ww->window()) w = ww;   // topmost window
@@ -186,7 +185,6 @@ LRESULT CALLBACK imeWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 }
             }
         }
-        (void)routed;
     }
     for (auto &h : g_hooks)
         if (h.hwnd == hwnd) return CallWindowProcW(h.orig, hwnd, msg, wParam, lParam);
