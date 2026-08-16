@@ -14,3 +14,24 @@ link_hover       = #214850
 hover_btn        = #D6E2E5
 hover_close      = #E03232
 border_color     = #85A8B0
+
+# ============================================================
+# 各参数说明（控制哪些元素）—— 所有主题统一
+#   值格式：#RRGGBB 或 R,G,B；缺失键用内置亮色兜底。
+# ============================================================
+# bg_chrome        标题栏/菜单/工具栏/状态栏/行号栏 背景（“视觉框架”主色）
+# scrollbar_thumb  滚动条滑块
+# scrollbar_track  滚动条轨道背景
+# bg_panel         菜单/搜索/替换/跳转 等面板背景
+# bg_editor        编辑器/输入框 背景（工作区）
+# text_primary     正文/菜单文字（主文字）
+# text_secondary   次要文字（注释/提示）
+# accent_selection 选中高亮 + 激活tab下划线 + 按钮/菜单选中（“强调色”）
+# search_highlight 查找 全部命中 高亮
+# line_highlight   当前行 高亮
+# link_hover       超链接 颜色
+# hover_btn        标题栏按钮 悬停背景
+# hover_close      关闭按钮 悬停背景
+# border_color     窗口 1px 外边框线
+# ============================================================
+# 改本文件颜色 → 重启或切到本主题即生效；settings.ini 只记录 selected 主题名。
