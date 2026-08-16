@@ -459,6 +459,11 @@ void MainWindow::syncFromConfig() {
     applyShortcuts();
     rebuildScriptBar();
 
+    // settings.ini is the source of truth for colors, so re-apply the theme
+    // whenever it changes on disk (e.g. another process switched themes or a
+    // user hand-edited theme.* keys). Cheap: reload + recolour.
+    applyThemeColors();
+
     redraw();
 }
 
