@@ -283,6 +283,12 @@ public:
         scroll->end();
     }
 
+    // Safe teardown: never leave the global mouse grab held if the window is
+    // destroyed while shown (e.g. preview teardown deletes us directly).
+    ~TocPopup() {
+        if (Fl::grab() == this) Fl::release();
+    }
+
     // Draw children first, then overlay-draw the scrollbar in Pecia's flat
     // theme style (track + thumb) instead of FLTK's native slider groove.
     void draw() FL_OVERRIDE {
@@ -291,12 +297,20 @@ public:
         drawToolScrollbar(&scroll->hscrollbar, true, m_tc);
     }
 
+    // Close the popup: release the global mouse grab (if any) then hide.
+    // While shown we grab the mouse so a click anywhere else is routed here
+    // and closes the popup instead of being lost to the window underneath.
+    void close() {
+        if (Fl::grab() == this) Fl::release();
+        hide();
+    }
+
     // 点击面板外部 → 关闭
     int handle(int e) override {
         if (e == FL_PUSH) {
             int mx = Fl::event_x_root() - x();
             int my = Fl::event_y_root() - y();
-            if (mx < 0 || my < 0 || mx >= w() || my >= h()) { hide(); return 1; }
+            if (mx < 0 || my < 0 || mx >= w() || my >= h()) { close(); return 1; }
         }
         return Fl_Double_Window::handle(e);
     }
@@ -780,7 +794,7 @@ void MainWindow::showTocPopup()
     p->list->onPick = [this](int row) {
         if (row >= 0 && row < (int)m_tocIds.size())
             m_preview->scrollToAnchor(m_tocIds[row]);
-        if (m_tocPopup) m_tocPopup->hide();
+        if (m_tocPopup) m_tocPopup->close();
     };
 
     // 宽固定（长标题在 MenuList::draw 里省略号截断，不撑宽）；右侧留滚动条空间。
@@ -803,6 +817,9 @@ void MainWindow::showTocPopup()
     p->position(barX + 3 + w1 + 16, barY + m_previewBar->h());
 
     p->show();
+    // Grab the mouse so clicks anywhere outside are routed to us and close the
+    // popup (rather than hitting the window below). Released in TocPopup::close().
+    if (Fl::grab() != p) Fl::grab(p);
 }
 
 // 重建目录数据（渲染完成回调，主线程）：标题正文与层级分别存入 m_tocLabels /
