@@ -188,6 +188,7 @@ ui/MatchHighlight.cpp
     ui/ConfirmDialog.cpp
     ui/ParamDialog.cpp
     ui/DialogBase.cpp
+    ui/ImeInPlace.cpp
     ui/ToolChrome.cpp
     ui/UiBridge.cpp
     LuaTool/LuaPipeServer.cpp
@@ -290,6 +291,7 @@ add_executable(PeciaLua WIN32
     ui/ParamDialog.cpp
     ui/InfoWindow.cpp
     ui/DialogBase.cpp
+    ui/ImeInPlace.cpp
     core/ShortcutCore.cpp
     ui/Layout.cpp
     build/pecia_lua.rc
@@ -353,6 +355,7 @@ add_executable(PeciaAIChat WIN32
     ui/WindowFrame.cpp
     core/ShortcutCore.cpp
     ui/Layout.cpp
+    ui/ImeInPlace.cpp
     build/pecia_ai.rc
 )
 
@@ -725,6 +728,7 @@ add_executable(test_ui_smoke
     ui/ShortcutDialog.cpp
     ui/InfoWindow.cpp
     ui/DialogBase.cpp
+    ui/ImeInPlace.cpp
     ui/TitleBar.cpp
     ui/WindowFrame.cpp
     ui/ToolChrome.cpp
@@ -796,6 +800,7 @@ add_executable(test_ui_tool_smoke
     ui/ParamDialog.cpp
     ui/InfoWindow.cpp
     ui/DialogBase.cpp
+    ui/ImeInPlace.cpp
     ui/TitleBar.cpp
     ui/WindowFrame.cpp
     ui/ToolChrome.cpp

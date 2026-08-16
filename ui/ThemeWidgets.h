@@ -19,6 +19,10 @@
 
 #include "core/Theme.h"
 
+#if defined(_WIN32)
+#include "ui/ImeInPlace.h"
+#endif
+
 namespace {
 
 // Apply the main window's scrollbar style (10px, no arrows, flat,
@@ -355,6 +359,16 @@ public:
     }
 
     int handle(int event) FL_OVERRIDE {
+#if defined(_WIN32)
+        // Install the in-place IME hook once the window HWND exists (focus
+        // or any key press) so pinyin composition is drawn in place and the
+        // IME's floating window (its second caret) stays hidden — matching
+        // the main editor. Drop any active composition on unfocus.
+        if (event == FL_FOCUS || event == FL_KEYBOARD)
+            ImeInPlace::attach(this);
+        else if (event == FL_UNFOCUS)
+            ImeInPlace::detach(this);
+#endif
         // Ctrl+Enter bubbles up to the owning window so its shortcut
         // dispatch (Window > Button > Run / Send, default Ctrl+Enter)
         // can fire. Fl_Text_Editor would otherwise insert a newline and
