@@ -1,10 +1,10 @@
-> **🌐 Languages**: [中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — минималистичный текстовый редактор
 
 ---
 
-**[⬇️ Скачать последнюю версию (1.0.0)](https://gitee.com/qiuzongman/curseen/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
+**[⬇️ Скачать последнюю версию (1.0.0)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
 
 Легковесный текстовый редактор для Windows на базе C++17 + FLTK. Много вкладок, мгновенное открытие больших файлов, поддержка множества кодировок, расширение скриптами на Lua.
 
@@ -98,6 +98,7 @@ main/
 ├── CMakeLists.txt      Правила сборки (точка входа CMake)
 ├── main.cpp            Точка входа программы
 ├── README.md           Данная документация (обзор архитектуры/стек/инструкции по сборке)
+├── docs/               Версии README на других языках (README.<lang>.md)
 ├── 目录结构说明.md      Описание каталогов и модулей (обязательно к прочтению при работе над проектом)
 ├── core/               Чистая бизнес-логика (без UI)
 ├── editor/             Виджет редактора
@@ -204,6 +205,6 @@ test  может зависеть от любого уровня, но тест�
 
 ## Лицензия
 
-[GNU AGPL-3.0](LICENSE).
+[GNU AGPL-3.0](../LICENSE).
 
-Лицензии, описание модификаций (патчей) и обязательства по распространению сторонних компонентов (FLTK/Lua/PCRE2/md4c/litehtml/stb и Rust-крейтов) приведены в [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Лицензии, описание модификаций (патчей) и обязательства по распространению сторонних компонентов (FLTK/Lua/PCRE2/md4c/litehtml/stb и Rust-крейтов) приведены в [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).

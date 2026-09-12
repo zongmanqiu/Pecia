@@ -1,10 +1,10 @@
-> **🌐 Languages**: [中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — अत्यंत सरल पाठ संपादक
 
 ---
 
-**[⬇️ नवीनतम संस्करण डाउनलोड करें (1.0.0)](https://gitee.com/qiuzongman/curseen/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
+**[⬇️ नवीनतम संस्करण डाउनलोड करें (1.0.0)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
 
 C++17 + FLTK आधारित Windows हल्का पाठ संपादक। मल्टी-टैब, बड़ी फ़ाइलें तुरंत खुलती हैं, बहु-एन्कोडिंग समर्थन, Lua स्क्रिप्ट एक्सटेंशन।
 
@@ -100,6 +100,7 @@ main/
 ├── CMakeLists.txt      बिल्ड नियम (CMake प्रवेश बिंदु)
 ├── main.cpp            प्रोग्राम प्रवेश बिंदु
 ├── README.md           यह दस्तावेज़ (वास्तुकला अवलोकन/तकनीकी स्टैक/बिल्ड निर्देश शामिल)
+├── docs/               अन्य भाषाओं में README संस्करण (README.<lang>.md)
 ├── 目录结构说明.md      निर्देशिका और मॉड्यूल विनिर्देश (विरासतकर्ता के लिए आवश्यक पठन)
 ├── core/               शुद्ध मूल तर्क (UI रहित)
 ├── editor/             संपादक नियंत्रण
@@ -212,7 +213,7 @@ test  किसी भी परत पर निर्भर हो सकत�
 
 ## लाइसेंस
 
-[GNU AGPL-3.0](LICENSE)।
+[GNU AGPL-3.0](../LICENSE)।
 
 तृतीय-पक्ष घटक (FLTK/Lua/PCRE2/md4c/litehtml/stb और Rust crates) के लाइसेंस,
-संशोधन (पैच) विवरण और वितरण दायित्व [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) में देखें।
+संशोधन (पैच) विवरण और वितरण दायित्व [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md) में देखें।

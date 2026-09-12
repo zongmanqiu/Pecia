@@ -1,10 +1,10 @@
-> **🌐 Languages**: [中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 ---
 
 # Pecia — Minimalist Text Editor
 
-**[⬇️ Download Latest (1.0.0)](https://gitee.com/qiuzongman/curseen/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
+**[⬇️ Download Latest (1.0.0)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
 
 A lightweight text editor for Windows built with C++17 + FLTK. Multi-tab, instant opening of large files, multiple encoding support, Lua scripting extensions.
 
@@ -97,6 +97,7 @@ main/
 ├── CMakeLists.txt      Build rules (CMake entry point)
 ├── main.cpp            Program entry point
 ├── README.md           This document (including architecture overview/tech stack/build instructions)
+├── docs/               README in other languages (README.<lang>.md)
 ├── 目录结构说明.md      Directory and module conventions (essential reading for onboarding)
 ├── core/               Core pure logic (no UI)
 ├── editor/             Editor widget
@@ -203,6 +204,6 @@ test  can depend on any layer, but only tests pure logic (no GUI dependency)
 
 ## License
 
-[GNU AGPL-3.0](LICENSE).
+[GNU AGPL-3.0](../LICENSE).
 
-Licenses, modification (patch) notes, and distribution obligations for third-party components (FLTK/Lua/PCRE2/md4c/litehtml/stb and Rust crates) are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Licenses, modification (patch) notes, and distribution obligations for third-party components (FLTK/Lua/PCRE2/md4c/litehtml/stb and Rust crates) are listed in [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).

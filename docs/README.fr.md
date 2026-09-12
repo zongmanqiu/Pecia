@@ -1,8 +1,8 @@
-> **🌐 Languages**: [中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — Éditeur de texte minimaliste
 
-**[⬇️ Télécharger la dernière version (1.0.0)](https://gitee.com/qiuzongman/curseen/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
+**[⬇️ Télécharger la dernière version (1.0.0)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
 
 Un éditeur de texte léger pour Windows basé sur C++17 + FLTK. Onglets multiples, ouverture rapide de gros fichiers, support multi-encodage et extensions par scripts Lua.
 
@@ -91,6 +91,7 @@ main/
 ├── CMakeLists.txt      Règles de build (point d'entrée CMake)
 ├── main.cpp            Point d'entrée du programme
 ├── README.md           Ce document (avec vue d'ensemble de l'architecture/pile technologique/instructions de build)
+├── docs/               README dans d'autres langues (README.<lang>.md)
 ├── 目录结构说明.md      Spécifications des répertoires et modules (lecture obligatoire pour les nouveaux développeurs)
 ├── core/               Logique pure (sans UI)
 ├── editor/             Contrôleur d'éditeur
@@ -195,6 +196,6 @@ test  peut dépendre de n'importe quelle couche, mais ne teste que la logique pu
 
 ## Licence
 
-[GNU AGPL-3.0](LICENSE).
+[GNU AGPL-3.0](../LICENSE).
 
-Les licences, descriptions des patches et obligations de distribution des composants tiers (FLTK/Lua/PCRE2/md4c/litehtml/stb et crates Rust) sont décrites dans [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Les licences, descriptions des patches et obligations de distribution des composants tiers (FLTK/Lua/PCRE2/md4c/litehtml/stb et crates Rust) sont décrites dans [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).

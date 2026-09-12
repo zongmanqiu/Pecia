@@ -1,10 +1,10 @@
-> **🌐 Languages**: [中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — محرر نصوص بسيط للغاية
 
 ---
 
-**[⬇️ تنزيل أحدث إصدار (1.0.0)](https://gitee.com/qiuzongman/curseen/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
+**[⬇️ تنزيل أحدث إصدار (1.0.0)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
 
 محرر نصوص خفيف الوزن للنظام التشغيلي Windows مبني على C++17 + FLTK. دعم علامات تبويب متعددة، فتح الملفات الكبيرة فوراً، ترميزات متعددة، وامتدادات سكريبت Lua.
 
@@ -104,6 +104,7 @@ main/
 ├── CMakeLists.txt      قواعد البناء (مدخل CMake)
 ├── main.cpp            نقطة دخول البرنامج
 ├── README.md           هذه الوثيقة (تتضمن نظرة عامة على البنية/stack التقني/تعليمات البناء)
+├── docs/               إصدارات README بلغات أخرى (README.<lang>.md)
 ├── 目录结构说明.md      مواصفات المجلدات والوحدات (ضرورية للوارث)
 ├── core/               المنطق الأساسي النقي (بدون واجهة مستخدم)
 ├── editor/             عناصر تحكم المحرر
@@ -216,7 +217,7 @@ test  يمكن أن تعتمد على أي طبقة، لكنها تختبر ال
 
 ## الترخيص
 
-[GNU AGPL-3.0](LICENSE).
+[GNU AGPL-3.0](../LICENSE).
 
 تراخيص المكونات الخارجية (FLTK/Lua/PCRE2/md4c/litehtml/stb و حزم Rust)،
-وصف التعديلات (الرقع) والتزامات التوزيع موثقة في [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+وصف التعديلات (الرقع) والتزامات التوزيع موثقة في [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).

@@ -20,7 +20,8 @@
 
 1. `main/` 只放源码与随源码的文档：代码、`main/patches/`（修改归档与
    FFI 壳源码）、`main/build/`（构建脚本与 patch 记录文档）、
-   `main/LICENSE`、`main/THIRD-PARTY-NOTICES.md`、语言/脚本/测试等。
+   `main/LICENSE`、`main/THIRD-PARTY-NOTICES.md`、`main/docs/`（多语言 README）、
+   语言/脚本/测试等。
 2. **禁止**在 `main/` 内出现任何编译产物（`.exe` `.dll` `.lib` `.obj`
    `.pdb` `.zip` 等）与发布包——发布包统一输出到**项目根 `release/`**
    （`pack.bat` 已内置：`OUT=%ROOT%\..\release\%VERSION%`）。
@@ -46,6 +47,10 @@
 3. `main/README.md`、`main/目录结构说明.md`、`main/script/scripts/lua_api.txt`
    属于项目文档：改代码/API/目录结构时**同步更新**（不新增文件、不删除
    文件、不改职责的变更也应核对文档描述是否仍然成立）。
+   - 多语言 README 位于 `main/docs/`（`README.<lang>.md` ×15），**根 `README.md`
+     必须留在 `main/` 根目录**（Gitee 首页依赖它自动展示）。改 `main/` 顶层目录树
+     或增删语种时，16 个文件的语言切换链接与目录树须同步：根文件指向 `docs/…`，
+     `docs/` 内指向 `../…`（`../README.md` / `../LICENSE` / `../THIRD-PARTY-NOTICES.md`）。
 4. 新增 API 必须写进 `main/script/scripts/lua_api.txt`（AI 生成时同步）；
    新增目录/文件职责写进 `main/目录结构说明.md`；清单文件本身
    变化时更新 `main/DOCS_MANIFEST.md`。

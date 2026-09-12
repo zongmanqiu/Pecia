@@ -1,10 +1,10 @@
-> **🌐 Languages**: [中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — Trình soạn thảo văn bản tối giản
 
 ---
 
-**[⬇️ Tải phiên bản mới nhất (1.0.0)](https://gitee.com/qiuzongman/curseen/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
+**[⬇️ Tải phiên bản mới nhất (1.0.0)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
 
 Trình soạn thảo văn bản nhẹ cho Windows, dựa trên C++17 + FLTK. Hỗ trợ nhiều tab, mở file lớn tức thì, đa mã hóa, mở rộng bằng script Lua.
 
@@ -99,6 +99,7 @@ main/
 ├── CMakeLists.txt      Quy tắc build (điểm vào CMake)
 ├── main.cpp            Điểm vào chương trình
 ├── README.md           Tài liệu này (tổng quan kiến trúc / stack kỹ thuật / hướng dẫn build)
+├── docs/               Các phiên bản README bằng ngôn ngữ khác (README.<lang>.md)
 ├── 目录结构说明.md      Quy chuẩn thư mục và module (bắt buộc đọc khi tiếp nhận)
 ├── core/               Logic thuần lõi (không UI)
 ├── editor/             Widget trình soạn thảo
@@ -205,6 +206,6 @@ test  có thể phụ thuộc bất kỳ tầng nào, nhưng chỉ test logic th
 
 ## Giấy phép
 
-[GNU AGPL-3.0](LICENSE).
+[GNU AGPL-3.0](../LICENSE).
 
-Giấy phép, mô tả thay đổi (patch) và nghĩa vụ phân phối của các thành phần bên thứ ba (FLTK/Lua/PCRE2/md4c/litehtml/stb và các crate Rust) xem tại [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Giấy phép, mô tả thay đổi (patch) và nghĩa vụ phân phối của các thành phần bên thứ ba (FLTK/Lua/PCRE2/md4c/litehtml/stb và các crate Rust) xem tại [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).

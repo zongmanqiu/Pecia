@@ -8,6 +8,7 @@
 | 文件 | 覆盖内容 | 需要更新的时候 |
 |------|----------|----------------|
 | `README.md` | 构建方式、环境要求、技术栈、顶层目录、架构总览 | 构建流程变化、新增/移除技术依赖、新增顶层目录、架构描述变化 |
+| `docs/` | 其他语言版本的 README(`README.<lang>.md` ×15,语言切换互跳 + 回指根 `../README.md`) | 新增/删除语种、修改相对链接、或 main/ 顶层目录树变化时 |
 | `目录结构说明.md` | 每个目录/文件的职责、测试清单、新增代码规则 | 新增/删除/重命名/改职责的任何文件或目录；新增测试 |
 | `script/scripts/lua_api.txt` | Lua 脚本指南（==Meta==/@name 声明规范 + editor/win/regex API、params、pecia_lang、folder.ini、--!pui；随 scripts 文件夹复制到 build/script，PeciaLua 帮助按钮读取） | 新增/修改/删除任何 Lua API 或脚本声明语法 |
 | `lang/en.ini` `lang/zh-CN.ini` | 官方 UI 文案 | 新增/修改/删除任何 I18n 键（两文件键集必须一致） |

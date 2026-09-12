@@ -1,10 +1,10 @@
-> **🌐 Languages**: [中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — Minimalist Metin Düzenleyici
 
 ---
 
-**[⬇️ En son sürümü indir (1.0.0)](https://gitee.com/qiuzongman/curseen/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
+**[⬇️ En son sürümü indir (1.0.0)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
 
 C++17 + FLTK tabanlı Windows için hafif metin düzenleyici. Çoklu sekme, büyük dosyaları anında açma, çoklu kodlama desteği, Lua betik genişletme desteği.
 
@@ -98,6 +98,7 @@ main/
 ├── CMakeLists.txt      Derleme kuralları (CMake girişi)
 ├── main.cpp            Program girişi
 ├── README.md           Bu belge (mimari genel bakış / teknik yığın / derleme talimatları)
+├── docs/               Diğer dillerdeki README sürümleri (README.<lang>.md)
 ├── 目录结构说明.md      Dizin ve modül standartları (devralma okuması zorunlu)
 ├── core/               Çekirdek saf mantık (UI yok)
 ├── editor/             Düzenleyici bileşeni
@@ -204,7 +205,7 @@ test  her katmana bağımlı olabilir, ancak yalnızca saf mantığı test eder 
 
 ## Lisans
 
-[GNU AGPL-3.0](LICENSE).
+[GNU AGPL-3.0](../LICENSE).
 
 Üçüncü bileşenlerin (FLTK/Lua/PCRE2/md4c/litehtml/stb ve Rust crate'leri) lisansları,
-değişiklik (yama) açıklamaları ve dağıtım yükümlülükleri için [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) dosyasına bakın.
+değişiklik (yama) açıklamaları ve dağıtım yükümlülükleri için [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md) dosyasına bakın.

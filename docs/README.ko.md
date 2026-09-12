@@ -1,10 +1,10 @@
-> **🌐 Languages**: [中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — 극소 텍스트 편집기
 
 ---
 
-**[⬇️ 최신 버전 다운로드 (1.0.0)](https://gitee.com/qiuzongman/curseen/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
+**[⬇️ 최신 버전 다운로드 (1.0.0)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
 
 C++17 + FLTK 기반 Windows 경량 텍스트 편집기. 멀티 탭, 대용량 파일 즉시 열기, 다중 인코딩 지원, Lua 스크립트 확장.
 
@@ -100,6 +100,7 @@ main/
 ├── CMakeLists.txt      빌드 규칙(CMake 진입점)
 ├── main.cpp            프로그램 진입점
 ├── README.md           본 문서(아키텍처 개요/기술 스택/빌드 설명 포함)
+├── docs/               다른 언어 README(README.<lang>.md)
 ├── 目录结构说明.md      디렉토리 및 모듈 사양(인수 인계 시 필독)
 ├── core/               핵심 순수 로직(UI 없음)
 ├── editor/             에디터 컨트롤
@@ -207,7 +208,7 @@ test  모든 계층에 의존 가능하나 순수 로직만 테스트(GUI 의존
 
 ## 라이선스
 
-[GNU AGPL-3.0](LICENSE).
+[GNU AGPL-3.0](../LICENSE).
 
 서드파티 구성 요소(FLTK/Lua/PCRE2/md4c/litehtml/stb 및 Rust crate)의 라이선스,
-수정(patch) 설명 및 배포 의무는 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)를 참조하세요.
+수정(patch) 설명 및 배포 의무는 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)를 참조하세요.

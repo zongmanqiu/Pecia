@@ -1,12 +1,12 @@
-> **🌐 Languages**: [中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — 極簡文字編輯器
 
-> **🌐 語言 / Languages**: [中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 語言 / Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 ---
 
-**[⬇️ 下載最新版 (1.0.0)](https://gitee.com/qiuzongman/curseen/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
+**[⬇️ 下載最新版 (1.0.0)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
 
 基於 C++17 + FLTK 的 Windows 輕量級文字編輯器。多標籤、大檔案秒開、多編碼支援、Lua 腳本擴充。
 
@@ -106,6 +106,7 @@ main/
 ├── CMakeLists.txt      建構規則（CMake 入口）
 ├── main.cpp            程式入口
 ├── README.md           本文檔（含架構總覽/技術棧/建構說明）
+├── docs/               其他語言的 README(README.<語言>.md)
 ├── 目錄結構說明.md      目錄與模組規範（接手必讀）
 ├── core/               核心純邏輯（無 UI）
 ├── editor/             編輯器控制項
@@ -219,7 +220,7 @@ test  可依賴任何層，但只測純邏輯（不依賴 GUI）
 
 ## License
 
-[GNU AGPL-3.0](LICENSE)。
+[GNU AGPL-3.0](../LICENSE)。
 
 第三方元件（FLTK/Lua/PCRE2/md4c/litehtml/stb 與 Rust crates）的授權條款、
-修改（patch）說明及分發義務見 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+修改（patch）說明及分發義務見 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)。

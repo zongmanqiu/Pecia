@@ -1,10 +1,10 @@
 # Pecia — 极简文本编辑器
 
-> **🌐 语言 / Languages**: [中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 语言 / Languages**: [中文](README.md) | [English](docs/README.en.md) | [日本語](docs/README.ja.md) | [한국어](docs/README.ko.md) | [Deutsch](docs/README.de.md) | [Français](docs/README.fr.md) | [Español](docs/README.es.md) | [Русский](docs/README.ru.md) | [Português-BR](docs/README.pt-BR.md) | [Italiano](docs/README.it.md) | [繁體中文](docs/README.zh-TW.md) | [العربية](docs/README.ar.md) | [हिन्दी](docs/README.hi.md) | [Indonesia](docs/README.id.md) | [Türkçe](docs/README.tr.md) | [Tiếng Việt](docs/README.vi.md)
 
 ---
 
-**[⬇️ 下载最新版 (1.0.0)](https://gitee.com/qiuzongman/curseen/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
+**[⬇️ 下载最新版 (1.0.0)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
 
 基于 C++17 + FLTK 的 Windows 轻量级文本编辑器。多标签、大文件秒开、多编码支持、Lua 脚本扩展。
 
@@ -104,6 +104,7 @@ main/
 ├── CMakeLists.txt      构建规则(CMake 入口)
 ├── main.cpp            程序入口
 ├── README.md           本文档(含架构总览/技术栈/构建说明)
+├── docs/               其他语言的 README(README.<语言>.md)
 ├── 目录结构说明.md      目录与模块规范(接手必读)
 ├── core/               核心纯逻辑(无 UI)
 ├── editor/             编辑器控件
