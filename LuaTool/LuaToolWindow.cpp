@@ -182,6 +182,15 @@ void LuaToolWindow::retheme() {
     const Theme &th = DialogBase::retheme(*m_appCfg);   // reload owned theme + shell chrome
     const ThemeColors &tc = th.colors();
 
+    // DialogBase::retheme() resets the window color to background1 (work
+    // area). This tool window is chrome-themed, so restore the frame color
+    // used at construction (line 143). Without this, the button-row strip
+    // (its background is the window color showing through the transparent
+    // output-header box) turns white after any theme/language/shortcut
+    // change - i.e. the row's gray "disappears" while the buttons keep
+    // background2.
+    color(tc.background2);
+
     if (m_scriptEdit) {
         m_scriptEdit->color(tc.background1);
         m_scriptEdit->textcolor(tc.text1);

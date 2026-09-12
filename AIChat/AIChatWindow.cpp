@@ -191,6 +191,12 @@ void AIChatWindow::retheme() {
     const Theme &th = DialogBase::retheme(*m_appCfg);   // reload owned theme + shell chrome
     const ThemeColors &tc = th.colors();
 
+    // DialogBase::retheme() resets the window color to background1 (work
+    // area). This tool window is chrome-themed, so restore the frame color
+    // used at construction (AIChatWindow ctor). Without this the button-row
+    // strip turns white after any theme/language/shortcut change.
+    color(tc.background2);
+
     // Chat display + input editor + checkbox + buttons pick up the palette.
     if (m_chatDisp) {
         m_chatDisp->color(tc.background1);
