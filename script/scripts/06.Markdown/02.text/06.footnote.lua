@@ -1,0 +1,75 @@
+-- ==Meta==
+-- @name Footnote
+-- @name.zh-CN 脚注
+-- @name.zh-TW 腳註
+-- @name.ja 脚注
+-- @name.de Fußnote
+-- @name.fr Note de bas de page
+-- @name.es Nota al pie
+-- @name.ru Сноска
+-- @name.ko 각주
+-- @name.pt-BR Nota de rodapé
+-- @name.it Nota a piè di pagina
+-- @name.ar حاشية سفلية
+-- @name.hi पाद टिप्पणी
+-- @name.id Catatan Kaki
+-- @name.tr Dipnot
+-- @name.vi Chú thích cuối trang
+-- @date 20260813
+--!param label=1: footnote label (number or text)
+--!param text=: footnote text
+--!pui.title = Insert Footnote
+--!pui.title.zh-CN = 插入脚注
+--!pui.title.zh-TW = 標題
+--!pui.title.ja = タイトル
+--!pui.title.de = Titel
+--!pui.title.fr = Titre
+--!pui.title.es = Título
+--!pui.title.ru = Заголовок
+--!pui.title.ko = 제목
+--!pui.title.pt-BR = Título
+--!pui.title.it = Titolo
+--!pui.title.ar = العنوان
+--!pui.title.hi = शीर्षक
+--!pui.title.id = Judul
+--!pui.title.tr = Başlık
+--!pui.title.vi = Tiêu đề
+--!pui.label = Label
+--!pui.label.zh-CN = 标签
+--!pui.label.ja = ラベル
+--!pui.label.de = Beschriftung
+--!pui.label.fr = Étiquette
+--!pui.label.es = Etiqueta
+--!pui.label.ru = Метка
+--!pui.label.ko = 레이블
+--!pui.label.pt-BR = Rótulo
+--!pui.label.it = Etichetta
+--!pui.label.ar = تسمية
+--!pui.label.hi = लेबल
+--!pui.label.id = Label
+--!pui.label.tr = Etiket
+--!pui.label.vi = Nhãn
+--!pui.text = Text
+--!pui.text.zh-CN = 内容
+--!pui.text.zh-TW = 文字
+--!pui.text.ja = テキスト
+--!pui.text.de = Text
+--!pui.text.fr = Texte
+--!pui.text.es = Texto
+--!pui.text.ru = Текст
+--!pui.text.ko = 텍스트
+--!pui.text.pt-BR = Texto
+--!pui.text.it = Testo
+--!pui.text.ar = نص
+--!pui.text.hi = पाठ
+--!pui.text.id = Teks
+--!pui.text.tr = Metin
+--!pui.text.vi = Văn bản
+-- ==/Meta==
+
+-- 插入脚注引用 [^label] 与其定义行。md4c 渲染时定义会自动移到文末，
+-- 定义写在哪里都行；有选区时选区作为引用处的说明文字保留在原文。
+
+local label = params.label or "1"
+local text = params.text or ""
+return "[^" .. label .. "]\n\n[^" .. label .. "]: " .. text

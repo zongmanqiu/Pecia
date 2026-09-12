@@ -1,0 +1,4 @@
+#include <windows.h>
+#include "resource.h"
+1 RT_MANIFEST "pecia.manifest"
+IDI_PECIA ICON "../image/ai_bot.ico"

@@ -1,0 +1,68 @@
+# ---------------------------------------------------------------------------
+# Pecia .gitattributes
+#
+# Why this file exists (hard-won, 2026-09-10):
+#   cmd.exe requires CRLF line endings in .bat files. During the numbered
+#   pipeline refactor the scripts were rewritten with LF-only endings, which
+#   made cmd mis-parse `REM` line continuations and emit nonsense errors such
+#   as "'ld_pecia.bat' is not recognized" (the tail of "5_build_pecia.bat")
+#   and "此时不应有 :。". It masqueraded as a parenthesis-escaping bug for a
+#   while. Pin the ending in the repo so it cannot regress.
+#
+# Also note: the developer machine has core.autocrlf=true. That setting
+# normalizes on checkout but does NOT convert files written straight to disk
+# by external tools. Explicit attributes below are authoritative.
+# ---------------------------------------------------------------------------
+
+# Windows batch scripts MUST be CRLF - cmd.exe parses them line-by-line and a
+# stray LF breaks block/continuation handling.
+*.bat  text eol=crlf
+
+# Build/authoring shell helpers.
+*.cmd  text eol=crlf
+
+# CMake, C/C++, headers, Lua, Python: LF is fine and normalizes cleanly.
+*.cmake   text eol=lf
+CMakeLists.txt text eol=lf
+*.c     text eol=lf
+*.cc    text eol=lf
+*.cpp   text eol=lf
+*.cxx   text eol=lf
+*.h     text eol=lf
+*.hpp   text eol=lf
+*.lua   text eol=lf
+*.py    text eol=lf
+
+# Rust FFI shell crates (archived under patches/).
+*.rs      text eol=lf
+*.toml    text eol=lf
+Cargo.lock text eol=lf
+
+# Docs: keep LF so diffs stay readable across platforms.
+*.md   text eol=lf
+*.txt  text eol=lf
+*.json text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.ini  text eol=lf
+
+# Binary assets: never touch.
+*.png  binary
+*.bmp  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.ttf  binary
+*.otf  binary
+*.woff binary
+*.woff2 binary
+*.pdf  binary
+*.exe  binary
+*.dll  binary
+*.lib  binary
+*.zip  binary
+*.gz   binary
+*.tgz  binary
+*.7z   binary

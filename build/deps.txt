@@ -1,0 +1,70 @@
+# Pecia third-party dependency list
+# Read by 2_download.bat: each active line is downloaded and
+# extracted to .thirdparty/<name>/.
+#
+# Format: name=url
+#         name=url|marker-file
+# The extracted top-level dir is renamed to "name" automatically.
+# The optional "marker-file" (a path RELATIVE to .thirdparty/<name>/) is the
+# integrity probe: the library counts as "already present" only if that file
+# exists. This guards against a half-extracted directory left behind by an
+# interrupted download, which would otherwise be mistaken for a complete one.
+#
+# IMPORTANT: keep this file ASCII-only. cmd's "for /f" parses it in the OEM
+# code page; non-ASCII bytes (e.g. CJK comments) get mangled and can swallow
+# the following "name=url" lines, silently skipping dependencies.
+# (Chinese notes for these libraries live in build_readme.md / README.md.)
+#
+# IMPORTANT: GitHub-hosted libraries use
+#   https://codeload.github.com/<owner>/<repo>/tar.gz/<ref>
+# instead of
+#   https://github.com/<owner>/<repo>/archive/<ref>.tar.gz
+# Both serve the same archive (codeload is GitHub's archive host and is what
+# the archive/ URL redirects to). We link codeload directly because the
+# github.com/archive and github.com/releases paths return HTTP 502 behind
+# restrictive HTTP proxies, while codeload works through both direct and
+# proxied connections. lua.org is not on GitHub and is used as-is.
+#
+# Set PECIA_FORCE_DOWNLOAD=1 to ignore the cache/presence checks and re-fetch
+# every library from scratch (useful when .thirdparty/ is suspected corrupt).
+
+# ---- C/C++ libraries (downloaded by 2_download.bat) -----------------------
+
+# FLTK 1.4.5 - GUI framework
+fltk-1.4.5=https://codeload.github.com/fltk/fltk/tar.gz/refs/tags/release-1.4.5|CMakeLists.txt
+
+# PCRE2 10.47 - regex engine (for the Lua rex.* API)
+pcre2-10.47=https://codeload.github.com/PCRE2Project/pcre2/tar.gz/refs/tags/pcre2-10.47|src/pcre2_compile.c
+
+# litehtml 0.10 - HTML/CSS renderer (Markdown preview)
+litehtml-0.10=https://codeload.github.com/litehtml/litehtml/tar.gz/refs/tags/v0.10|src/document.cpp
+
+# Lua 5.5.1 - script engine
+lua-5.5.1=https://www.lua.org/ftp/lua-5.5.1.tar.gz|src/lauxlib.c
+
+# md4c - Markdown parser with extensions (footnotes / highlight /
+# superscript / subscript / admonitions). These extensions exist ONLY on
+# master (never in any release, incl. 0.5.3), so master is required.
+# PINNED to one commit (10fa4f4410a58cdd03cb4de1ade6efbbe7de59a4), NOT to the
+# floating branch head. The "-YYYY-MM-DD" suffix in the name below is that
+# commit's date, so the directory name tells you which snapshot it is.
+# Bump deliberately: get a new hash from
+# https://api.github.com/repos/mity/md4c/commits/master
+md4c-2026-09-11=https://codeload.github.com/mity/md4c/tar.gz/10fa4f4410a58cdd03cb4de1ade6efbbe7de59a4|src/md4c.c
+
+# stb - single-header libs (stb_image.h etc.). Upstream publishes no releases
+# and no tags, so the only way to pin is a master commit. PINNED to
+# 2c980bb59875b0d32144a71867fbdebb2f77cd20; the name's date is that commit's
+# date. Bump via https://api.github.com/repos/nothings/stb/commits/master
+stb-2026-08-02=https://codeload.github.com/nothings/stb/tar.gz/2c980bb59875b0d32144a71867fbdebb2f77cd20|stb_image.h
+
+# ---- Rust FFI shells (copied from main/patches/, no download) -------------
+# 3_patch.bat copies these from main/patches/ into .thirdparty/:
+#   mermaid-rs-renderer-0.3.1/mmdr-ffi/  - Mermaid + SVG render FFI
+#   RaTeX-0.1.14/ratex-ffi/              - LaTeX formula render FFI
+# (No marker here: these two dirs are created by the patch step, not by
+#  extraction, so the download script does not probe them.)
+# Their Rust dependencies are fetched by cargo from crates.io, versions locked
+# in each FFI crate's Cargo.lock (mermaid-rs-renderer 0.3.1, RaTeX 0.1.14,
+# resvg 0.47.0, usvg 0.47.0, fontdb 0.23). cargo fetch runs before the build so
+# the later build can proceed offline.

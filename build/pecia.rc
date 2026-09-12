@@ -1,0 +1,6 @@
+#include <windows.h>
+#include "resource.h"
+1 RT_MANIFEST "pecia.manifest"
+IDI_PECIA ICON "../image/pecia.ico"
+ID_QR_WECHAT RCDATA "../image/WeChatPay.svg"
+ID_QR_ALIPAY RCDATA "../image/ALiPay.svg"

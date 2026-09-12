@@ -1,0 +1,308 @@
+Pecia Lua 脚本指南 / Script Reference
+==================================================
+
+脚本执行方式 / How scripts run
+--------------------------------------------------
+- 脚本的**顶层代码直接执行**（加载后立即运行一次）；**没有 main() 约定**——
+  不要写 `function main()` 却不调用它，那样什么都不会发生。
+- 需要执行的代码**直接写在顶层**；可以定义辅助函数，但必须在顶层调用。
+- 用 `print(...)` 输出额外信息（显示在控制台）；**运行成功/失败的状态
+  由控制台自动提示**（成功显示完成信息，失败显示错误），脚本无需自己 print。
+- 运行时错误会显示在控制台；请自行校验输入（如选区为空时 print 提示）。
+- 脚本执行有**指令计数超时**保护（约 500 万条指令），超过则中断并报错
+  （防止死循环冻死 UI）。
+
+返回值 / Return value
+--------------------------------------------------
+- 脚本可以 `return` 一个字符串。返回的字符串会**替换当前选区**；
+  如果没有选区，则**替换整个文档**（与 Textus 行为一致）。
+- 不 return 或 return nil 表示脚本通过 `editor:replace_selection()` 等
+  方式已经自行修改了文档，引擎不再额外替换。
+
+```lua
+-- 最简单的脚本：把选中文本转为大写
+return input:upper()
+```
+
+安全提示 / Security note
+--------------------------------------------------
+- **脚本以当前用户权限运行，并非沙箱**：Lua 的 `os` / `io` / `package`
+  / `debug` 等库完整开放，脚本可执行系统命令、读写磁盘上的任意文件、
+  访问剪贴板等。
+- 因此**只运行你信任的、能看懂全文的脚本**（本项目脚本都是明文 .lua，
+  运行前可先预览/审阅）。不要轻率运行来历不明的第三方脚本。
+- 对脚本造成的文件/系统改动，程序不做回滚或隔离。
+
+完整示例 / Complete example（大小写互换 / toggle case）
+--------------------------------------------------
+```lua
+-- ==Meta==
+-- @name Toggle Case
+-- @name.zh-CN 切换大小写
+-- ==/Meta==
+
+local sel = editor:get_selection()
+if #sel == 0 then
+    print("No selection - select the text to convert first.")
+    return
+end
+local new_text = sel:gsub("%a", function(c)
+    return (c == c:lower()) and c:upper() or c:lower()
+end)
+editor:replace_selection(new_text)
+print("Done: toggled " .. #sel .. " chars.")
+```
+注意：示例中大小写转换在**一次 gsub 内完成**；不要写两次 gsub
+（如先 %l 再 %u），第二次会抵消第一次的结果。
+
+脚本头元信息 / Script Metadata
+--------------------------------------------------
+Pecia 的 Lua 脚本可以在文件头部的注释块中声明显示名称（支持多语言）。
+风格参考 Tampermonkey (油猴) 的 UserScript 头注释。
+
+格式（脚本文件开头、第一个可执行代码之前）:
+
+    -- ==Meta==
+    -- @name My Script
+    -- @name.zh-CN 我的脚本
+    -- @author Zhang San
+    -- @date 20260809
+    -- ==/Meta==
+
+规则:
+  - 声明区 = 从文件开头到第一个 Lua 代码行的连续注释区（空行允许），
+    ==Meta== 块、--!param、--!pui 都放在这里；没有行数限制
+    （仅 256 行防呆上限），大脚本多参数也没问题。
+  - 每行以 Lua 行注释 `--` 开头；`--` 与 `@` 之间可以有空格。
+  - **Pecia 只读取 @name 系列**（按钮显示名），其他键（@author、@date、
+    @description、@version 等）都只是给人看的注释，不会被读取或处理。
+    作者可以随意添加自己想要的说明字段。
+
+@name 系列（唯一被读取的键）:
+  - `@name 名称`           基础名称（默认语言 en）
+  - `@name.<语言代码> 名称` 指定语言的覆盖名称（语言代码与 Pecia 的
+    Settings > Language 菜单显示一致，如 zh-CN）
+
+显示回退链:
+  1. `@name.<当前语言>`（如 @name.zh-CN）
+  2. `@name`（en）
+  3. 文件名
+
+其他键（注释，Pecia 忽略）:
+
+    @author   作者
+    @date     日期
+    @description 描述
+    @version  版本号
+    ...       任意自定义字段
+
+块必须闭合（-- ==/Meta==）。未闭合、块内出现非注释行、或闭合标记
+没有对应的开始标记，都会导致整个块被忽略（回退链生效）。
+
+示例:
+
+    -- ==Meta==
+    -- @name → *
+    -- @author 邱宗满
+    -- @date 20260809
+    -- ==/Meta==
+
+    --!param order=asc|desc: 排序方式（升序/降序）
+    -- 脚本没有 main() 约定：顶层直接执行，参数通过 params 表读取（见上文）
+    local order = params.order or "asc"
+    print("排序方式 = " .. order)
+
+输入 / Input
+--------------------------------------------------
+input                         -- 全局变量，当前选中文本（字符串）
+                              -- 无选区时为空字符串 ""
+                              -- 多行文本保留原始换行符（\r\n 或 \n）
+
+返回值替换 / Return replacement
+--------------------------------------------------
+return "text"                 -- 返回字符串：替换选区（无选区时替换整个文档）
+return                        -- 不返回：脚本自行通过 editor:* 修改文档
+
+编辑器 / Editor
+--------------------------------------------------
+editor:get_selection()        -- 返回选中文本 / returns selection ("" if none)
+editor:replace_selection(t)   -- 替换选区；无选区时插入并选中 / replace sel (or insert at cursor)
+editor:get_cursor()           -- 光标位置(字节) / cursor position (bytes)
+editor:set_cursor(p)          -- 移动光标(越界钳制) / move cursor (clamped)
+
+插入辅助 / Insert helper
+--------------------------------------------------
+insert(text, offset)          -- 在光标处插入文本，然后将光标移动
+                              -- 到 插入位置 + text 长度 + offset
+                              -- offset 可省略（默认 0，光标在插入文本末尾）
+                              -- 用于无选区时快速插入配对符号等
+
+交互 / Interaction
+--------------------------------------------------
+win:message("hi")             -- 提示框 / message box
+win:question("ok?")           -- 是/否询问 → bool / Yes-No → bool
+win:clipboard_get()           -- 读剪贴板 / read clipboard
+win:clipboard_set("t")        -- 写剪贴板 / write clipboard
+win:open("path-or-url")       -- 默认程序打开 / open with default handler
+
+正则 / Regex —— rex 库（PCRE2 引擎，直接链接，推荐使用）
+--------------------------------------------------
+rex 库提供完整的 PCRE2 正则能力。编译时启用 UTF-8 + UCP 模式，支持中文。
+与 Textus 项目的 rex 库完全兼容。
+
+rex.version()                 -- 返回 PCRE2 版本号字符串（如 "10.47"）
+                              -- / returns PCRE2 version string
+
+rex.find(subject, pattern, init?) → from, to, cap1, cap2, ...
+                              -- 查找第一个匹配
+                              -- from/to 是字节位置（1-based，to 为排他结束位置）
+                              -- 后续返回值为各捕获组
+                              -- 未匹配时返回 nil, nil
+                              -- / find first match: from, to, captures... | nil, nil
+
+    local s, e, c1, c2 = rex.find("hello 123 world", "([a-zA-Z]+) (\\d+)")
+    -- s=1  e=10  c1="hello"  c2="123"
+
+rex.match(subject, pattern, init?) → string | nil
+                              -- 返回第一个匹配的完整文本
+                              -- / returns whole match string or nil
+
+    local m = rex.match("price: $42", "\\$\\d+")
+    -- m = "$42"
+
+rex.gmatch(subject, pattern) → table
+                              -- 返回数组表，每个元素是 {匹配全文, 捕获组1, ...}
+                              -- / returns array of {match, cap1, ...} sub-tables
+
+    local matches = rex.gmatch("a1 b2 c3", "([a-zA-Z])(\\d)")
+    for _, g in ipairs(matches) do
+      print(g[1], g[2], g[3])  -- "a1" "a" "1"  /  "b2" "b" "2"  ...
+    end
+
+rex.gsub(subject, pattern, repl, max?) → result_string, count
+                              -- 全局替换，返回替换后字符串和替换次数
+                              -- repl 为字符串时支持 $0/$& (整个匹配)、$1-$99 (捕获组)、$$ (字面$)
+                              -- repl 为函数时：每次匹配调用 repl(匹配全文, 捕获组1, ...)
+                              --   返回 string (替换) / nil (不替换) / number / boolean
+                              -- max 可选，限制替换次数（0 或省略 = 不限）
+                              -- / global replace: returns result, count
+
+    -- 字符串替换
+    local r, n = rex.gsub("2026-09-04", "(\\d+)-(\\d+)-(\\d+)", "$3/$2/$1")
+    -- r = "04/09/2026"  n = 1
+
+    -- 函数替换
+    local r2 = rex.gsub("hello world", "\\w+", function(w)
+      return w:sub(1, 1):upper() .. w:sub(2)  -- 首字母大写
+    end)
+    -- r2 = "Hello World"
+
+    -- 限制替换次数
+    local r3 = rex.gsub("a-b-c-d", "-", "/", 2)
+    -- r3 = "a/b/c-d"
+
+rex.split(subject, pattern) → table
+                              -- 按模式分割字符串，返回片段数组
+                              -- 连续分隔符产生空串元素
+                              -- / split: returns array of pieces
+
+    local parts = rex.split("a,,b,c", ",")
+    -- parts = {"a", "", "b", "c"}
+
+rex.new(pattern) → regex userdata
+                              -- 编译一个正则模式，返回可复用的 regex 对象
+                              -- / compile pattern, returns reusable regex object
+
+    local re = rex.new("\\d+")
+    local from, to = re:find("abc123def")   -- 4, 7
+    local m = re:match("abc123def")          -- "123"
+    local ms = re:gmatch("a1b2c3")           -- {{1},{2},{3}} ... 实际为 {{"1"},{"2"},{"3"}}
+
+    -- regex 对象方法与 rex.* 函数同名，但不需要再传 pattern
+    -- re:find(subject, init?)     → from, to, cap1, ...
+    -- re:match(subject, init?)    → string | nil
+    -- re:gmatch(subject)          → {{match, cap1, ...}, ...}
+    -- re:gsub(subject, repl, max?) → result, count
+    -- re:split(subject)           → {piece1, piece2, ...}
+
+注意 / Notes:
+  * 语法是 PCRE2（不是 Lua pattern）：\d \w \s \p{Han} (?i) (?m) 等
+  * Lua 字符串里写 \d 需转义为 \\d，或用 [0-9] 等字符类
+  * UCP 模式下 \w 可匹配中文
+  * [\x{4e00}-\x{9fff}] 匹配 CJK 汉字
+  * 支持 (?<name>...) 命名捕获组、(?:...) 非捕获组、(?=...) 前瞻
+  * 贪婪/非贪婪：.* 贪婪、.*? 惰性
+
+全局变量 / Globals
+--------------------------------------------------
+input                         -- 选中文本字符串（"" if 无选区）/ selection text
+pecia_lang                    -- 当前 UI 语言码（"en" / "zh-CN" ...）
+                              -- 脚本可据此输出本地化提示 / localize your own messages
+
+参数 / Parameters（脚本头部 --!param 声明，运行前自动弹窗）
+--------------------------------------------------
+-- 声明区 = 文件开头到第一个代码行的连续注释区（==Meta== 块、
+-- --!param、--!pui 都在这里；空行允许，无行数限制，仅 256 行防呆）
+
+通用格式 / General format:
+
+    --!param 参数名=默认值 : 标签文字
+
+文本框 / Text input（无 |）:
+    --!param prefix=【 : 文本前缀
+    -- → 脚本中 params.prefix 的值是用户输入的字符串
+
+下拉菜单 / Dropdown（默认值含 |，默认选第一项）:
+    --!param align=左对齐|居中|右对齐 : 对齐方式
+    -- → 脚本中 params.align 是用户选中的字符串（如 "居中"）
+    -- → 默认选第一项（"左对齐"）
+
+复选框 / Checkbox（选项为 on|off 或 off|on，默认 = 第一项的状态）:
+    --!param keep_blank=on|off : 保留空行    -- 默认勾选 ✓ (on 在前)
+    --!param upper=off|on : 全部转大写        -- 默认不勾选 ✗ (off 在前)
+    -- → 脚本中变量值为字符串 "on" 或 "off"
+
+读取 / read: params.name（字符串 / string，下拉/复选框返回原始值如 on/off）
+
+注意 / Notes:
+  * 所有参数值在脚本中都是**字符串**。数值需 tonumber() 转换，
+    勾选框用 == "on" 判断。
+  * 用 " : "（空格+冒号+空格）分隔声明段与标签文字，默认值就能含冒号
+    （如 URL）；也兼容无空格的 : 老格式。
+  * 默认值为空时写 =: （如 --!param pattern=: 正则模式）
+
+对话框多语言 / Dialog translations（翻译存脚本内，不存 Pecia lang 文件）
+--------------------------------------------------
+--!pui.title = Dialog Title            -- 对话框标题 / dialog title
+--!pui.title.zh-CN = 对话框标题
+--!pui.<param> = Label text            -- 参数标签 / parameter label
+--!pui.<param>.zh-CN = 标签文本
+--!pui.<param>.<option> = Option text  -- 下拉选项显示文本（值不变）/ option label
+--!pui.<param>.<option>.zh-CN = 选项文本
+-- 回退链：精确语言 → base(en) → 原始值（参数名/选项值）
+-- Lookup: exact lang → base(en) → raw value
+-- 标题未定义时回退 Pecia 自带 "Script Parameters"
+
+脚本文件夹 / Script folders（scripts/ 下两级子文件夹）
+--------------------------------------------------
+-- 每个文件夹可放 folder.ini 提供文件夹名多语言：
+--   name = Lines
+--   name.zh-CN = 每行
+-- 回退链：name.<lang> → name → 文件夹原名（无 ini 时）
+-- 二级子文件夹同样支持
+
+输出 / Output
+--------------------------------------------------
+print(...)                    -- 输出到控制台输出区 / to console output
+
+标准库 / Standard libraries（全部可用 / all available）
+--------------------------------------------------
+string table math io os utf8 coroutine debug package
+
+提示 / Tips:
+  * Pecia 内嵌 Lua 5.5（非 5.4）。
+  * 文档为 UTF-8，字符串长度按字节；中文用 utf8 库按字符处理。
+  * Docs are UTF-8; string length is in bytes. Use the utf8
+    library to handle Chinese by character.
+  * string.gsub 用的是 Lua 自带的模式匹配（%a、%d 等），不支持
+    \d、\w 等正则语法。需要完整正则能力时用 rex 库。
