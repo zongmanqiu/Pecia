@@ -104,7 +104,7 @@ main/
 ├── CMakeLists.txt      构建规则(CMake 入口)
 ├── main.cpp            程序入口
 ├── README.md           本文档(含架构总览/技术栈/构建说明)
-├── docs/               其他语言的 README(README.<语言>.md)
+├── docs/               其他语言的 README(README.<语言>.md) + 演示文稿 intro.pptx
 ├── 目录结构说明.md      目录与模块规范(接手必读)
 ├── core/               核心纯逻辑(无 UI)
 ├── editor/             编辑器控件

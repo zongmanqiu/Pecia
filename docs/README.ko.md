@@ -100,7 +100,7 @@ main/
 ├── CMakeLists.txt      빌드 규칙(CMake 진입점)
 ├── main.cpp            프로그램 진입점
 ├── README.md           본 문서(아키텍처 개요/기술 스택/빌드 설명 포함)
-├── docs/               다른 언어 README(README.<lang>.md)
+├── docs/               다른 언어 README(README.<lang>.md) + intro.pptx
 ├── 目录结构说明.md      디렉토리 및 모듈 사양(인수 인계 시 필독)
 ├── core/               핵심 순수 로직(UI 없음)
 ├── editor/             에디터 컨트롤

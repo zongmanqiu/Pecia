@@ -106,7 +106,7 @@ main/
 ├── CMakeLists.txt      建構規則（CMake 入口）
 ├── main.cpp            程式入口
 ├── README.md           本文檔（含架構總覽/技術棧/建構說明）
-├── docs/               其他語言的 README(README.<語言>.md)
+├── docs/               其他語言的 README(README.<語言>.md) + intro.pptx
 ├── 目錄結構說明.md      目錄與模組規範（接手必讀）
 ├── core/               核心純邏輯（無 UI）
 ├── editor/             編輯器控制項

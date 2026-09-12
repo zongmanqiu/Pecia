@@ -99,7 +99,7 @@ main/
 ├── CMakeLists.txt      Quy tắc build (điểm vào CMake)
 ├── main.cpp            Điểm vào chương trình
 ├── README.md           Tài liệu này (tổng quan kiến trúc / stack kỹ thuật / hướng dẫn build)
-├── docs/               Các phiên bản README bằng ngôn ngữ khác (README.<lang>.md)
+├── docs/               Các phiên bản README bằng ngôn ngữ khác (README.<lang>.md) + intro.pptx
 ├── 目录结构说明.md      Quy chuẩn thư mục và module (bắt buộc đọc khi tiếp nhận)
 ├── core/               Logic thuần lõi (không UI)
 ├── editor/             Widget trình soạn thảo

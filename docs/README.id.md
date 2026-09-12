@@ -100,7 +100,7 @@ main/
 ├── CMakeLists.txt      Aturan build (entry point CMake)
 ├── main.cpp            Entry point program
 ├── README.md           Dokumen ini (arsitektur umum / stack teknis / instruksi build)
-├── docs/               Versi README dalam bahasa lain (README.<lang>.md)
+├── docs/               Versi README dalam bahasa lain (README.<lang>.md) + intro.pptx
 ├── 目录结构说明.md      Spesifikasi direktori dan modul (wajib baca untuk penerus)
 ├── core/               Logika inti murni (tanpa UI)
 ├── editor/             Kontrol editor

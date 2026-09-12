@@ -98,7 +98,7 @@ main/
 ├── CMakeLists.txt      Derleme kuralları (CMake girişi)
 ├── main.cpp            Program girişi
 ├── README.md           Bu belge (mimari genel bakış / teknik yığın / derleme talimatları)
-├── docs/               Diğer dillerdeki README sürümleri (README.<lang>.md)
+├── docs/               Diğer dillerdeki README sürümleri (README.<lang>.md) + intro.pptx
 ├── 目录结构说明.md      Dizin ve modül standartları (devralma okuması zorunlu)
 ├── core/               Çekirdek saf mantık (UI yok)
 ├── editor/             Düzenleyici bileşeni

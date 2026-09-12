@@ -91,7 +91,7 @@ main/
 ├── CMakeLists.txt      Build-Regeln (CMake-Einstiegspunkt)
 ├── main.cpp            Programmeinstieg
 ├── README.md           Dieses Dokument (mit Architekturübersicht/Technologie-Stack/Build-Anleitung)
-├── docs/               README in anderen Sprachen (README.<lang>.md)
+├── docs/               README in anderen Sprachen (README.<lang>.md) + intro.pptx
 ├── 目录结构说明.md      Verzeichnis- und Modulspezifikationen (Pflichtlektüre für neue Entwickler)
 ├── core/               Kernlogik (kein UI)
 ├── editor/             Editor-Steuerelement

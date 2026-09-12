@@ -97,7 +97,7 @@ main/
 ├── CMakeLists.txt      Build rules (CMake entry point)
 ├── main.cpp            Program entry point
 ├── README.md           This document (including architecture overview/tech stack/build instructions)
-├── docs/               README in other languages (README.<lang>.md)
+├── docs/               README in other languages (README.<lang>.md) + intro.pptx
 ├── 目录结构说明.md      Directory and module conventions (essential reading for onboarding)
 ├── core/               Core pure logic (no UI)
 ├── editor/             Editor widget

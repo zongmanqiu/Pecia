@@ -102,7 +102,7 @@ main/
 ├── CMakeLists.txt      ビルドルール（CMake エントリ）
 ├── main.cpp            プログラムエントリ
 ├── README.md           本ドキュメント（アーキテクチャ概要/技術スタック/ビルド手順）
-├── docs/               他言語版 README(README.<lang>.md)
+├── docs/               他言語版 README(README.<lang>.md) + intro.pptx
 ├── 目录结构说明.md      ディレクトリとモジュールの仕様（引き継ぎ時に必須）
 ├── core/               コア純論理（UI 無し）
 ├── editor/             エディタコントロール
