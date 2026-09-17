@@ -177,6 +177,15 @@ MainWindow::MainWindow(int w, int h, const char *title)
     // displays as 100% on this startup since both values are 14.
     {
         m_baseFontSize = m_cfg->getUiFontSize();
+        // Restore the persisted editor zoom (editor_zoom_size; 0 = never
+        // zoomed -> follow the base size). Kept separate from
+        // ui_font_size so the status-bar percentage stays relative to
+        // the user's chosen base (plan.txt #10: 记忆缩放).
+        int savedZoom = m_cfg->getEditorZoomSize();
+        if (savedZoom >= 6 && savedZoom <= 48)
+            m_editorFontSize = savedZoom;
+        else
+            m_editorFontSize = m_baseFontSize;
     }
 
     begin();
@@ -711,20 +720,21 @@ MainWindow::~MainWindow() {
 void MainWindow::setFontSize(int size) {
     if (size < 6) size = 6;
     if (size > 48) size = 48;
+    m_editorFontSize = size;
     for (auto &t : m_tabsList) {
         t.editor->textsize(size);
         t.editor->linenumber_size(size);
         t.editor->syncStyleFont();
     }
-    // NOTE: We intentionally do NOT call m_cfg->setFont() here. Zoom
-    // (Ctrl+/-/0, Ctrl+wheel) is treated as a per-session adjustment:
-    // the user's chosen "base" font size (set via the Font dialog,
-    // default 13) is persisted by the Font dialog and saveSettings(),
-    // while the zoom level itself is not. This keeps the zoom
-    // percentage display at 100% on every fresh startup instead of
-    // inheriting the previous session's zoom (which previously showed
-    // 107% because a saved size of 14 was compared against the
-    // hard-coded BASE_FONT of 13).
+    // Persist the zoom (Ctrl+/-/0, Ctrl+wheel) so the next launch reopens
+    // at the same magnification. Stored in its own key (editor_zoom_size)
+    // so the base size (ui_font_size, saved by the Settings dialog) and
+    // the status-bar zoom percentage are unaffected. Resetting to the
+    // base (Ctrl+0) stores 0 = "no zoom".
+    m_cfg->setEditorZoomSize(size == m_baseFontSize ? 0 : size);
+    // The line-number gutter width is measured from the current font, so
+    // it must be recomputed whenever the zoom changes (plan.txt #10).
+    updateLinenumberWidth();
     updateStatusBar();
 }
 

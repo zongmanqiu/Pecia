@@ -177,6 +177,25 @@ void LuaToolWindow::refreshLabels() {
     redraw();
 }
 
+// Window resize: re-assert the intended geometry (see AIChatWindow::resize
+// for the rationale): the script editor and output pane span the full
+// width, the output header keeps its BTN_GAP inset, and the button row is
+// re-fitted (each button keeps its label width, plan.txt #1) right-aligned
+// inside the current window width.
+void LuaToolWindow::resize(int X, int Y, int W, int H) {
+    DialogBase::resize(X, Y, W, H);
+    if (!m_scriptEdit) return;
+    m_scriptEdit->resize(0, m_scriptEdit->y(), W, m_scriptEdit->h());
+    if (m_outDisp) m_outDisp->resize(0, m_outDisp->y(), W, m_outDisp->h());
+    if (m_outHdr) m_outHdr->resize(BTN_GAP, m_outHdr->y(), W - BTN_GAP, m_outHdr->h());
+    if (m_runBtn) {
+        int rowCenter = m_runBtn->y() + m_runBtn->h() / 2;
+        fitButtonRow({m_helpBtn, m_saveAsBtn, m_clearBtn, m_toAiBtn, m_runBtn},
+                     W, rowCenter, BTN_GAP, BTN_GAP);
+    }
+    redraw();
+}
+
 void LuaToolWindow::retheme() {
     if (!m_appCfg) return;
     const Theme &th = DialogBase::retheme(*m_appCfg);   // reload owned theme + shell chrome

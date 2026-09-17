@@ -156,6 +156,28 @@ void MainWindow::closeTab(int index) {
     redraw();
 }
 
+// Launch a new Pecia process with the given file (UTF-8 path). Used by
+// openFile in single-tab mode: a second open must not replace the open
+// document (plan.txt #6), so the new file goes into its own window.
+// Returns false when the process could not be started.
+bool MainWindow::spawnWindowWithFile(const char *path) {
+    if (!path || !*path) return false;
+    // 宽字符路径：中文安装目录下 GetModuleFileNameA/CreateProcessA 失效。
+    wchar_t exePathW[MAX_PATH];
+    GetModuleFileNameW(nullptr, exePathW, MAX_PATH);
+    std::wstring cmd = std::wstring(L"\"") + exePathW + L"\" \"" +
+                       widen(path) + L"\"";
+    STARTUPINFOW si = { sizeof(si) };
+    PROCESS_INFORMATION pi = {};
+    if (!CreateProcessW(exePathW, &cmd[0], nullptr, nullptr, FALSE, 0,
+                        nullptr, nullptr, &si, &pi)) {
+        return false;
+    }
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return true;
+}
+
 void MainWindow::openFile(const char *path) {
     bool multi = m_cfg->getMultiTab();
 
@@ -174,9 +196,20 @@ void MainWindow::openFile(const char *path) {
     // (no display attached) and mount it afterwards.
 
     if (!multi) {
-        // Single-tab mode: replace the current document (with save prompt
-        // if dirty), instead of creating a hidden second tab.
+        // Single-tab mode: never silently replace an open document. If the
+        // current tab already holds content, open the new file in its own
+        // Pecia process instead (plan.txt #6). An untouched empty "Unnamed"
+        // placeholder is still replaced in place.
         int i = activeTabIndex();
+        bool occupied = false;
+        if (i >= 0) {
+            Document *d = m_tabsList[i].doc;
+            occupied = d->isDirty() || d->filePath()[0] ||
+                       (d->buffer() && d->buffer()->length() > 0);
+        }
+        if (occupied && spawnWindowWithFile(path)) return;
+        // Spawn failed (e.g. exe path unavailable) - fall through to the
+        // historic replace behaviour so the file still opens.
         if (i >= 0 && m_tabsList[i].doc->isDirty()) {
             if (!checkSaveBeforeClose(i)) return;  // user cancelled
         }
@@ -400,6 +433,17 @@ void MainWindow::updateStatusBar() {
     if (!t || !m_status) return;
     int pos = t->editor->insert_position();
     Fl_Text_Buffer *buf = t->doc->buffer();
+
+    // Cache is keyed to its buffer: after a tab switch the previous
+    // document's (pos, line) anchor is meaningless for this one and must
+    // be discarded (it caused wrong line numbers + a worst-case full
+    // count_lines scan over the new file on every switch).
+    if (buf != m_statBuf) {
+        m_statBuf = buf;
+        m_statPos = -1;
+        m_statLine = 1;
+        m_statLineStart = -1;
+    }
 
     // Defensive: FLTK 1.4.5 count_lines/line_start hang when a position
     // exceeds the buffer length (undo can leave the cursor stale). Clamp

@@ -60,7 +60,11 @@ Config();
                      int defW, int defH) const;
     void setToolSize(const char *prefix, int w, int h);
 
-    // Font (FLTK font id + size)
+    // Font (FLTK font id + size), derived at call time from the single
+    // source of truth `editor_font` (font NAME, View > Font). The legacy
+    // font_id/font_size keys are dead (no writer ever existed) and are
+    // scrubbed from settings.ini on the next save. setFont() is kept for
+    // SettingsProvider ABI compatibility but is a no-op by design.
     void getFont(int &font, int &size) const;
     void setFont(int font, int size);
 
@@ -185,6 +189,12 @@ Config();
     // View > Editor font face.
     void getEditorFont(char *buf, int len, const char *fallback = "Consolas") const;
     void setEditorFont(const char *name);
+
+    // 编辑区缩放记忆（Ctrl +/-/0、Ctrl+滚轮）。独立于 ui_font_size：
+    // ui_font_size 是设置对话框里的基准字号，editor_zoom_size 是本次
+    // 缩放后的绝对字号；0 表示从未缩放（跟随基准）。
+    int  getEditorZoomSize() const;
+    void setEditorZoomSize(int size);
 
     // 搜索选中内容的搜索引擎 URL 模板（%s = 选中内容）
     void getSearchEngineUrl(char *buf, int len) const;

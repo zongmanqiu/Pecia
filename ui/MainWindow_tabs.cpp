@@ -161,10 +161,9 @@ int MainWindow::addTab(Document *doc, const char * /*label*/) {
     ed->setDoc(doc);
 
     ed->buffer(doc->buffer());
-    int fontId, fontSize;
-    m_cfg->getFont(fontId, fontSize);
-    fontSize = m_cfg->getUiFontSize();  // unify with rest of UI
-    ed->textfont(fontId);
+    // Font face comes from the single source of truth `editor_font`
+    // (applied via setFontFace below); the legacy font_id key is dead.
+    int fontSize = m_editorFontSize;  // live zoom (persists across tabs & restarts)
     ed->textsize(fontSize);
     ed->linenumber_size(fontSize);
     // Word wrap: the wrap layout measures every character through GDI and

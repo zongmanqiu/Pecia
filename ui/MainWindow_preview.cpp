@@ -611,6 +611,20 @@ void MainWindow::autoRefreshLoopCb(void *data)
 void MainWindow::refreshPreview()
 {
     if (!m_preview || !m_previewActive) return;
+    // Large-document guard: refreshPreview copies the WHOLE document text
+    // (activeDocumentText below) and string-compares it against the last
+    // render - with a 50 MB document that is a 50 MB alloc+copy on every
+    // tab switch / refresh tick before any parsing even starts. Skip the
+    // preview entirely for such files (same threshold as auto word wrap).
+    {
+        Tab *t0 = activeTab();
+        if (t0 && t0->doc && t0->doc->buffer() &&
+            t0->doc->buffer()->length() > kWrapLimitBytes) {
+            m_preview->clear();
+            m_lastRenderedMd.clear();   // also frees a stale 50 MB copy
+            return;
+        }
+    }
     std::string md = activeDocumentText();
     // Skip when the document text is unchanged (fixes the auto-refresh timer
     // re-rendering the full document every tick even when nothing changed).

@@ -2,6 +2,7 @@
 #include "Config.h"
 #include "PathUtils.h"
 
+#include <FL/Fl.H>              // Fl::set_fonts / Fl::get_font_name
 #include <FL/Enumerations.H>   // FL_COURIER
 #include <FL/filename.H>       // FL_PATH_MAX
 #include <FL/fl_string_functions.h>  // fl_strlcpy
@@ -128,9 +129,8 @@ static const char *configKeyDesc(const char *key) {
     if (strcmp(key,"detect_urls")==0) return "是否自动识别并高亮网址 (1=是 0=否)";
     if (strcmp(key,"dialog_pad")==0) return "对话框内容边距（像素）";
     if (strcmp(key,"editor_font")==0) return "编辑器字体名";
+    if (strcmp(key,"editor_zoom_size")==0) return "编辑区缩放字号（0=未缩放，跟随界面字号）";
     if (strcmp(key,"expand_tabs_on_save")==0) return "保存时是否把 Tab 转为空格 (1=是 0=否)";
-    if (strcmp(key,"font_id")==0) return "编辑器字体 ID";
-    if (strcmp(key,"font_size")==0) return "编辑器字号";
     if (strcmp(key,"highlight_current_line")==0) return "是否高亮当前行 (1=是 0=否)";
     if (strcmp(key,"lang")==0) return "界面语言 (en / zh-CN)";
     if (strcmp(key,"last_dir")==0) return "上次打开/保存文件的目录";
@@ -157,6 +157,12 @@ static const char *configKeyDesc(const char *key) {
     if (strcmp(key,"win_w")==0) return "主窗口宽度";
     if (strcmp(key,"win_h")==0) return "主窗口高度";
     if (strcmp(key,"win_flags")==0) return "主窗口标志位";
+    if (strcmp(key,"main_win_w")==0) return "主窗口宽度";
+    if (strcmp(key,"main_win_h")==0) return "主窗口高度";
+    if (strcmp(key,"lua_win_w")==0) return "Lua 控制台窗口宽度";
+    if (strcmp(key,"lua_win_h")==0) return "Lua 控制台窗口高度";
+    if (strcmp(key,"aichat_win_w")==0) return "AI 聊天窗口宽度";
+    if (strcmp(key,"aichat_win_h")==0) return "AI 聊天窗口高度";
     if (strcmp(key,"wrap")==0) return "是否自动换行 (1=是 0=否)";
     return nullptr;
 }
@@ -391,8 +397,6 @@ void Config::initFromDisk() {
     // If the file didn't exist, this generates the default file.
     // If keys are missing or invalid, they get repaired.
     bool needSave = !fileExisted;
-    needSave |= validateKey("font_id",       FL_COURIER, 0, 999);
-    needSave |= validateKey("font_size",     16,         6,  48);
     needSave |= validateKey("ui_font_size",  16,         10, 24);
     needSave |= validateKey("wrap",          1,          0,  1);
     needSave |= validateKey("line_numbers",  1,          0,  1);
@@ -436,8 +440,14 @@ void Config::initFromDisk() {
         needSave = true;
     }
 
-    // Remove deprecated keys that should no longer persist
+    // Remove deprecated keys that should no longer persist.
+    // font_id/font_size: dead legacy keys (no writer ever existed);
+    // font_id sat at its seeded default (4 = FL_COURIER) forever, which
+    // misled users into thinking the font setting was broken. The editor
+    // font's single source of truth is `editor_font`.
     m_entries.erase("ui_menu_indent_px");
+    m_entries.erase("font_id");
+    m_entries.erase("font_size");
 
     if (needSave) saveAll();
 
@@ -524,14 +534,56 @@ void Config::setToolSize(const char *prefix, int w, int h) {
 // Font
 // ---------------------------------------------------------------------------
 
+// Legacy font_id/font_size keys: FLTK font id 4 = FL_COURIER, but these
+// keys never had a writer (setFont was never called by any UI), so
+// font_id sat at its seeded default forever. The editor font's single
+// source of truth is `editor_font` (a font NAME, View > Font); this
+// getter resolves that name to a FLTK font id at call time.
+namespace {
+int fontNameToFlId(const char *name) {
+    if (!name || !name[0]) return FL_COURIER;
+    int num = Fl::set_fonts();
+    for (int i = 0; i < num; ++i) {
+        int attr = 0;
+        const char *fn = Fl::get_font_name(i, &attr);
+        if (!fn) continue;
+        // ASCII case-insensitive compare (same rule as FontUtils).
+        const char *a = fn, *b = name;
+        while (*a && *b) {
+            char ca = *a, cb = *b;
+            if (ca >= 'A' && ca <= 'Z') ca += 32;
+            if (cb >= 'A' && cb <= 'Z') cb += 32;
+            if (ca != cb) break;
+            ++a; ++b;
+        }
+        if (*a == *b) return i;
+    }
+    // Common fallback mapping (mirrors FontUtils::fontNameToId).
+    if (_stricmp(name, "Courier New") == 0 || _stricmp(name, "Courier") == 0)
+        return FL_COURIER;
+    if (_stricmp(name, "Helvetica") == 0) return FL_HELVETICA;
+    if (_stricmp(name, "Times") == 0 || _stricmp(name, "Times New Roman") == 0)
+        return FL_TIMES;
+    return FL_COURIER;
+}
+} // namespace
+
 void Config::getFont(int &font, int &size) const {
-    font = readInt("font_id", FL_COURIER);
-    size = readInt("font_size", 16);
+    char name[64];
+    getEditorFont(name, sizeof(name));
+    font = fontNameToFlId(name);
+    // Tool-window text size follows the UI font size (the old font_size
+    // key was equally dead - always its seeded default of 16).
+    size = getUiFontSize();
+    if (size < 6) size = 6;
+    if (size > 48) size = 48;
 }
 
-void Config::setFont(int font, int size) {
-    writeInt("font_id", font);
-    writeInt("font_size", size);
+void Config::setFont(int /*font*/, int /*size*/) {
+    // Intentional no-op: the editor font's single source of truth is
+    // `editor_font` (a font NAME, View > Font). This legacy writer used
+    // to feed the dead font_id/font_size keys; kept only for the
+    // SettingsProvider ABI so no caller can resurrect those keys.
 }
 
 // ---------------------------------------------------------------------------
@@ -822,6 +874,15 @@ void Config::getEditorFont(char *buf, int len, const char *fallback) const {
 
 void Config::setEditorFont(const char *name) {
     writeStr("editor_font", name ? name : "Consolas");
+}
+
+int Config::getEditorZoomSize() const {
+    // 0 = 从未缩放（跟随 ui_font_size 基准）。
+    return readInt("editor_zoom_size", 0);
+}
+
+void Config::setEditorZoomSize(int size) {
+    writeInt("editor_zoom_size", size);
 }
 
 // 搜索选中内容的搜索引擎 URL 模板（%s = 选中内容，默认 Bing）

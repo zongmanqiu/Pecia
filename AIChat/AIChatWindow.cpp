@@ -63,8 +63,11 @@ const char *kSystemPrompt =    "你是 Pecia 的 AI 助手。你既能帮助用�
     "win:clipboard_get() 读取剪贴板；win:clipboard_set(text) 写入剪贴板；win:open(path_or_url) 用系统默认程序打开文件或网址。"
     "标准库全部可用：string、table、math、os、utf8、coroutine、io（文件读写）、require/package（模块加载）、debug。"
     "文档为 UTF-8 编码，字符串长度按字节计算，处理中文时可用 utf8 库按字符遍历。"
-    "规则：当用户要求 Lua 脚本时，只输出纯净的 Lua 代码（不要 markdown 围栏、不要解释文字）；"
-    "其它文本任务按正常方式回复。请记住对话上下文，如果用户提到之前的脚本或文本，据此修正。"
+    "规则（重要）：只有当用户消息中出现了『脚本』或『lua』字样（不区分大小写）时，"
+    "才编写并输出 Lua 代码——此时只输出纯净的 Lua 代码，不要 markdown 围栏、不要解释文字；"
+    "用户消息没有提到这两个词时，绝不输出代码，直接运用你的文本能力完成任务"
+    "（数据清洗、去重、整理、翻译、润色、格式化等），把处理结果作为普通文本回复。"
+    "请记住对话上下文，如果用户提到之前的脚本或文本，据此修正。"
     "如果用户消息末尾带有『### target text ###』标记，其后内容就是用户在编辑器中选中的文本，"
     "请按用户要求直接处理这段文本（例如翻译、润色、去重等），把处理结果作为回复内容返回。";
 
@@ -241,6 +244,27 @@ void AIChatWindow::refreshLabels() {
     fitButtonRow({m_settingsBtn, m_clearBtn, m_toLuaBtn, m_toDocBtn, m_sendBtn},
                  w(), rowCenter, BTN_GAP, BTN_GAP);
 
+    redraw();
+}
+
+// Window resize: FLTK scales children that overlap the resizable pane
+// proportionally, which stretches the fixed-width button row and can
+// push the edge-to-edge panes out of sync with the window width.
+// Re-assert the intended geometry after every resize: panes span the
+// full width, the attach checkbox stays inset from the left edge, and
+// the button row is re-fitted (each button keeps its label width,
+// plan.txt #1) right-aligned inside the current window width.
+void AIChatWindow::resize(int X, int Y, int W, int H) {
+    DialogBase::resize(X, Y, W, H);
+    if (!m_chatDisp) return;
+    m_chatDisp->resize(0, m_chatDisp->y(), W, m_chatDisp->h());
+    if (m_inputEdit) m_inputEdit->resize(0, m_inputEdit->y(), W, m_inputEdit->h());
+    if (m_attachSel) m_attachSel->position(BTN_GAP, m_attachSel->y());
+    if (m_sendBtn) {
+        int rowCenter = m_sendBtn->y() + m_sendBtn->h() / 2;
+        fitButtonRow({m_settingsBtn, m_clearBtn, m_toLuaBtn, m_toDocBtn, m_sendBtn},
+                     W, rowCenter, BTN_GAP, BTN_GAP);
+    }
     redraw();
 }
 

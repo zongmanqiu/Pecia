@@ -33,6 +33,18 @@ void MainWindow::trimSoonCb(void *data)
 {
     auto *win = static_cast<MainWindow *>(data);
     if (!win) return;
+    // Skip the trim when the window holds a large document: EmptyWorkingSet
+    // evicts the whole text buffer from the working set, and the NEXT
+    // activation has to soft-fault every page back in - with a 50 MB file
+    // that is exactly the "switching between document windows feels
+    // sluggish" symptom (editing stays smooth, focus switch does not).
+    {
+        long long total = 0;
+        for (auto &t : win->m_tabsList)
+            if (t.doc && t.doc->buffer())
+                total += t.doc->buffer()->length();
+        if (total > kTrimSkipBytes) return;
+    }
     EmptyWorkingSet(GetCurrentProcess());
 }
 

@@ -47,6 +47,10 @@ public:
 
     int handle(int event) FL_OVERRIDE;
     void onCaptionClose() FL_OVERRIDE { cbClose(nullptr, this); }
+    // Keep full-width panes tracking the window width and re-fit the
+    // fixed-width button row on every resize (FLTK's proportional child
+    // scaling would otherwise stretch them when the window narrows).
+    void resize(int X, int Y, int W, int H) FL_OVERRIDE;
 
 private:
     // Dispatch a configurable shortcut (window ops + console actions).

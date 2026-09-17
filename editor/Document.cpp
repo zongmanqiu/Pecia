@@ -71,6 +71,16 @@ void Document::modifyCallback(int pos, int nInserted, int nDeleted,
         if (same) return;
     }
     self->setDirty(true);
+    // Any real content change invalidates the cached line count (keep in
+    // sync with the dirty-tracking guards above: zero-size notifications
+    // and no-op whole-buffer replaces don't change line counts either).
+    self->m_lineCount = -1;
+}
+
+int Document::lineCount() {
+    if (m_lineCount < 0)
+        m_lineCount = m_buffer->count_lines(0, m_buffer->length()) + 1;
+    return m_lineCount;
 }
 
 void Document::setDirty(bool v) {

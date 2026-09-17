@@ -15,6 +15,7 @@
 // layout measures every character via GDI and takes seconds on large
 // files). The user can still enable wrap manually afterwards.
 static const int kWrapLimitBytes = 4 * 1024 * 1024;   // 4 MB
+static const long long kTrimSkipBytes = 8LL * 1024 * 1024;   // skip working-set trim above this
 
 // Above this size the status bar counts lines incrementally (the naive
 // count_lines(0, pos) scan takes ~0.4 s on a 390 MB file).
@@ -28,6 +29,7 @@ class Fl_Group;
 class Editor;
 class Fl_Output;
 class Fl_Button;
+class Fl_Text_Buffer;
 class Fl_Menu_Button;
 class HoverMenuBar;
 class TitleBar;
@@ -96,6 +98,11 @@ public:
     // tab stays in this window. Returns false if the user cancelled a
     // Save As prompt, in which case the multi-tab mode is left unchanged.
     bool detachExtraTabsToNewWindows();
+
+    // Launch a new Pecia process with the given file. Used by openFile in
+    // single-tab mode: a second open must not replace the open document,
+    // so the new file goes into its own window instead.
+    bool spawnWindowWithFile(const char *path);
 
     // Called by handle() / cbModify to refresh the status bar on demand.
     void tick();
@@ -376,9 +383,13 @@ public:
 
     // Incremental status-bar line tracking: (cursor pos, line, line start)
     // cached from the last update, so big-file updates only scan the delta.
+    // m_statBuf keys the cache to its buffer: switching tabs used to reuse
+    // the previous document's byte offset/line as this one's anchor, which
+    // both showed wrong line numbers and could scan tens of MB per switch.
     int             m_statPos = -1;
     int             m_statLine = 1;
     int             m_statLineStart = 0;
+    Fl_Text_Buffer *m_statBuf = nullptr;
 
     // ---- 内存整理（EmptyWorkingSet，见 MainWindow_timers.cpp）----
     void            scheduleTrimSoon();     // 打开/保存/另存为对话框结束后主动整理
@@ -603,4 +614,8 @@ private:
     // saved size of 14 from a previous session still displays as 100%
     // (since m_baseFontSize would also be 14 in that case).
     int  m_baseFontSize = 13;
+    // Current editor text size (zoom-aware). Seeds from the persisted
+    // editor_zoom_size on startup; setFontSize() keeps it in sync so
+    // addTab() applies the live zoom to newly opened tabs.
+    int  m_editorFontSize = 13;
 };

@@ -62,6 +62,13 @@ public:
                                int nRestyled, const char *deletedText,
                                void *cbArg);
 
+    // Total line count (logical '\n' lines + 1), cached: a full-buffer
+    // count_lines() costs ~50 ms on a 50 MB file, and callers like the
+    // line-number gutter width calculation would otherwise rescan the
+    // whole buffer on every font-size change. The cache is invalidated
+    // by the buffer's own modify callback (modifyCallback below).
+    int lineCount();
+
 private:
     Fl_Text_Buffer *m_buffer;
     char            m_filePath[FL_PATH_MAX];
@@ -74,6 +81,7 @@ private:
     bool            m_trimEndingBlank = false;
     bool            m_expandTabs = false;
     int             m_tabWidth = 4;
+    int             m_lineCount = -1;   // cached count_lines(0,len)+1; -1 = dirty
 
     void setDirty(bool v);
 

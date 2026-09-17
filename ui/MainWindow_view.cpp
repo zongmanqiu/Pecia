@@ -45,7 +45,7 @@ void MainWindow::updateLinenumberWidth() {
         if (!t.editor || !t.doc) continue;
         Fl_Text_Buffer *buf = t.doc->buffer();
         if (!buf) continue;
-        int lines = buf->count_lines(0, buf->length()) + 1;
+        int lines = t.doc->lineCount();   // cached: avoids a full-buffer scan per font change
         if (lines < 1) lines = 1;
         // Count digits in the line number
         int digits = 1;

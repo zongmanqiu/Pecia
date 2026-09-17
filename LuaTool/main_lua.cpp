@@ -82,9 +82,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmdLine, int) {
     if (!langArg.empty()) fl_strlcpy(langCode, langArg.c_str(), sizeof(langCode));
     if (!I18n::load(langCode)) I18n::load("en");
 
-    // Fixed initial size (800x600, same as Pecia). Not persisted: every
-    // launch opens with the same size; the user can resize freely.
+    // Persisted window size (lua_win_w/_win_h in settings.ini). Clamp to
+    // a sane minimum and to the current desktop so a stale huge value
+    // from a multi-monitor setup cannot open an unusable window.
     int winW = DEFAULT_WIN_W, winH = DEFAULT_WIN_H;
+    appCfg.getToolSize("lua", winW, winH, DEFAULT_WIN_W, DEFAULT_WIN_H);
+    if (winW < 400) winW = 400;
+    if (winH < 300) winH = 300;
+    if (winW > Fl::w()) winW = Fl::w();
+    if (winH > Fl::h()) winH = Fl::h();
     LuaToolWindow win(&appCfg, pipeName, winW, winH, I18n::get("lua.title"));
     win.openDialog();
 
@@ -110,6 +116,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmdLine, int) {
     appCfg.startWatcher();
 
     int rc = Fl::run();
+    // Persist the final window size for the next launch.
+    appCfg.setToolSize("lua", win.w(), win.h());
     CloseHandle(hMutex);
     CoUninitialize();
     return rc;

@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ 最新版をダウンロード (1.0.0)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
+**[⬇️ 最新版をダウンロード (1.0.1)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.1/Pecia_x64_1.0.1.zip)**
 
 C++17 + FLTK ベースの Windows 軽量テキストエディタ。マルチタブ、大ファイルの高速オープン、マルチエンコーディング対応、Lua スクリプト拡張。
 

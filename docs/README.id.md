@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ Unduh Versi Terbaru (1.0.0)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
+**[⬇️ Unduh Versi Terbaru (1.0.1)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.1/Pecia_x64_1.0.1.zip)**
 
 Editor teks ringan untuk Windows berbasis C++17 + FLTK. Mendukung multi-tab, membuka file besar secara instan, multi-encoding, dan ekstensi skrip Lua.
 

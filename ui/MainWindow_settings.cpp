@@ -778,9 +778,12 @@ std::vector<ShortcutDialogRow> MainWindow::buildShortcutRows() {
 
 void MainWindow::saveSettings() {
     if (!m_cfg) return;
-    // NOTE: Window geometry is intentionally NOT persisted (fixed 800x600
-    // on every launch; the user can resize freely during the session).
-    // Font size is intentionally NOT persisted here. The zoom level
+    // Window SIZE is persisted (win_w/win_h): users have their own size
+    // preferences. Position is intentionally NOT persisted - every launch
+    // keeps the existing centering/cascade logic. Clamping happens on the
+    // read side (main.cpp).
+    m_cfg->setToolSize("main", w(), h());
+    // NOTE: Font size is intentionally NOT persisted here. The zoom level
     // (set via Ctrl+/-/0 or Ctrl+wheel) is per-session; saving it would
     // make the next startup show e.g. 107% instead of 100% (a saved size
     // of 14 compared against the hard-coded BASE_FONT of 13). The Font

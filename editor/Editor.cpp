@@ -131,6 +131,18 @@ struct ImeWindowHook {
 static std::vector<ImeWindowHook> g_imeHooks;
 
 static LRESULT CALLBACK imeWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_IME_SETCONTEXT) {
+        // Hide the IME's default composition window: we render the
+        // composition string ourselves inside the editor (see draw()).
+        // Clearing ISC_SHOWUICOMPOSITIONWINDOW keeps candidate lists working.
+        Editor *ed = dynamic_cast<Editor *>(Fl::focus());
+        if (ed && ed->window() && fl_xid(ed->window()) == hwnd)
+            lParam &= ~ISC_SHOWUICOMPOSITIONWINDOW;
+        for (auto &h : g_imeHooks) {
+            if (h.hwnd == hwnd) return CallWindowProcW(h.orig, hwnd, msg, wParam, lParam);
+        }
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
     if (msg == WM_IME_STARTCOMPOSITION || msg == WM_IME_COMPOSITION || msg == WM_IME_ENDCOMPOSITION) {
         Editor *ed = dynamic_cast<Editor *>(Fl::focus());
         if (ed && ed->window() && fl_xid(ed->window()) == hwnd) {
@@ -1375,9 +1387,13 @@ void Editor::draw() {
 
     // Cursor: a plain 3px vertical bar with no caps. FLTK's default
     // cursor has top/bottom caps; wipe it and draw ours on top.
+    // While an IME composition is active the caret position is parked at
+    // the composition cursor for candidate-window anchoring; we must NOT
+    // draw it here (the composition overlay below draws its own caret
+    // inside the composition string, which is where the user expects it).
     {
         int curX, curY;
-        if (mCursorOn && Fl::focus() == this &&
+        if (mCursorOn && Fl::focus() == this && !m_compActive &&
             position_to_xy(insert_position(), &curX, &curY)) {
             fl_font(textfont(), textsize());
             int barH = mMaxsize;
@@ -1389,11 +1405,45 @@ void Editor::draw() {
     }
 
 #if defined(_WIN32)
-    // (IME composition anchoring is handled solely by FLTK's draw_cursor()
-    // which calls fl_set_spot() every frame at the caret. Re-anchoring here
-    // in addition caused the IME window to be relocated multiple times per
-    // frame to different positions, producing visible flicker while typing
-    // pinyin.)
+    // In-place IME composition overlay: draw the composition string at
+    // m_compStart with an underline and a thin caret at the composition
+    // cursor (GCS_CURSORPOS). The IME's own composition window is hidden
+    // via WM_IME_SETCONTEXT in imeWindowProc() - previously it was left
+    // visible and painted the text plus a second (thick) caret next to
+    // ours, which is exactly the "|我很好|" double-caret symptom.
+    if (m_compActive && buffer() && !m_compText.empty() &&
+        m_compStart >= 0 && m_compStart <= buffer()->length()) {
+        int cx, cy;
+        if (position_to_xy(m_compStart, &cx, &cy)) {
+            fl_font(textfont(), textsize());
+            int lineH = fl_height();
+            int baseY = cy + lineH - fl_descent();
+            // Wipe FLTK's own heavy cursor (drawn at the parked insert
+            // position, visually inside the composition area).
+            int fx, fy;
+            if (position_to_xy(insert_position(), &fx, &fy)) {
+                fl_color(bgColor());
+                fl_rectf(fx - 2, fy, 5, mMaxsize > 0 ? mMaxsize : lineH);
+            }
+            fl_push_clip(text_area.x, y(), text_area.w, h());
+            fl_color(m_theme ? m_theme->colors().text1 : FL_FOREGROUND_COLOR);
+            fl_draw(m_compText.c_str(), cx, baseY);
+            // Composition caret: identical to the normal caret - same
+            // colour, 3px wide, full height, and it blinks with the
+            // normal mCursorOn timer (no underline; the old thin 2px
+            // non-blinking caret looked like a different widget).
+            if (mCursorOn && Fl::focus() == this &&
+                m_compCursorBytes >= 0 &&
+                m_compCursorBytes <= (int)m_compText.size()) {
+                std::string before = m_compText.substr(0, m_compCursorBytes);
+                int cw = (int)fl_width(before.c_str());
+                int barH = mMaxsize > 0 ? mMaxsize : lineH;
+                fl_color(cursor_color());
+                fl_rectf(cx + (int)cw - 1, cy, 3, barH);
+            }
+            fl_pop_clip();
+        }
+    }
 #endif
     // Overlay space symbols
     drawSpaceSymbols();

@@ -27,6 +27,8 @@
 | `build/msvc_env.bat` | MSVC/Windows SDK 环境自动探测(vswhere) | 环境探测逻辑变化时 |
 | `.gitattributes` | 行尾与二进制属性(**.bat/.cmd 强制 CRLF**——cmd.exe 需要, LF 会导致解析错乱) | 新增文件类型/调整行尾策略时 |
 | `build/pack.bat` | 打包 build/ 内容到 release/<版本>/ | 分发打包逻辑变化时 |
+| `docs/RELEASE_CHECKLIST.md` | 版本发行流程清单(版本号同步/质量门禁/打包/gitee 发行/自动更新验证) | 发行步骤或自动更新地址规则变化时 |
+| `HISTORY.md` | 更新历史(每版本在顶部增量追加,旧内容保持不变) | 每次发新版本时(见 docs/RELEASE_CHECKLIST.md) |
 | `build/build_readme.md` | 构建流程总说明(工具/依赖分类/Rust FFI 归属/编号脚本/常见坑) | 构建流程/依赖分类/工具链要求/FFI 归属说明变化时 |
 | `script/scripts/` | 内置默认 Lua 脚本（构建时复制到 build/script） | 新增/修改/删除默认脚本时（保持与 build/script 同步） |
 

@@ -273,6 +273,8 @@ build/
 - **质量门禁**：零警告（`/W4`）、14 个测试全绿、文档一致性（`test_docs`）通过。
 - **分发打包**：`pack.bat` 复制 `exe + lang/ + theme/ + script/ + LICENSE +
   THIRD-PARTY-NOTICES.md + licenses/` 到 `release/<版本>/`，并生成 zip。
+- **完整发行步骤**（版本号同步、质量门禁、gitee release、自动更新验证）
+  见 `docs/RELEASE_CHECKLIST.md`。
 
 ---
 

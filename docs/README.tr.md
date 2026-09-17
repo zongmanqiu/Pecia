@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ En son sürümü indir (1.0.0)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
+**[⬇️ En son sürümü indir (1.0.1)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.1/Pecia_x64_1.0.1.zip)**
 
 C++17 + FLTK tabanlı Windows için hafif metin düzenleyici. Çoklu sekme, büyük dosyaları anında açma, çoklu kodlama desteği, Lua betik genişletme desteği.
 

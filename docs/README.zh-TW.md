@@ -6,7 +6,7 @@
 
 ---
 
-**[⬇️ 下載最新版 (1.0.0)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
+**[⬇️ 下載最新版 (1.0.1)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.1/Pecia_x64_1.0.1.zip)**
 
 基於 C++17 + FLTK 的 Windows 輕量級文字編輯器。多標籤、大檔案秒開、多編碼支援、Lua 腳本擴充。
 

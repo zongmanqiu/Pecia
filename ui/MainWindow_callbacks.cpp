@@ -568,16 +568,23 @@ void MainWindow::cbSettings(Fl_Widget * /*w*/, void *data) {
 
 
 void MainWindow::applySettings(Config &cfg) {
-    int fontId, fontSize;
-    cfg.getFont(fontId, fontSize);
-    // Use the UI font size for the editor text so everything is consistent.
-    // The font face (fontId) still comes from getFont().
-    fontSize = cfg.getUiFontSize();
+    // Font face is owned by the single source of truth `editor_font`
+    // (View > Font / syncFromConfig); the legacy font_id key is dead and
+    // no longer forced onto the editors here.
+    int fontSize = cfg.getUiFontSize();
+    if (fontSize != m_baseFontSize) {
+        // The Settings dialog changed the BASE size: reset the zoom to
+        // the new base and clear the persisted zoom, otherwise the stale
+        // editor_zoom_size would override the newly chosen base on the
+        // next startup.
+        m_baseFontSize = fontSize;
+        m_editorFontSize = fontSize;
+        m_cfg->setEditorZoomSize(0);
+    }
     bool ln = cfg.getLineNumbers();
     bool wrap = cfg.getWrap();
 
     for (auto &t : m_tabsList) {
-        t.editor->textfont(fontId);
         t.editor->textsize(fontSize);
         t.editor->linenumber_size(fontSize);
         t.editor->linenumber_width(0);  // will be set by updateLinenumberWidth()

@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ Scarica l'ultima versione (1.0.0)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.0/Pecia_x64_1.0.0.zip)**
+**[⬇️ Scarica l'ultima versione (1.0.1)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.1/Pecia_x64_1.0.1.zip)**
 
 Editor di testo leggero per Windows basato su C++17 + FLTK. Supporto multi-schede, apertura istantanea di file di grandi dimensioni, supporto multiplo per le codifiche, estensione tramite script Lua.
 

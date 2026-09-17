@@ -3615,6 +3615,42 @@ void Fl_Text_Display::measure_deleted_lines(int pos, int nDeleted) {
  \param[out] retLineEnd End position of the last line traversed
  \param[out] countLastLineMissingNewLine
  */
+// PECIA PATCH: CJK line-breaking support -------------------------------
+// Stock FLTK only breaks at ASCII whitespace. A run of CJK text contains no
+// spaces, so it becomes one giant unbreakable "word" and lands in the
+// break-at-margin fallback, which cuts at whatever character overflows -
+// putting closing punctuation (，。) at line start and splitting words.
+// The helpers below implement the common CJK line-breaking rules: a break
+// is allowed between two CJK characters, forbidden BEFORE closing
+// punctuation and forbidden AFTER opening punctuation.
+static int pecia_cjk_no_break_before(unsigned int c) {
+  return (c==0x3001 || c==0x3002 || c==0x3005 || c==0x3009 || c==0x300B ||
+          c==0x300D || c==0x300F || c==0x3011 || c==0x3015 || c==0x3017 ||
+          c==0x3019 || c==0x301B || c==0x301E || c==0x30FB ||
+          c==0xFF01 || c==0xFF09 || c==0xFF0C || c==0xFF0E || c==0xFF1A ||
+          c==0xFF1B || c==0xFF1F || c==0xFF3D || c==0xFF5D || c==0xFF60 ||
+          c==0xFF65 || c==0x2019 || c==0x201D || c==0x2026 || c==0x2014 ||
+          c==0x00B7);
+}
+
+static int pecia_cjk_no_break_after(unsigned int c) {
+  return (c==0x300C || c==0x300E || c==0x3010 || c==0x3014 || c==0xFF08 ||
+          c==0xFF3B || c==0xFF5B || c==0xFF62 || c==0x2018 || c==0x201C);
+}
+
+static int pecia_cjk_char(unsigned int c) {
+  return (c>=0x1100 && c<=0x11FF) ||   // Hangul Jamo
+         (c>=0x2E80 && c<=0x9FFF) ||   // CJK radicals .. CJK unified
+         (c>=0xA960 && c<=0xA97F) ||   // Hangul Jamo Extended-A
+         (c>=0xAC00 && c<=0xD7FF) ||   // Hangul syllables
+         (c>=0xF900 && c<=0xFAFF) ||   // CJK compatibility ideographs
+         (c>=0xFE30 && c<=0xFE4F) ||   // CJK compatibility forms
+         (c>=0xFF00 && c<=0xFFEF) ||   // fullwidth forms
+         (c>=0x20000 && c<=0x2FFFD) || // CJK ext B..D
+         (c>=0x30000 && c<=0x3FFFD);   // CJK ext E..F
+}
+// -----------------------------------------------------------------------
+
 void Fl_Text_Display::wrapped_line_counter(Fl_Text_Buffer *buf, int startPos,
                                            int maxPos, int maxLines, bool startPosIsLineStart, int styleBufOffset,
                                            int *retPos, int *retLines, int *retLineStart, int *retLineEnd,
@@ -3632,7 +3668,15 @@ void Fl_Text_Display::wrapped_line_counter(Fl_Text_Buffer *buf, int startPos,
   if (mWrapMarginPix != 0) {
     wrapMarginPix = mWrapMarginPix;
   } else {
-    wrapMarginPix = text_area.w;
+    /* PECIA PATCH: reserve roughly one character of slack (font size in
+       px ~= one CJK glyph width) before the right text edge. The layout
+       counter accumulates per-character widths while the draw path
+       measures text in runs (kerning/hinting differences accumulate over
+       a line), so a line counted as exactly fitting could still let its
+       last glyph poke a few px past the clip edge and be cut in half. */
+    wrapMarginPix = text_area.w - textsize();
+    if (wrapMarginPix < text_area.w * 3 / 4)
+      wrapMarginPix = text_area.w * 3 / 4;
   }
 
   /* Find the start of the line if the start pos is not marked as a
@@ -3686,9 +3730,29 @@ void Fl_Text_Display::wrapped_line_counter(Fl_Text_Buffer *buf, int startPos,
     /* If character exceeded wrap margin, find the break point and wrap there */
     if (width > wrapMarginPix) {
       foundBreak = false;
-      for (b=p; b>=lineStart; b=buf->prev_char(b)) {
-        c = buf->char_at(b);
-        if (c == '\t' || c == ' ') {
+      b = lineStart;   // PECIA PATCH: fallback uses `b` below (STR #2730)
+      /* PECIA PATCH: scan forward once and remember the last break
+         opportunity: after ASCII whitespace, or at a CJK boundary
+         (prev is CJK, next is CJK, respecting punctuation rules). The
+         latest opportunity wins; ties favor whitespace. If no opportunity
+         exists (e.g. a long Latin word) fall through to the break-at-
+         margin fallback below, as before. */
+      {
+        int lastWs = -1, lastCjk = -1;
+        unsigned int prev = 0;
+        for (int q=lineStart; q<=p; q=buf->next_char(q)) {
+          unsigned int cc = buf->char_at(q);
+          if (cc == '\t' || cc == ' ') {
+            lastWs = q;
+          } else if (prev && pecia_cjk_char(prev) && pecia_cjk_char(cc) &&
+                     !pecia_cjk_no_break_after(prev) &&
+                     !pecia_cjk_no_break_before(cc)) {
+            lastCjk = q;   // break opportunity BEFORE q
+          }
+          prev = cc;
+        }
+        if (lastWs >= 0 && (lastCjk < 0 || lastWs > lastCjk)) {
+          b = lastWs;
           newLineStart = buf->next_char(b);
           colNum = 0;
           width = 0;
@@ -3699,12 +3763,28 @@ void Fl_Text_Display::wrapped_line_counter(Fl_Text_Buffer *buf, int startPos,
             colNum++;
           }
           foundBreak = true;
-          break;
+        } else if (lastCjk >= 0) {
+          b = lastCjk;               // break BEFORE b
+          newLineStart = b;
+          colNum = 0;
+          width = 0;
+          int iMax = buf->next_char(p);
+          for (i=b; i<iMax; i = buf->next_char(i)) {
+            width += measure_proportional_character(buf->address(i), (int)width,
+                                                    i+styleBufOffset);
+            colNum++;
+          }
+          foundBreak = true;
         }
+        if (b < lineStart) b = lineStart;
       }
-      if (b<lineStart) b = lineStart;
       if (!foundBreak) { /* no whitespace, just break at margin */
-        newLineStart = max(p, buf->next_char(lineStart));
+        /* PECIA PATCH: break BEFORE the overflowing character instead of
+           after it, so an unbreakable run (long Latin word, path, URL)
+           wraps char-by-char and never leaves its last glyph half-clipped
+           by the right text edge. Keep the stock guard for the degenerate
+           case where a single character is wider than the whole area. */
+        newLineStart = (p > lineStart) ? p : buf->next_char(lineStart);
         colNum++;
         if (b >= buf->length()) { // STR #2730
           width = 0;

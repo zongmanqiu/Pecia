@@ -84,10 +84,16 @@ int main(int /*argc*/, char ** /*argv*/) {
     // Tell FLTK to call us back when a file should be opened
     fl_open_callback(pecia_open_cb);
 
-    // Fixed initial window size (800x600, same as the tool windows).
-    // Window geometry is intentionally NOT persisted: every launch opens
-    // with the same size; the user can resize freely afterwards.
+    // Persisted window size (main_win_w/main_win_h in settings.ini, saved
+    // by MainWindow::saveSettings on exit). Clamp to a sane minimum and to
+    // the current desktop. Position keeps the existing centering/cascade
+    // logic below.
     int x = -1, y = -1, w = DEFAULT_WIN_W, h = DEFAULT_WIN_H;
+    cfg.getToolSize("main", w, h, DEFAULT_WIN_W, DEFAULT_WIN_H);
+    if (w < 400) w = 400;
+    if (h < 300) h = 300;
+    if (w > Fl::w()) w = Fl::w();
+    if (h > Fl::h()) h = Fl::h();
     MainWindow win(w, h, "Pecia");
 
     // Parse PECIA_POS environment variable for cascading new windows
