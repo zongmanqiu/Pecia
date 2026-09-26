@@ -166,6 +166,12 @@ Config();
     bool getCleanupTempOld() const;
     void setCleanupTempOld(bool on);
 
+    // 固定启动文档：电脑上没有其它 Pecia 进程时，启动（或该次启动的首个
+    // 标签）原本要打开空白新文档的话，改为打开 exe 同级目录下的
+    // Test.txt（不存在则新建空文件），省去开机时手动找文件。
+    bool getFixedStartupDoc() const;
+    void setFixedStartupDoc(bool on);
+
     // System integration: comma-separated list of extensions (with leading
     // dot, e.g. ".txt,.md,.log") registered for the "Open with" menu.
     // Empty string means "no extensions selected". The default (when the

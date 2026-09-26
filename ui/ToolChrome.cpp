@@ -10,6 +10,7 @@
 #include "resource.h"
 #include "core/Theme.h"
 #include "ui/NativeSubclass.h"
+#include "ui/WindowFrame.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -62,7 +63,10 @@ static LRESULT WINAPI toolSubclassProc(HWND hwnd, UINT msg,
             int ww = rcWin.right  - rcWin.left;
             int wh = rcWin.bottom - rcWin.top;
 
-            if (!IsZoomed(hwnd)) {
+            // Fill the invisible resize grip only when the window is a real
+            // floating window; a work-area-filling (maximized) window keeps
+            // just its 1px outer edge.
+            if (!windowCoversWorkArea(fl_find(hwnd))) {
                 HBRUSH brush = CreateSolidBrush(s_edgeFill);
                 RECT rcL = {0, 0, NC_PAD, wh};
                 FillRect(hdc, &rcL, brush);
@@ -101,7 +105,7 @@ static LRESULT WINAPI toolSubclassProc(HWND hwnd, UINT msg,
             pt.y < rc.top  || pt.y >= rc.bottom)
             return nativeSubclass::forward(hwnd, msg, wp, lp);
 
-        if (IsZoomed(hwnd))
+        if (windowCoversWorkArea(fl_find(hwnd)))
             return HTCLIENT;
 
         bool onTop    = pt.y <  rc.top    + NC_PAD;
@@ -191,6 +195,11 @@ void setupToolChrome(Fl_Window *win, const Theme *theme) {
 
     LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
     style |= WS_THICKFRAME;
+    // WS_SYSMENU | WS_MINIMIZEBOX are what let the shell minimize the window
+    // when its taskbar button is clicked (it toggles via SC_MINIMIZE); a
+    // frameless WS_POPUP window without them ignores that click. No visible
+    // chrome is added because we paint and hit-test the NC area ourselves.
+    style |= WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
     SetWindowLongPtrW(hwnd, GWL_STYLE, style);
 
     RECT rc;

@@ -25,7 +25,7 @@ REM ---- 1. locate MSVC toolchain dir (newest version under each root) --------
 REM Discovery order:
 REM   a) PECIA_MSVC_ROOT already set by the caller (explicit override)
 REM   b) vswhere.exe - the official VS locator; works for ANY install path
-REM      (e.g. "D:\ruanjian\msvc-build-tools") and any VS edition
+REM      (e.g. a non-default install path) and any VS edition
 REM   c) a short list of default install paths (fallback when vswhere is absent)
 if defined PECIA_MSVC_ROOT (
     if exist "%PECIA_MSVC_ROOT%\bin\Hostx64\x64\cl.exe" goto :msvc_ok

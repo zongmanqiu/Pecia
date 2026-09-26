@@ -1,6 +1,7 @@
 // TitleBar.cpp - Custom title bar implementation
 #include "TitleBar.h"
 #include "core/Theme.h"
+#include "ui/WindowFrame.h"
 
 #include <FL/fl_draw.H>
 #include <FL/Fl_Window.H>
@@ -387,6 +388,10 @@ int TitleBar::handle(int event) {
                 if (m_onToggleMaximize) m_onToggleMaximize();
                 return 1;
             }
+            // A window that fills its monitor work area (maximized) must not
+            // be dragged: moving it would leave it floating while still
+            // flagged maximized - no resize border, stale restore icon.
+            if (windowCoversWorkArea(window())) return 1;
             m_dragging = true;
             m_dragStartX = Fl::event_x_root();
             m_dragStartY = Fl::event_y_root();

@@ -62,6 +62,7 @@ private:
     Fl_Check_Button *m_autoIndentChk;
 
     Fl_Check_Button *m_multiTabChk;
+    Fl_Check_Button *m_fixedStartupDocChk;  // 固定启动文档（无其它 Pecia 时打开 Test.txt）
     Fl_Check_Button *m_trimTrailingChk;
     Fl_Check_Button *m_trimLeadingChk;
     Fl_Check_Button *m_trimEndingChk;

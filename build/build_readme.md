@@ -114,7 +114,7 @@ build/         最终分发目录（项目根：Pecia.exe / lang/ / theme/ / scr
 | ③ | **`3_patch.bat`** | 把 `main/patches/` 应用到 `.thirdparty/`（单向） | 改了补丁、想单独同步 |
 | ④ | **`4_build_rust.bat`** | `cargo fetch` 拉取 Rust 依赖 → `cargo build --release` 编出 `mermaid_ffi.lib` / `ratex_ffi.lib` | 改了 FFI 壳、或 Rust 依赖有变动时 |
 | ⑤ | **`5_build_pecia.bat`** | 编 FLTK → CMake 配置 + 编译 Pecia 三件套 → `ctest` 跑 14 个测试（**测试不过 = 构建失败**） | 日常改代码后重编 |
-| ★ | **`full.bat`** | **总入口**：②→③→④→⑤ 全自动（① 可选先跑） | 只想双击一次完成全部工作 |
+| ★ | **`full.bat`** | **总入口**：①→②→③→④→⑤ 全自动（① 为只读工具链体检，不下载不编译） | 只想双击一次完成全部工作 |
 
 关于 `full.bat` 的两个开关（它默认已打开）：
 - `PECIA_SKIP_PATCH=1`：告诉 ⑤ "③ 已跑过补丁，不用再跑"；
@@ -123,7 +123,7 @@ build/         最终分发目录（项目根：Pecia.exe / lang/ / theme/ / scr
 
 ```
 full.bat
-  ├─ 1_check_env.bat   工具链只读体检（也可不跑，直接进 ②）
+  ├─ 1_check_env.bat   工具链只读体检（只读：不下载不编译）
   ├─ 2_download.bat    读 deps.txt → curl 下载 → tar 解压 → .thirdparty/<name>/
   ├─ 3_patch.bat       patches → .thirdparty（单向，禁止反向）
   ├─ 4_build_rust.bat  cargo fetch → cargo build --release（2 个 FFI 静态库）
@@ -132,7 +132,7 @@ full.bat
                        [7/7] ctest（门禁：不过则整条流程失败）
 ```
 
-> **最简单用法：双击 `full.bat`**。它做完 ②→③→④→⑤，最后停住显示结果。
+> **最简单用法：双击 `full.bat`**。它做完 ①→②→③→④→⑤，最后停住显示结果。
 > 中途任一步失败会立即停止并报出**是哪一步**失败。
 > 若只想重编（依赖与 Rust 库均已就绪），直接双击 `5_build_pecia.bat` 亦可——
 > 它自己会先跑 ③（补丁），并按需决定是否调用 ④。
@@ -226,7 +226,7 @@ full.bat
 > Pecia 只链 FLTK 静态库，不受影响。
 
 ### 步骤 ★：一键全跑（`full.bat`）
-依次调用 ②→③→④→⑤，任一步失败即停并指出是哪一步。
+依次调用 ①→②→③→④→⑤，任一步失败即停并指出是哪一步。
 它用环境变量告诉下游子脚本"哪些阶段已经做过"，因此不会重复劳动：
 
 | 变量 | 作用 |

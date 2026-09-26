@@ -2,7 +2,7 @@
 
 # Pecia — Editor de texto minimalista
 
-**[⬇️ Descargar la última versión (1.0.1)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.1/Pecia_x64_1.0.1.zip)**
+**[⬇️ Descargar la última versión (1.0.2)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.2/Pecia_x64_1.0.2.zip)**
 
 Un editor de texto ligero para Windows basado en C++17 + FLTK. Con pestañas múltiples, apertura instantánea de archivos grandes, soporte multi-codificación y extensiones mediante scripts Lua.
 
@@ -52,7 +52,7 @@ build\4_build_rust.bat
 REM ⑤ Compilación de FLTK + trío Pecia, y ejecución de ctest
 build\5_build_pecia.bat
 
-REM ★ Punto de entrada principal = ②→③→④→⑤ (equivalente a hacer doble clic en full.bat)
+REM ★ Punto de entrada principal = ①→②→③→④→⑤ (equivalente a hacer doble clic en full.bat)
 build\full.bat
 ```
 
@@ -93,6 +93,13 @@ main/
 ├── README.md           Este documento (con vista general de la arquitectura/pila tecnológica/instrucciones de compilación)
 ├── docs/               Versiones del README en otros idiomas (README.<lang>.md) + intro.pptx
 ├── 目录结构说明.md      Especificaciones de directorios y módulos (lectura obligatoria para nuevos desarrolladores)
+├── 开发指南.md         Flujo de desarrollo/publicación y lista de verificación previa al commit
+├── AGENTS.md           Convenciones de ingeniería (colaboradores/reglas de IA)
+├── HISTORY.md          Historial de versiones (al publicar, añadir una nueva sección de versión arriba; mantener el contenido antiguo sin cambios)
+├── LICENSE             Texto oficial literal de AGPL-3.0 (UTF-8, sin BOM; no se pueden modificar los términos)
+├── THIRD-PARTY-NOTICES.md  Avisos de bibliotecas de terceros (nombre/versión/licencia/número de parches)
+├── .gitignore          Reglas de ignorado del control de versiones
+├── .gitattributes      Reglas de fin de línea y atributos de texto
 ├── core/               Lógica pura (sin UI)
 ├── editor/             Control de editor
 ├── ui/                 Ventanas/Diálogos/Barra de herramientas
@@ -180,7 +187,7 @@ test  puede depender de cualquier capa, pero solo prueba lógica pura (sin depen
 ### 5. Compilación y pruebas
 
 - **Cinco scripts numerados + punto de entrada principal** (`main/build/`, cada uno con una única responsabilidad, reejecutables individualmente):
-  - `full.bat`: **punto de entrada principal** (doble clic para ejecutar), llama secuencialmente ②→③→④→⑤.
+  - `full.bat`: **punto de entrada principal** (doble clic para ejecutar), llama secuencialmente ①→②→③→④→⑤.
   - `1_check_env.bat`: verificación de solo lectura de la cadena de herramientas (cmake/cargo/cl/nmake/rc/tar/curl; el host `rustc -vV` debe ser `pc-windows-msvc`, de lo contrario no se producirán `.lib` enlazables).
   - `2_download.bat`: descarga y descomprime bibliotecas de terceros en `.thirdparty/` según `deps.txt` (idempotente).
   - `3_patch.bat`: sincroniza parches (`main/patches/ → .thirdparty/`, **unidireccional** forzado).

@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ En son sürümü indir (1.0.1)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.1/Pecia_x64_1.0.1.zip)**
+**[⬇️ En son sürümü indir (1.0.2)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.2/Pecia_x64_1.0.2.zip)**
 
 C++17 + FLTK tabanlı Windows için hafif metin düzenleyici. Çoklu sekme, büyük dosyaları anında açma, çoklu kodlama desteği, Lua betik genişletme desteği.
 
@@ -54,7 +54,7 @@ build\4_build_rust.bat
 REM ⑤ FLTK + Pecia üçlüsünü derle ve ctest'i çalıştır
 build\5_build_pecia.bat
 
-REM ★ Ana giriş = ②→③→④→⑤ (full.bat çift tıklamakla aynıdır)
+REM ★ Ana giriş = ①→②→③→④→⑤ (full.bat çift tıklamakla aynıdır)
 build\full.bat
 ```
 
@@ -100,6 +100,13 @@ main/
 ├── README.md           Bu belge (mimari genel bakış / teknik yığın / derleme talimatları)
 ├── docs/               Diğer dillerdeki README sürümleri (README.<lang>.md) + intro.pptx
 ├── 目录结构说明.md      Dizin ve modül standartları (devralma okuması zorunlu)
+├── 开发指南.md         Geliştirme/sürüm akışı ve commit öncesi kontrol listesi
+├── AGENTS.md           Mühendislik kuralları (katkıda bulunanlar/YA kuralları)
+├── HISTORY.md          Sürüm geçmişi (yayın sırasında en üste yeni bir sürüm bölümü ekleyin; eski içeriği değiştirmeden bırakın)
+├── LICENSE             AGPL-3.0 resmi metninin birebir hali (UTF-8, BOM yok; koşullar değiştirilemez)
+├── THIRD-PARTY-NOTICES.md  Üçüncü taraf kütüphane bildirimleri (ad/sürüm/lisans/yama sayısı)
+├── .gitignore          Sürüm kontrolü yoksayma kuralları
+├── .gitattributes      Satır sonu ve metin özniteliği kuralları
 ├── core/               Çekirdek saf mantık (UI yok)
 ├── editor/             Düzenleyici bileşeni
 ├── ui/                 Pencere / диалог / araç çubuğu
@@ -189,7 +196,7 @@ test  her katmana bağımlı olabilir, ancak yalnızca saf mantığı test eder 
 ### V. Derleme ve Testler
 
 - **Beş numaralı betik + ana giriş** (`main/build/`, her birinin tek bir görevi vardır, herhangi bir adım tek başına yeniden çalıştırılabilir):
-  - `full.bat`: **Ana giriş** (çift tıklanarak kullanılır), sırayla ②→③→④→⑤ çağırır.
+  - `full.bat`: **Ana giriş** (çift tıklanarak kullanılır), sırayla ①→②→③→④→⑤ çağırır.
   - `1_check_env.bat`: Salt okunur araç zinciri kontrolü (cmake/cargo/cl/nmake/rc/tar/curl; `rustc -vV` host'u `pc-windows-msvc` olmalıdır, aksi takdirde bağlantı yapılabilir `.lib` oluşturulamaz).
   - `2_download.bat`: `deps.txt`'ye göre üçüncü taraf kütüphanelerini `.thirdparty/` dizinine indir + aç (istlesiz).
   - `3_patch.bat`: Yamaları senkronize et (`main/patches/ → .thirdparty/` **tek yönlü** zorlu yazma).

@@ -1,5 +1,6 @@
 #include "container.h"
 #include "preprocess.h"
+#include "editor/Editor.h"   // FontUtils::findFontByName（CSS 字体名 → 已安装字体）
 
 #include <FL/Fl_Image_Surface.H>
 #include <FL/fl_draw.H>
@@ -180,30 +181,93 @@ void MyContainer::set_viewport_size(int w, int h)
     m_viewport_h = h;
 }
 
-Fl_Font MyContainer::get_font_face(const std::string& family)
+// 去掉 CSS 字体名两侧的空白与引号（litehtml 的 parse_font_family 已剥掉引号，
+// 但手写 HTML / 未走该解析路径时可能残留，这里统一处理）。
+static std::string trim_family_token(const std::string& s)
+{
+    size_t b = s.find_first_not_of(" \t\r\n");
+    if (b == std::string::npos) return std::string();
+    size_t e = s.find_last_not_of(" \t\r\n");
+    std::string t = s.substr(b, e - b + 1);
+    if (t.size() >= 2 && ((t.front() == '\'' && t.back() == '\'') ||
+                          (t.front() == '"'  && t.back() == '"')))
+        t = t.substr(1, t.size() - 2);
+    return t;
+}
+
+static std::string to_lower_ascii(std::string s)
+{
+    for (char& c : s)
+        c = (char)std::tolower((unsigned char)c);
+    return s;
+}
+
+// CSS 通用字体族关键字（sans-serif / serif / monospace ...）：它们不是真实
+// 字体名，不能拿去查系统字体表。
+static bool is_generic_family(const std::string& lower)
+{
+    static const char* kGeneric[] = {
+        "serif", "sans-serif", "monospace", "cursive", "fantasy",
+        "system-ui", "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded",
+        "-apple-system", "emoji", "math", "fangsong",
+    };
+    for (const char* g : kGeneric)
+        if (lower == g) return true;
+    return false;
+}
+
+void MyContainer::set_base_font_name(const std::string& name)
+{
+    if (name == m_base_font_name) return;
+    m_base_font_name = name;
+    m_base_face = name.empty() ? -1 : FontUtils::findFontByName(name.c_str());
+    m_font_map.clear();   // 兜底 face 变了，已缓存的解析结果作废
+}
+
+ResolvedFont MyContainer::resolve_family(const std::string& family)
 {
     auto it = m_font_map.find(family);
     if (it != m_font_map.end()) return it->second;
 
-    std::string lower;
-    lower.reserve(family.size());
-    for (char c : family)
-        lower.push_back((char)std::tolower((unsigned char)c));
+    // CSS font-family 是逗号分隔的候选列表，按顺序取第一个系统真正安装的
+    // 字体（与 litehtml 官方 win32 container 的做法一致）。旧实现把整串当
+    // 关键字匹配 mono/serif/sans，真实字体名（Consolas / 微软雅黑 …）被全部
+    // 丢弃，预览因此永远画不出编辑器里选定的字体。
+    ResolvedFont r{ -1, std::string() };
+    litehtml::string_vector fonts;
+    litehtml::split_string(family, fonts, ",");
+    for (const auto& raw : fonts) {
+        std::string name = trim_family_token(raw);
+        if (name.empty() || is_generic_family(to_lower_ascii(name))) continue;
+        Fl_Font id = FontUtils::findFontByName(name.c_str());
+        if (id >= 0) { r.face = id; r.name = name; break; }
+    }
 
-    Fl_Font face;
-    if (lower.find("mono") != std::string::npos ||
-        lower.find("courier") != std::string::npos ||
-        lower.find("console") != std::string::npos ||
-        lower.find("code") != std::string::npos)
-        face = FL_COURIER;
-    else if (lower.find("serif") != std::string::npos ||
-             lower.find("times") != std::string::npos)
-        face = FL_TIMES;
-    else
-        face = FL_HELVETICA;
+    if (r.face < 0) {
+        // 候选全部不可用：退回 FLTK 逻辑字体。Windows 上这三个分别是
+        // Courier New / Times New Roman / Microsoft Sans Serif。
+        std::string lower = to_lower_ascii(family);
+        if (lower.find("mono") != std::string::npos ||
+            lower.find("courier") != std::string::npos ||
+            lower.find("console") != std::string::npos ||
+            lower.find("code") != std::string::npos) {
+            r.face = FL_COURIER;
+            r.name = "Courier New";
+        } else if (lower.find("serif") != std::string::npos ||
+                   lower.find("times") != std::string::npos) {
+            r.face = FL_TIMES;
+            r.name = "Times New Roman";
+        } else if (m_base_face >= 0) {
+            r.face = m_base_face;
+            r.name = m_base_font_name;
+        } else {
+            r.face = FL_HELVETICA;
+            r.name = "Microsoft Sans Serif";
+        }
+    }
 
-    m_font_map[family] = face;
-    return face;
+    m_font_map[family] = r;
+    return r;
 }
 
 // ---------- 字体 ----------
@@ -211,7 +275,8 @@ Fl_Font MyContainer::get_font_face(const std::string& family)
 litehtml::uint_ptr MyContainer::create_font(const litehtml::font_description& descr,
                                             const litehtml::document*, litehtml::font_metrics* fm)
 {
-    Fl_Font base = get_font_face(descr.family);
+    ResolvedFont rf = resolve_family(descr.family);
+    Fl_Font base = rf.face;
     int off = 0;
     if (descr.weight >= 700) off += 1;
     if (descr.style == litehtml::font_style_italic) off += 2;
@@ -225,12 +290,14 @@ litehtml::uint_ptr MyContainer::create_font(const litehtml::font_description& de
     fi->size  = size;
     fi->decoration = descr.decoration_line;
 
-    // 用 GDI 精确测量字体
+    // 用 GDI 精确测量字体。必须用解析出的真实字体名（rf.name）而不是整串
+    // CSS 候选列表：CreateFontW 只接受单个字体名，传逗号列表会落到某个默认
+    // 字体上，量出来的行高/基线和实际绘制的 face 不一致。
     {
         int w = (descr.weight >= 700) ? FW_BOLD : FW_NORMAL;
         bool it = (descr.style == litehtml::font_style_italic);
         int a = 0, d = 0, h = 0, xh = 0;
-        get_gdi_metrics(descr.family, size, w, it, a, d, h, xh);
+        get_gdi_metrics(rf.name, size, w, it, a, d, h, xh);
         fi->ascent   = a;
         fi->descent  = d;
         fi->height   = h;

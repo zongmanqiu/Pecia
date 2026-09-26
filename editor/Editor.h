@@ -19,6 +19,11 @@ namespace FontUtils {
     // Falls back to FL_COURIER if the font is not found.
     Fl_Font fontNameToId(const char *name);
 
+    // Same lookup but returns -1 when the face is not installed. Callers that
+    // walk a CSS font-family candidate list need to tell "not installed" from
+    // a real hit, which the FL_COURIER fallback above hides.
+    Fl_Font findFontByName(const char *name);
+
     // Case-insensitive ASCII string compare (portable, no platform deps).
     int strCaseCmp(const char *a, const char *b);
 

@@ -77,6 +77,12 @@ private:
     void setStatus(const char *);   // shows a status message in the chat pane
     void appendTurn(const char *roleLabel, const std::string &text);
 
+    // Title bar text: the window title, plus a "(12s)" elapsed-time suffix
+    // while waiting for the AI reply (secs < 0 = plain title, no suffix).
+    // The elapsed count lives here instead of on the Send button so the
+    // button keeps a fixed width regardless of how long the request runs.
+    void showTitleElapsed(long long secs);
+
     // Cursor blink: toggles the input editor's cursor every 500ms,
     // same as MainWindow::cursorBlinkCb (FLTK has no built-in blink).
     static void cursorBlinkCb(void *data);
@@ -122,8 +128,8 @@ private:
     // address) - a use-after-free once Fl::run() returned.
     std::shared_ptr<std::atomic<bool>> m_cancelRequested;
 
-    // Elapsed-time display: shows "Send (12s)" on the send button while
-    // waiting for the AI reply, so the user knows it's still processing.
+    // Elapsed-time display: while waiting for the AI reply the title bar
+    // shows "AI Chat (12s)" so the user knows it's still processing.
     time_t m_sendTime = 0;        // 0 = not waiting
     static void s_timerCb(void *data);
 };

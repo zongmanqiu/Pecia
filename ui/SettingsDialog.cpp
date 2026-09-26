@@ -382,10 +382,10 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
     int rowH = 24;
 
     // Size the dialog so every setting row fits without scrolling. Row
-    // counts must match the actual controls below (currently 14: edit 5,
-    // save&exit 6, interface&system 3 - one of them with a +4 gap),
+    // counts must match the actual controls below (currently 15: edit 5,
+    // save&exit 6, interface&system 4 - one of them with a +4 gap),
     // plus 3 group titles and 2 half blank rows between groups.
-    int rowsH = 13 * (rowH + 6) + (rowH + 4) + 3 * (rowH - 2) + 2 * (rowH / 2);
+    int rowsH = 14 * (rowH + 6) + (rowH + 4) + 3 * (rowH - 2) + 2 * (rowH / 2);
     // Add m_pad top/bottom padding (outside the scroll) plus the
     // bottom button bar (gBarH).
     int needH = rowsH + 2 * m_pad + gBarH;
@@ -508,6 +508,11 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
                                           I18n::get("settings.multitab"));
     y += rowH + 6;
 
+    // --- 固定启动文档：无其它 Pecia 进程时，启动直接打开 exe 同级目录的 Test.txt ---
+    m_fixedStartupDocChk = new Fl_Check_Button(margin + labelW, y, ctrlW, rowH,
+                                               I18n::get("settings.fixedstartupdoc"));
+    y += rowH + 6;
+
     // --- System Integration ---
     m_integNewTxt = new Fl_Check_Button(margin + labelW, y, ctrlW, rowH,
         I18n::get("settings.newtxtdoc"));
@@ -565,6 +570,7 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
     };
     styleChk(m_autoIndentChk);
     styleChk(m_multiTabChk);
+    styleChk(m_fixedStartupDocChk);
     styleChk(m_trimTrailingChk);
     styleChk(m_trimLeadingChk);
     styleChk(m_trimEndingChk);
@@ -666,6 +672,7 @@ void SettingsDialog::loadFrom(const Config &cfg) {
 
     m_autoIndentChk->value(const_cast<Config &>(cfg).getAutoIndent() ? 1 : 0);
     m_multiTabChk->value(const_cast<Config &>(cfg).getMultiTab() ? 1 : 0);
+    m_fixedStartupDocChk->value(const_cast<Config &>(cfg).getFixedStartupDoc() ? 1 : 0);
     m_trimTrailingChk->value(const_cast<Config &>(cfg).getTrimTrailingWhitespace() ? 1 : 0);
     m_trimLeadingChk->value(const_cast<Config &>(cfg).getTrimLeadingBlank() ? 1 : 0);
     m_trimEndingChk->value(const_cast<Config &>(cfg).getTrimEndingBlank() ? 1 : 0);
@@ -742,6 +749,13 @@ bool SettingsDialog::saveTo(Config &cfg) const {
         // caller's detach fails (user cancels a Save As prompt), it
         // will revert this entry.
         cfg.setMultiTab(mt);
+        changed = true;
+    }
+
+    // 固定启动文档：无其它 Pecia 进程时，启动直接打开 exe 同级目录的 Test.txt
+    bool fsd = m_fixedStartupDocChk->value() != 0;
+    if (cfg.getFixedStartupDoc() != fsd) {
+        cfg.setFixedStartupDoc(fsd);
         changed = true;
     }
 

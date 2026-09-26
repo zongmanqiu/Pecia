@@ -25,6 +25,11 @@ class MyContainer;
 
 struct FontInfo { Fl_Font face; int size; int ascent; int descent; int height; int x_height; int decoration = 0; };
 
+// Result of resolving one CSS font-family value: the FLTK face actually drawn
+// with, plus the Windows face name it corresponds to (used for GDI metrics, so
+// measurement and drawing agree).
+struct ResolvedFont { Fl_Font face; std::string name; };
+
 struct GifAnim {
     unsigned char* pixels; int w, h, ch;
     int frame_count; int* delays; int current_frame = 0;
@@ -43,6 +48,11 @@ public:
     void set_viewport_size(int w, int h);
     void set_font_scale(float s) { m_font_scale = s; }
     float font_scale() const { return m_font_scale; }
+
+    // 预览基准字体（编辑器当前字体名，见 FontUtils::FONT_LIST）。预览的正文/
+    // 代码都跟随它：md_to_html 把它写在注入 CSS 的第一个候选，这里再据此解析
+    // 兜底 face（CSS 候选全部不可用时使用）。UI 线程调用。
+    void set_base_font_name(const std::string& name);
 
     using scroll_to_cb_t = std::function<void(int)>;
     void set_scroll_callback(scroll_to_cb_t cb) { m_scroll_cb = std::move(cb); }
@@ -106,8 +116,10 @@ private:
     std::vector<std::pair<unsigned char*, bool>> m_owned_pixels;
     scroll_to_cb_t m_scroll_cb;
     remote_done_cb_t m_remote_done_cb;   // 远程图片下载完成（主线程）
-    std::map<std::string, Fl_Font> m_font_map;
-    Fl_Font get_font_face(const std::string&);
+    std::map<std::string, ResolvedFont> m_font_map;   // CSS font-family 值 → 解析结果
+    std::string m_base_font_name;                     // 预览基准字体名（编辑器字体）
+    Fl_Font     m_base_face = -1;                     // 基准字体解析结果（-1=未安装）
+    ResolvedFont resolve_family(const std::string&);
     Fl_Image* load_image_file(const std::string&);
     Fl_Image* load_bitmap_file(const std::string&);   // stb_image 加载位图（本地/缓存）
     Fl_Image* load_gif_file(const std::string& file, const std::string& key);  // GIF 多帧加载（本地/远程缓存），注册动画，返回首帧

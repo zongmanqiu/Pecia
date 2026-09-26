@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ Unduh Versi Terbaru (1.0.1)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.1/Pecia_x64_1.0.1.zip)**
+**[⬇️ Unduh Versi Terbaru (1.0.2)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.2/Pecia_x64_1.0.2.zip)**
 
 Editor teks ringan untuk Windows berbasis C++17 + FLTK. Mendukung multi-tab, membuka file besar secara instan, multi-encoding, dan ekstensi skrip Lua.
 
@@ -55,7 +55,7 @@ build\4_build_rust.bat
 REM ⑤ Mengkompilasi FLTK + Pecia tiga paket, dan menjalankan ctest
 build\5_build_pecia.bat
 
-REM ★ Entry utama = ②→③→④→⑤ (sama dengan klik dua kali full.bat)
+REM ★ Entry utama = ①→②→③→④→⑤ (sama dengan klik dua kali full.bat)
 build\full.bat
 ```
 
@@ -102,6 +102,13 @@ main/
 ├── README.md           Dokumen ini (arsitektur umum / stack teknis / instruksi build)
 ├── docs/               Versi README dalam bahasa lain (README.<lang>.md) + intro.pptx
 ├── 目录结构说明.md      Spesifikasi direktori dan modul (wajib baca untuk penerus)
+├── 开发指南.md         Alur pengembangan/rilis dan daftar periksa pra-commit
+├── AGENTS.md           Konvensi rekayasa (kontributor/aturan AI)
+├── HISTORY.md          Riwayat versi (saat rilis, tambahkan bagian versi baru di atas; biarkan konten lama tidak berubah)
+├── LICENSE             Teks resmi AGPL-3.0 apa adanya (UTF-8, tanpa BOM; ketentuan tidak boleh diubah)
+├── THIRD-PARTY-NOTICES.md  Pemberitahuan pustaka pihak ketiga (nama/versi/lisensi/jumlah patch)
+├── .gitignore          Aturan abaikan kontrol versi
+├── .gitattributes      Aturan akhir baris dan atribut teks
 ├── core/               Logika inti murni (tanpa UI)
 ├── editor/             Kontrol editor
 ├── ui/                 Jendela / dialog / toolbar
@@ -191,7 +198,7 @@ test  bisa bergantung pada lapisan mana pun, tetapi hanya menguji logika murni (
 ### Kelima: Build dan Test
 
 - **Lima script bernomor + entry utama** (`main/build/`, satu tugas, setiap langkah dapat dijalankan ulang secara terpisah):
-  - `full.bat`：**Entry utama** (klik dua kali siap pakai), memanggil ②→③→④→⑤ secara berurutan.
+  - `full.bat`：**Entry utama** (klik dua kali siap pakai), memanggil ①→②→③→④→⑤ secara berurutan.
   - `1_check_env.bat`：Pengecekan toolchain baca-saja (cmake/cargo/cl/nmake/rc/tar/curl；
     host `rustc -vV` harus `pc-windows-msvc`, jika tidak tidak bisa menghasilkan `.lib` yang dapat di-link).
   - `2_download.bat`：Mengunduh + mengekstrak pustaka pihak ketiga sesuai `deps.txt` ke `.thirdparty/` (幂等)。

@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ 最新版をダウンロード (1.0.1)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.1/Pecia_x64_1.0.1.zip)**
+**[⬇️ 最新版をダウンロード (1.0.2)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.2/Pecia_x64_1.0.2.zip)**
 
 C++17 + FLTK ベースの Windows 軽量テキストエディタ。マルチタブ、大ファイルの高速オープン、マルチエンコーディング対応、Lua スクリプト拡張。
 
@@ -56,7 +56,7 @@ build\4_build_rust.bat
 REM ⑤ FLTK + Pecia のビルドと ctest の実行
 build\5_build_pecia.bat
 
-REM ★ 総エントリ = ②→③→④→⑤（full.bat をダブルクリックするのと同じ）
+REM ★ 総エントリ = ①→②→③→④→⑤（full.bat をダブルクリックするのと同じ）
 build\full.bat
 ```
 
@@ -104,6 +104,13 @@ main/
 ├── README.md           本ドキュメント（アーキテクチャ概要/技術スタック/ビルド手順）
 ├── docs/               他言語版 README(README.<lang>.md) + intro.pptx
 ├── 目录结构说明.md      ディレクトリとモジュールの仕様（引き継ぎ時に必須）
+├── 开发指南.md         開発/リリース手順とコミット前チェックリスト
+├── AGENTS.md           エンジニアリング規約（協力者/AI ルール）
+├── HISTORY.md          バージョン履歴（リリース時に先頭へ新しいバージョン節を追記。古い内容は変更しない）
+├── LICENSE             AGPL-3.0 公式本文の逐語版（UTF-8、BOM なし。条項の改変は不可）
+├── THIRD-PARTY-NOTICES.md  サードパーティライブラリの通知（名称/バージョン/ライセンス/パッチ数）
+├── .gitignore          バージョン管理の無視ルール
+├── .gitattributes      改行コードとテキスト属性のルール
 ├── core/               コア純論理（UI 無し）
 ├── editor/             エディタコントロール
 ├── ui/                 ウィンドウ/ダイアログ/ツールバー
@@ -194,7 +201,7 @@ test  は任意のレイヤーに依存可能だが、純論理のみをテス�
 ### 五、ビルドとテスト
 
 - **5つの番号付きスクリプト + 総エントリ**（`main/build/`、単一の責務、任意のステップを単独で再実行可能）：
-  - `full.bat`：**総エントリ**（ダブルクリックで実行）。②→③→④→⑤ の順に呼び出し。
+  - `full.bat`：**総エントリ**（ダブルクリックで実行）。①→②→③→④→⑤ の順に呼び出し。
   - `1_check_env.bat`：読み取り専用のツールチェーン検査（cmake/cargo/cl/nmake/rc/tar/curl。`rustc -vV` の host は `pc-windows-msvc` である必要あり。でなければリンク可能な `.lib` を生成できません）。
   - `2_download.bat`：`deps.txt` に基づいてサードパーティライブラリをダウンロード + 展開（.thirdparty/ に配置、冪等）。
   - `3_patch.bat`：パッチの同期（`main/patches/ → .thirdparty/` **一方的** 強制上書き）。

@@ -36,6 +36,14 @@ public:
     // 文档基础目录（解析相对图片路径，如 "p1.png" -> 目录/p1.png）
     void setBaseUrl(const std::string &dir);
 
+    // 预览基准字体（编辑器 editor_font）。预览正文/代码跟随编辑器字体：
+    // 该名字由 md_to_html 写入注入 CSS 的首位候选，同时交给容器做兜底 face。
+    // UI 线程调用；下一次 renderAsync 生效（已渲染的内容需重新刷新）。
+    void setBaseFont(const std::string &name) {
+        m_baseFont = name;
+        if (m_container) m_container->set_base_font_name(name);
+    }
+
     // 标题列表回调（每次渲染完成时触发，参数为文档顺序的标题，供目录树重建）
     using headings_cb_t = std::function<void(const std::vector<PreviewHeading> &)>;
     void setHeadingsCallback(headings_cb_t cb) { m_headingsCb = std::move(cb); }
@@ -58,6 +66,7 @@ private:
     std::shared_ptr<MyContainer> m_container;   // 生命周期共享（远程下载 weak_ptr 引用）
     ViewWidget *m_view;
     float       m_fontScale = 1.0f;
+    std::string m_baseFont;                      // 预览基准字体（UI 线程写）
     headings_cb_t m_headingsCb;                  // 渲染完成后的标题回调（主线程）
 
     std::mutex              m_mutex;
@@ -68,6 +77,7 @@ private:
     std::string m_requestMd;
     std::string m_requestBuildDir;
     std::string m_requestDocDir;
+    std::string m_requestFont;              // 请求侧字体副本（worker 线程读）
     int         m_requestVersion = 0;
     bool        m_hasRequest = false;
     int         m_nextVersion = 0;

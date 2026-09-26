@@ -682,6 +682,13 @@ void MainWindow::refreshPreview()
     // 注意：不再清图片缓存——公式/mermaid PNG 按内容哈希命名，内容变了
     // 文件名自然变，未变的图片命中容器缓存（load_image_file 的 m_images），
     // 避免每次刷新全量重新解码。
+    // 预览跟随编辑器字体：把 editor_font 交给预览（写入注入 CSS 首位候选 +
+    // 容器兜底 face）。每次渲染前同步，View > Font 切换后由 cbSelectFont 触发刷新。
+    {
+        char previewFont[64] = {0};
+        if (m_cfg) m_cfg->getEditorFont(previewFont, sizeof(previewFont));
+        m_preview->setBaseFont(previewFont);
+    }
     m_preview->renderAsync(md, buildDir, base);
 }
 

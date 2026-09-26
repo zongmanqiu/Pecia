@@ -45,8 +45,8 @@ int strCaseCmp(const char *a, const char *b) {
     return *a - *b;
 }
 
-Fl_Font fontNameToId(const char *name) {
-    if (!name || !name[0]) return FL_COURIER;
+Fl_Font findFontByName(const char *name) {
+    if (!name || !name[0]) return -1;
     int num = Fl::set_fonts();
     for (int i = 0; i < num; ++i) {
         int attr = 0;
@@ -55,6 +55,13 @@ Fl_Font fontNameToId(const char *name) {
             return i;
         }
     }
+    return -1;
+}
+
+Fl_Font fontNameToId(const char *name) {
+    Fl_Font id = findFontByName(name);
+    if (id >= 0) return id;
+    if (!name || !name[0]) return FL_COURIER;
     // Common fallback mapping
     if (strCaseCmp(name, "Courier New") == 0 || strCaseCmp(name, "Courier") == 0)
         return FL_COURIER;
@@ -73,6 +80,7 @@ Fl_Font fontNameToId(const char *name) {
 //   阿拉伯/希伯来等 → Segoe UI
 //   天城文系（印地/孟加拉等）→ Nirmala UI
 //   泰文 → Leelawadee UI
+//   全能（中英文 + → + ⏎ 等符号同一字体覆盖）→ Noto Sans SC（需系统已安装）
 const char *FONT_LIST[] = {
     "Consolas",
     "SimHei",
@@ -82,6 +90,7 @@ const char *FONT_LIST[] = {
     "Segoe UI",
     "Nirmala UI",
     "Leelawadee UI",
+    "Noto Sans SC",
     nullptr
 };
 const int FONT_COUNT = (int)(sizeof(FONT_LIST) / sizeof(FONT_LIST[0])) - 1;

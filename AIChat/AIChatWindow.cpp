@@ -234,7 +234,8 @@ void AIChatWindow::refreshLabels() {
         m_attachSel->tooltip(I18n::get("chat.attachseltip"));
     }
     if (m_titleBar) {
-        m_titleBar->setTabData({TitleBar::TabInfo{I18n::get("chat.title")}}, 0);
+        long long secs = m_sendTime ? (long long)(time(nullptr) - m_sendTime) : -1;
+        showTitleElapsed(secs);
     }
 
     // Re-fit the auto-width button row after labels change (translations
@@ -245,6 +246,32 @@ void AIChatWindow::refreshLabels() {
                  w(), rowCenter, BTN_GAP, BTN_GAP);
 
     redraw();
+}
+
+// Title bar text = window title + "(12s) ..." while waiting. The animated
+// dots show the reply is still being generated, the seconds show how long
+// it has taken. Keeping both up here (instead of on the Send button) leaves
+// the button at a fixed width for the whole request. secs < 0 = plain title.
+void AIChatWindow::showTitleElapsed(long long secs) {
+    std::string title = I18n::get("chat.title");
+    if (secs >= 0) {
+        char buf[32];
+        if (secs < 60)
+            snprintf(buf, sizeof(buf), "(%llds)", secs);
+        else
+            snprintf(buf, sizeof(buf), "(%lldm%02llds)", secs / 60, secs % 60);
+        static const char *DOTS[4] = {".", "..", "...", "...."};
+        title += " ";
+        title += buf;
+        title += " ";
+        title += DOTS[secs % 4];
+    }
+    // DialogBase draws in single-tab mode via window()->label(), so the
+    // window label (not setTabData) is what the title bar renders.
+    // copy_label() (not label()) because `title` is a local: FLTK's label()
+    // only stores the pointer, which would dangle once we return.
+    copy_label(title.c_str());
+    if (m_titleBar) m_titleBar->refresh();
 }
 
 // Window resize: FLTK scales children that overlap the resizable pane
@@ -271,6 +298,7 @@ void AIChatWindow::resize(int X, int Y, int W, int H) {
 AIChatWindow::~AIChatWindow() {
     Fl::remove_timeout(cursorBlinkCb, this);
     Fl::remove_timeout(pushPollCb, this);   // cancel the pending push poll (dangling this otherwise)
+    Fl::remove_timeout(s_timerCb, this);    // cancel the elapsed-time timer (dangling this otherwise)
     if (s_active.load() == this) s_active.store(nullptr);
 }
 
@@ -605,10 +633,10 @@ void AIChatWindow::cbClear(Fl_Widget *, void *data) {
     // Cancel any in-flight AI request.
     if (self->m_busy) {
         if (self->m_cancelRequested) self->m_cancelRequested->store(true);
-        // Stop the timer and restore the send button label.
+        // Stop the elapsed-time display and restore the plain title.
         self->m_sendTime = 0;
         Fl::remove_timeout(s_timerCb, self);
-        if (self->m_sendBtn) self->m_sendBtn->copy_label(I18n::get("chat.send"));
+        self->showTitleElapsed(-1);
         self->m_busy = false;
     }
 
@@ -634,9 +662,10 @@ void AIChatWindow::cbClose(Fl_Widget *, void *data) {
 
 // Read script\lua_api.txt next to the exe (CMake copies
 // main/script/scripts/* into build/script/). Read fresh on every send so
-// doc edits apply immediately; "" when missing. Uses wide-char paths so a
-// non-ASCII install directory (Chinese, etc.) works - GetModuleFileNameA +
-// fopen_s break on those.
+// doc edits apply immediately; "" when missing (the help is then omitted).
+// Users may also append their own prompt text to the end of the file. Uses
+// wide-char paths so a non-ASCII install directory (Chinese, etc.) works -
+// GetModuleFileNameA + fopen_s break on those.
 std::string AIChatWindow::readLuaApiHelp() {
     wchar_t apiPath[MAX_PATH];
     if (GetModuleFileNameW(nullptr, apiPath, MAX_PATH) == 0) return {};
@@ -738,6 +767,17 @@ void AIChatWindow::doSend() {
             "to the help below; otherwise ignore everything from here on #####\n";
         sysPrompt += luaHelp;
     }
+    // Closing fence: everything above (main prompt + language hint + the Lua
+    // reference, including any text the user appended to lua_api.txt) is
+    // background; the dialogue below is the actual task. The rule is restated
+    // here on purpose - it sits right after ~300 lines of Lua examples and
+    // immediately before the dialogue, which is what keeps the model from
+    // answering a plain text task with a Lua script.
+    sysPrompt +=
+        "\n\n##### 以上是主要提示词，提示词结束 #####\n"
+        "只有用户在对话中明确提到「脚本」「lua」时，才编写 Lua 脚本；"
+        "否则请直接用你的文本能力完成处理，把结果作为普通文本回复，不要输出任何代码。\n"
+        "以下是与用户的对话：";
     msgs.push_back({"system", sysPrompt});
     size_t start = m_history.size() > kMaxContextTurns
                        ? m_history.size() - kMaxContextTurns : 0;
@@ -746,7 +786,8 @@ void AIChatWindow::doSend() {
     }
 
     m_busy = true;
-    // Start the elapsed-time display on the send button.
+    // Start the elapsed-time display in the title bar (Send button width
+    // stays fixed).
     m_sendTime = time(nullptr);
     Fl::add_timeout(1.0, s_timerCb, this);
     // No status banner while waiting - the user sees the request is in
@@ -775,10 +816,9 @@ void AIChatWindow::s_handleResult(void *data) {
     AIChatWindow *self = r->owner;
     if (self == s_active.load() && self) {
         self->m_busy = false;
-        // Stop the elapsed-time display, restore the button label.
+        // Stop the elapsed-time display, restore the plain title.
         self->m_sendTime = 0;
-        if (self->m_sendBtn)
-            self->m_sendBtn->copy_label(I18n::get("chat.send"));
+        self->showTitleElapsed(-1);
         if (r->ok) {
             self->m_lastReply = r->content;
             self->m_history.push_back({"assistant", r->content});
@@ -807,15 +847,8 @@ void AIChatWindow::sendTo(const std::string &pipe, const char *failKey) {
 void AIChatWindow::s_timerCb(void *data) {
     AIChatWindow *self = static_cast<AIChatWindow *>(data);
     if (!self || self->m_sendTime == 0) return;   // reply arrived, stop
-    time_t elapsed = time(nullptr) - self->m_sendTime;
-    char buf[32];
-    if (elapsed < 60)
-        snprintf(buf, sizeof(buf), "%s (%llds)",
-                 I18n::get("chat.send"), (long long)elapsed);
-    else
-        snprintf(buf, sizeof(buf), "%s (%lldm%02llds)",
-                 I18n::get("chat.send"),
-                 (long long)(elapsed / 60), (long long)(elapsed % 60));
-    if (self->m_sendBtn) self->m_sendBtn->copy_label(buf);
+    // Show the elapsed time in the title bar (not on the Send button, so
+    // the button width stays constant for the whole request).
+    self->showTitleElapsed((long long)(time(nullptr) - self->m_sendTime));
     Fl::repeat_timeout(1.0, s_timerCb, data);
 }

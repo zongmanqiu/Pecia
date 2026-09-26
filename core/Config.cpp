@@ -131,6 +131,7 @@ static const char *configKeyDesc(const char *key) {
     if (strcmp(key,"editor_font")==0) return "编辑器字体名";
     if (strcmp(key,"editor_zoom_size")==0) return "编辑区缩放字号（0=未缩放，跟随界面字号）";
     if (strcmp(key,"expand_tabs_on_save")==0) return "保存时是否把 Tab 转为空格 (1=是 0=否)";
+    if (strcmp(key,"fixed_startup_doc")==0) return "无其它 Pecia 进程时，启动直接打开 exe 同级目录的 Test.txt (1=是 0=否)";
     if (strcmp(key,"highlight_current_line")==0) return "是否高亮当前行 (1=是 0=否)";
     if (strcmp(key,"lang")==0) return "界面语言 (en / zh-CN)";
     if (strcmp(key,"last_dir")==0) return "上次打开/保存文件的目录";
@@ -418,6 +419,7 @@ void Config::initFromDisk() {
     needSave |= validateKey("expand_tabs_on_save", 0,      0,  1);
     needSave |= validateKey("auto_save_interval", 30,    0,  300);
     needSave |= validateKey("detect_urls",   1,          0,  1);
+    needSave |= validateKey("fixed_startup_doc", 0,      0,  1);
 
     // AI chat configuration (endpoint URL / model / API key) - ensure the
     // keys always exist in settings.ini so the AI chat tool reads them
@@ -819,6 +821,15 @@ bool Config::getCleanupTempOld() const {
 
 void Config::setCleanupTempOld(bool on) {
     writeInt("cleanup_temp_old", on ? 1 : 0);
+}
+
+// 固定启动文档（见 Config.h）：无其它 Pecia 进程时启动直接打开 Test.txt
+bool Config::getFixedStartupDoc() const {
+    return readInt("fixed_startup_doc", 0) != 0;  // default off
+}
+
+void Config::setFixedStartupDoc(bool on) {
+    writeInt("fixed_startup_doc", on ? 1 : 0);
 }
 
 void Config::getOpenWithExts(char *buf, int len, const char *fallback) const {

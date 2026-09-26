@@ -4,7 +4,7 @@
 
 # Pecia — Minimalist Text Editor
 
-**[⬇️ Download Latest (1.0.1)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.1/Pecia_x64_1.0.1.zip)**
+**[⬇️ Download Latest (1.0.2)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.2/Pecia_x64_1.0.2.zip)**
 
 A lightweight text editor for Windows built with C++17 + FLTK. Multi-tab, instant opening of large files, multiple encoding support, Lua scripting extensions.
 
@@ -54,7 +54,7 @@ build\4_build_rust.bat
 REM ⑤ Compile FLTK + Pecia trio, and run ctest
 build\5_build_pecia.bat
 
-REM ★ Full entry = ②→③→④→⑤ (equivalent to double-clicking full.bat)
+REM ★ Full entry = ①→②→③→④→⑤ (equivalent to double-clicking full.bat)
 build\full.bat
 ```
 
@@ -99,6 +99,13 @@ main/
 ├── README.md           This document (including architecture overview/tech stack/build instructions)
 ├── docs/               README in other languages (README.<lang>.md) + intro.pptx
 ├── 目录结构说明.md      Directory and module conventions (essential reading for onboarding)
+├── 开发指南.md         Development/release workflow and pre-commit checklist
+├── AGENTS.md           Engineering conventions (contributors/AI rules)
+├── HISTORY.md          Version history (append a new version section at the top on release; keep old content unchanged)
+├── LICENSE             Verbatim official AGPL-3.0 text (UTF-8, no BOM; terms must not be modified)
+├── THIRD-PARTY-NOTICES.md  Third-party library notices (name/version/license/patch count)
+├── .gitignore          Version-control ignore rules
+├── .gitattributes      Line-ending and text attribute rules
 ├── core/               Core pure logic (no UI)
 ├── editor/             Editor widget
 ├── ui/                 Windows/dialogs/toolbars
@@ -188,7 +195,7 @@ test  can depend on any layer, but only tests pure logic (no GUI dependency)
 ### 5. Build and Test
 
 - **Five numbered scripts + master entry** (`main/build/`, each with a single responsibility, individually re-runnable):
-  - `full.bat`: **Master entry** (double-click to use), sequentially calls ②→③→④→⑤.
+  - `full.bat`: **Master entry** (double-click to use), sequentially calls ①→②→③→④→⑤.
   - `1_check_env.bat`: Read-only toolchain check (cmake/cargo/cl/nmake/rc/tar/curl; `rustc -vV` host must be `pc-windows-msvc`, otherwise linkable `.lib` files cannot be produced).
   - `2_download.bat`: Downloads + extracts third-party libraries to `.thirdparty/` per `deps.txt` (idempotent).
   - `3_patch.bat`: Syncs patches (`main/patches/ → .thirdparty/`, **one-way** force overwrite).

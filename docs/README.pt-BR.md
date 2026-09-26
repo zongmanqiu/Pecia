@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ Baixar a versão mais recente (1.0.1)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.1/Pecia_x64_1.0.1.zip)**
+**[⬇️ Baixar a versão mais recente (1.0.2)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.2/Pecia_x64_1.0.2.zip)**
 
 Editor de texto leve para Windows baseado em C++17 + FLTK. Suporte a múltiplas abas, abertura instantânea de arquivos grandes, suporte a múltiplas codificações, extensão por scripts Lua.
 
@@ -54,7 +54,7 @@ build\4_build_rust.bat
 REM ⑤ Compilação de FLTK + Pecia, execução de ctest
 build\5_build_pecia.bat
 
-REM ★ Entrada global = ②→③→④→⑤ (equivalente a dar dois cliques no full.bat)
+REM ★ Entrada global = ①→②→③→④→⑤ (equivalente a dar dois cliques no full.bat)
 build\full.bat
 ```
 
@@ -100,6 +100,13 @@ main/
 ├── README.md           Esta documentação (visão geral da arquitetura/stack tecnológico/instruções de build)
 ├── docs/               Versões do README em outros idiomas (README.<lang>.md) + intro.pptx
 ├── 目录结构说明.md      Descrição de diretórios e módulos (leitura obrigatória antes de trabalhar no projeto)
+├── 开发指南.md         Fluxo de desenvolvimento/lançamento e checklist pré-commit
+├── AGENTS.md           Convenções de engenharia (colaboradores/regras de IA)
+├── HISTORY.md          Histórico de versões (ao lançar, adicione uma nova seção de versão no topo; mantenha o conteúdo antigo inalterado)
+├── LICENSE             Texto oficial literal da AGPL-3.0 (UTF-8, sem BOM; os termos não podem ser modificados)
+├── THIRD-PARTY-NOTICES.md  Avisos de bibliotecas de terceiros (nome/versão/licença/número de patches)
+├── .gitignore          Regras de ignorar do controle de versão
+├── .gitattributes      Regras de fim de linha e atributos de texto
 ├── core/               Lógica pura do core (sem UI)
 ├── editor/             Widget do editor
 ├── ui/                 Janelas/diálogos/barras de ferramentas
@@ -190,7 +197,7 @@ test  pode depender de qualquer camada, mas testa apenas a lógica pura (sem GUI
 ### V. Build e testes
 
 - **Cinco scripts numerados + entrada global** (`main/build/`, responsabilidade única, cada um pode ser reexecutado independentemente):
-  - `full.bat`: **entrada global** (dois cliques), invoca em sequência ②→③→④→⑤.
+  - `full.bat`: **entrada global** (dois cliques), invoca em sequência ①→②→③→④→⑤.
   - `1_check_env.bat`: verificação da cadeia de ferramentas (somente leitura; cmake/cargo/cl/nmake/rc/tar/curl; o host de `rustc -vV` deve ser `pc-windows-msvc`, caso contrário não será possível gerar um `.lib` linkável).
   - `2_download.bat`: download + extração das bibliotecas de terceiros em `.thirdparty/` seguindo `deps.txt` (idempotente).
   - `3_patch.bat`: sincronização de patches (`main/patches/ → .thirdparty/`, **unidirecional** com sobrescrita forçada).

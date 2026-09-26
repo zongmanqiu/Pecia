@@ -53,7 +53,7 @@ PreviewPanel::~PreviewPanel()
 void PreviewPanel::workerLoop()
 {
     for (;;) {
-        std::string markdown, build_dir, doc_dir;
+        std::string markdown, build_dir, doc_dir, base_font;
         int version = 0;
         {
             std::unique_lock<std::mutex> lock(m_mutex);
@@ -62,13 +62,14 @@ void PreviewPanel::workerLoop()
             markdown = m_requestMd;
             build_dir = m_requestBuildDir;
             doc_dir = m_requestDocDir;
+            base_font = m_requestFont;
             version = m_requestVersion;
             m_hasRequest = false;              // 只处理最新请求（覆盖式）
         }
         std::vector<PreviewHeading> headings;
         std::string html;
         try {
-            html = md_to_html(markdown, build_dir, doc_dir, &headings);
+            html = md_to_html(markdown, build_dir, doc_dir, &headings, base_font);
         } catch (...) {
             // Rendering threw (e.g. bad_alloc building HTML strings). Do not
             // let the exception kill the worker thread: m_workerBusy must
@@ -121,6 +122,7 @@ void PreviewPanel::renderAsync(const std::string &markdown, const std::string &b
         m_requestMd = markdown;
         m_requestBuildDir = build_dir;
         m_requestDocDir = doc_dir;
+        m_requestFont = m_baseFont;           // 本次请求的基准字体（预览跟随编辑器）
         m_requestVersion = m_nextVersion;
         m_hasRequest = true;
         m_workerBusy = true;                   // 泵 keep 依据：请求已发或 worker 渲染中

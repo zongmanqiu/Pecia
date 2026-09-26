@@ -2,7 +2,7 @@
 
 # Pecia — Minimalistischer Texteditor
 
-**[⬇️ Neueste Version herunterladen (1.0.1)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.1/Pecia_x64_1.0.1.zip)**
+**[⬇️ Neueste Version herunterladen (1.0.2)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.2/Pecia_x64_1.0.2.zip)**
 
 Ein leichtgewichtiger Windows-Texteditor auf Basis von C++17 + FLTK. Mit mehreren Tabs, schnellem Öffnen großer Dateien, Unterstützung für verschiedene Codierungen und Lua-Skripterweiterungen.
 
@@ -52,7 +52,7 @@ build\4_build_rust.bat
 REM ⑤ Kompilieren von FLTK + Pecia-Dreierpack und Ausführen von ctest
 build\5_build_pecia.bat
 
-REM ★ Haupteingang = ②→③→④→⑤ (entspricht Doppelklick auf full.bat)
+REM ★ Haupteingang = ①→②→③→④→⑤ (entspricht Doppelklick auf full.bat)
 build\full.bat
 ```
 
@@ -93,6 +93,13 @@ main/
 ├── README.md           Dieses Dokument (mit Architekturübersicht/Technologie-Stack/Build-Anleitung)
 ├── docs/               README in anderen Sprachen (README.<lang>.md) + intro.pptx
 ├── 目录结构说明.md      Verzeichnis- und Modulspezifikationen (Pflichtlektüre für neue Entwickler)
+├── 开发指南.md         Entwicklungs-/Release-Ablauf und Pre-Commit-Checkliste
+├── AGENTS.md           Engineering-Konventionen (Mitwirkende/KI-Regeln)
+├── HISTORY.md          Versionshistorie (bei Release oben neuen Versionsabschnitt anfügen; alten Inhalt unverändert lassen)
+├── LICENSE             Wörtlicher offizieller AGPL-3.0-Text (UTF-8, kein BOM; Bedingungen dürfen nicht geändert werden)
+├── THIRD-PARTY-NOTICES.md  Hinweise zu Drittanbieter-Bibliotheken (Name/Version/Lizenz/Anzahl Patches)
+├── .gitignore          Ignorierregeln der Versionsverwaltung
+├── .gitattributes      Regeln für Zeilenenden und Textattribute
 ├── core/               Kernlogik (kein UI)
 ├── editor/             Editor-Steuerelement
 ├── ui/                 Fenster/Dialoge/Toolleiste
@@ -180,7 +187,7 @@ test  kann von jeder Schicht abhängen, testet aber nur reine Logik (keine GUI-A
 ### 5. Build und Tests
 
 - **Fünf nummerierte Skripte + Haupteingang** (`main/build/`, je eine Aufgabe, einzeln ausführbar):
-  - `full.bat`: **Haupteingang** (Doppelklick zum Ausführen), ruft der Reihe nach ②→③→④→⑤ auf.
+  - `full.bat`: **Haupteingang** (Doppelklick zum Ausführen), ruft der Reihe nach ①→②→③→④→⑤ auf.
   - `1_check_env.bat`: Toolchain-Lese-Check (cmake/cargo/cl/nmake/rc/tar/curl; `rustc -vV` Host muss `pc-windows-msvc` sein, sonst werden keine linkbaren `.lib`-Dateien erzeugt).
   - `2_download.bat`: Laut `deps.txt` herunterladen + Drittanbieter-Bibliotheken nach `.thirdparty/` entpacken (idempotent).
   - `3_patch.bat`: Synchronisiert Patches (`main/patches/ → .thirdparty/` **einseitig** erzwungene Überschreibung).

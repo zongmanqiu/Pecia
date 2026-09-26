@@ -84,7 +84,7 @@ Fl_Menu_Item g_menu[] = {
     //   Word Wrap
     //   Font  ▶
     //     Consolas / SimHei / NSimSun / MS Gothic / Gulim
-    //     Segoe UI / Nirmala UI / Leelawadee UI
+    //     Segoe UI / Nirmala UI / Leelawadee UI / Noto Sans SC
     //     ...
     //   Statistics...
     //   ─────────────────────────
@@ -112,6 +112,7 @@ Fl_Menu_Item g_menu[] = {
     { "Segoe UI",      0, MainWindow::cbSelectFont, nullptr, FL_MENU_RADIO },
     { "Nirmala UI",    0, MainWindow::cbSelectFont, nullptr, FL_MENU_RADIO },
     { "Leelawadee UI", 0, MainWindow::cbSelectFont, nullptr, FL_MENU_RADIO },
+    { "Noto Sans SC",  0, MainWindow::cbSelectFont, nullptr, FL_MENU_RADIO },
     { nullptr },
     // Zoom submenu. FL_SUBMENU makes FLTK pop the submenu out to the
     // right; the nested items use an 8-space indent so they align

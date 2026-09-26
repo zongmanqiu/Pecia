@@ -14,6 +14,32 @@
 WindowFrame::WindowFrame() {
 }
 
+#if defined(_WIN32)
+bool windowCoversWorkArea(const Fl_Window *win) {
+    if (!win) return false;
+    HWND hwnd = fl_xid(win);
+    if (!hwnd) return false;
+
+    RECT rc;
+    if (!GetWindowRect(hwnd, &rc)) return false;
+
+    HMONITOR mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = { sizeof(mi) };
+    if (!GetMonitorInfoW(mon, &mi)) return false;
+
+    // Our maximized geometry intentionally overhangs the work area by NC_PAD
+    // on the resize edges, so "covers" (not "equals") is the right test.
+    const RECT &work = mi.rcWork;
+    const int tol = 2;
+    return rc.left   <= work.left   + tol &&
+           rc.top    <= work.top    + tol &&
+           rc.right  >= work.right  - tol &&
+           rc.bottom >= work.bottom - tol;
+}
+#else
+bool windowCoversWorkArea(const Fl_Window *) { return false; }
+#endif
+
 void WindowFrame::saveRestoreRect(int x, int y, int w, int h) {
     m_restoreX = x; m_restoreY = y;
     m_restoreW = w; m_restoreH = h;
@@ -26,7 +52,8 @@ void WindowFrame::getRestoreRect(int &x, int &y, int &w, int &h) const {
 
 bool WindowFrame::toggleMaximize(Fl_Window *win) {
     if (!win) return m_maximized;
-    if (m_maximized) {
+    if (windowCoversWorkArea(win)) {
+        // Currently filling the work area -> restore the saved geometry.
         m_maximized = false;
         win->resize(m_restoreX, m_restoreY, m_restoreW, m_restoreH);
     } else {

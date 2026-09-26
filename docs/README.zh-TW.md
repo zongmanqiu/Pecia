@@ -6,7 +6,7 @@
 
 ---
 
-**[⬇️ 下載最新版 (1.0.1)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.1/Pecia_x64_1.0.1.zip)**
+**[⬇️ 下載最新版 (1.0.2)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.2/Pecia_x64_1.0.2.zip)**
 
 基於 C++17 + FLTK 的 Windows 輕量級文字編輯器。多標籤、大檔案秒開、多編碼支援、Lua 腳本擴充。
 
@@ -61,7 +61,7 @@ build\4_build_rust.bat
 REM ⑤ 編譯 FLTK + Pecia 三件套，並跑 ctest
 build\5_build_pecia.bat
 
-REM ★ 總入口 = ②→③→④→⑤（等同於按兩下 full.bat）
+REM ★ 總入口 = ①→②→③→④→⑤（等同於按兩下 full.bat）
 build\full.bat
 ```
 
@@ -107,7 +107,14 @@ main/
 ├── main.cpp            程式入口
 ├── README.md           本文檔（含架構總覽/技術棧/建構說明）
 ├── docs/               其他語言的 README(README.<語言>.md) + intro.pptx
-├── 目錄結構說明.md      目錄與模組規範（接手必讀）
+├── 目录结构说明.md      目錄與模組規範（接手必讀）
+├── 开发指南.md         開發/發版流程與提交前檢查清單
+├── AGENTS.md           工程慣例（協作者/AI 規則）
+├── HISTORY.md          版本歷史（發版時於頂部新增版本區段；舊內容保持不變）
+├── LICENSE             AGPL-3.0 官方原文逐字版（UTF-8、無 BOM；條款不得修改）
+├── THIRD-PARTY-NOTICES.md  第三方函式庫聲明（名稱/版本/授權/修補數量）
+├── .gitignore          版本控制忽略規則
+├── .gitattributes      換行與文字屬性規則
 ├── core/               核心純邏輯（無 UI）
 ├── editor/             編輯器控制項
 ├── ui/                 視窗/對話方塊/工具列
@@ -150,7 +157,7 @@ main/
 ## 架構總覽
 
 > 本文描述**當前原始碼**（C++17 + FLTK 1.4.5）的真實架構與資料流。
-> 目錄與模組規範以《目錄結構說明.md》為準。
+> 目錄與模組規範以《目录结构说明.md》為準。
 
 ### 一、可執行程式與行程模型
 
@@ -166,7 +173,7 @@ main/
 
 ### 二、分層與依賴方向
 
-強制依賴方向（《目錄結構說明.md》亦規定）：
+強制依賴方向（《目录结构说明.md》亦規定）：
 
 ```
 core  ←  editor  ←  ui
@@ -197,7 +204,7 @@ test  可依賴任何層，但只測純邏輯（不依賴 GUI）
 ### 五、建構與測試
 
 - **五個編號腳本 + 總入口**（`main/build/`，職責單一，可單獨重跑任一步）：
-  - `full.bat`：**總入口**（按兩下即用），按序呼叫 ②→③→④→⑤。
+  - `full.bat`：**總入口**（按兩下即用），按序呼叫 ①→②→③→④→⑤。
   - `1_check_env.bat`：只讀工具鏈體檢（cmake/cargo/cl/nmake/rc/tar/curl；
     `rustc -vV` 的 host 須為 `pc-windows-msvc`，否則編不出可連結的 `.lib`）。
   - `2_download.bat`：按 `deps.txt` 下載 + 解壓第三方函式庫到 `.thirdparty/`（冪等）。

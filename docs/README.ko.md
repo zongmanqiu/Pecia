@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ 최신 버전 다운로드 (1.0.1)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.1/Pecia_x64_1.0.1.zip)**
+**[⬇️ 최신 버전 다운로드 (1.0.2)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.2/Pecia_x64_1.0.2.zip)**
 
 C++17 + FLTK 기반 Windows 경량 텍스트 편집기. 멀티 탭, 대용량 파일 즉시 열기, 다중 인코딩 지원, Lua 스크립트 확장.
 
@@ -55,7 +55,7 @@ build\4_build_rust.bat
 REM ⑤ FLTK + Pecia 3종 세트 컴파일 및 ctest 실행
 build\5_build_pecia.bat
 
-REM ★ 전체 진입점 = ②→③→④→⑤(더블클릭 full.bat과 동일)
+REM ★ 전체 진입점 = ①→②→③→④→⑤(더블클릭 full.bat과 동일)
 build\full.bat
 ```
 
@@ -102,6 +102,13 @@ main/
 ├── README.md           본 문서(아키텍처 개요/기술 스택/빌드 설명 포함)
 ├── docs/               다른 언어 README(README.<lang>.md) + intro.pptx
 ├── 目录结构说明.md      디렉토리 및 모듈 사양(인수 인계 시 필독)
+├── 开发指南.md         개발/릴리스 절차와 커밋 전 체크리스트
+├── AGENTS.md           엔지니어링 규약(협업자/AI 규칙)
+├── HISTORY.md          버전 기록(릴리스 시 상단에 새 버전 섹션 추가, 기존 내용은 변경하지 않음)
+├── LICENSE             AGPL-3.0 공식 원문 그대로(UTF-8, BOM 없음, 조항 수정 금지)
+├── THIRD-PARTY-NOTICES.md  서드파티 라이브러리 고지(이름/버전/라이선스/패치 수)
+├── .gitignore          버전 관리 무시 규칙
+├── .gitattributes      줄 끝과 텍스트 속성 규칙
 ├── core/               핵심 순수 로직(UI 없음)
 ├── editor/             에디터 컨트롤
 ├── ui/                 창/다이얼로그/도구 모음
@@ -192,7 +199,7 @@ test  모든 계층에 의존 가능하나 순수 로직만 테스트(GUI 의존
 ### 5. 빌드 및 테스트
 
 - **5개 번호 스크립트 + 전체 진입점** (`main/build/`, 단일 역할, 각 단계를 개별적으로 다시 실행 가능):
-  - `full.bat`: **전체 진입점**(더블클릭으로 사용), 순서대로 ②→③→④→⑤ 호출.
+  - `full.bat`: **전체 진입점**(더블클릭으로 사용), 순서대로 ①→②→③→④→⑤ 호출.
   - `1_check_env.bat`: 읽기 전용 도구 체인 검사(cmake/cargo/cl/nmake/rc/tar/curl; `rustc -vV`의 host가 `pc-windows-msvc`여야 하며, 그렇지 않으면 링크 가능한 `.lib`를 생성할 수 없음).
   - `2_download.bat`: `deps.txt` 기준으로 서드파티 라이브러리를 `.thirdparty/`에 다운로드 + 압축 해제(멱등성).
   - `3_patch.bat`: 패치 동기화(`main/patches/ → .thirdparty/` **일방향** 강제 덮어쓰기).

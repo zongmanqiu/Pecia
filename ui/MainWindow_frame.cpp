@@ -251,7 +251,10 @@ static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
         MainWindow *self = dynamic_cast<MainWindow*>(win);
         if (self) {
             bool wasMax = self->m_maximized;
-            bool isMax  = (wp == SIZE_MAXIMIZED);
+            // Geometry is the source of truth: a window can be flagged
+            // SIZE_MAXIMIZED yet not actually fill the work area, and vice
+            // versa. Keep the caption icon in sync with the real size.
+            bool isMax  = (wp == SIZE_MAXIMIZED) || windowCoversWorkArea(self);
             if (wasMax != isMax) {
                 self->m_maximized = isMax;
                 self->syncTitleBar();
@@ -322,7 +325,7 @@ static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
             }
 
             // Fill non-client border with window background color
-            if (!IsZoomed(hwnd)) {
+            if (!windowCoversWorkArea(win)) {
                 HBRUSH brush = CreateSolidBrush(fillClr);
                 RECT rcL = {0, 0, NC_PAD, wh};
                 FillRect(hdc, &rcL, brush);
@@ -364,7 +367,7 @@ static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
             pt.y < rc.top  || pt.y >= rc.bottom)
             return nativeSubclass::forward(hwnd, msg, wp, lp);
 
-        if (IsZoomed(hwnd))
+        if (windowCoversWorkArea(fl_find(hwnd)))
             return HTCLIENT;  // no resize when maximized
 
         bool onTop    = pt.y <  rc.top    + NC_PAD;
@@ -470,9 +473,14 @@ void MainWindow::fixTaskbarCb(void *data) {
         // so subclassing another window cannot clobber this one's.
         nativeSubclass::install(hwnd, mainWindowSubclassProc);
 
-        // Add WS_THICKFRAME to enable native resize.
+        // Add WS_THICKFRAME to enable native resize, plus the system menu
+        // and the min/max boxes. WS_SYSMENU | WS_MINIMIZEBOX are required for
+        // the shell's "click the taskbar button to minimize" behavior (it
+        // toggles the window through SC_MINIMIZE); a frameless WS_POPUP
+        // window without them cannot be minimized from the taskbar. They add
+        // no visible chrome because we paint/hit-test the NC area ourselves.
         LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
-        style |= WS_THICKFRAME;
+        style |= WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
         SetWindowLongPtrW(hwnd, GWL_STYLE, style);
 
         // Adjust the window outer size so the CLIENT area stays the
@@ -529,7 +537,7 @@ void MainWindow::toggleMaximize() {
     HWND hwnd = fl_xid(this);
     if (!hwnd) return;
 
-    if (IsZoomed(hwnd)) {
+    if (IsZoomed(hwnd) || windowCoversWorkArea(this)) {
         // Restore — ShowWindow triggers WM_SIZE(SIZE_RESTORED) which
         // FLTK handles to update its internal coordinates.
         ShowWindow(hwnd, SW_RESTORE);

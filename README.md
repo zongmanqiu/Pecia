@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ 下载最新版 (1.0.1)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.1/Pecia_x64_1.0.1.zip)**
+**[⬇️ 下载最新版 (1.0.2)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.2/Pecia_x64_1.0.2.zip)**
 
 基于 C++17 + FLTK 的 Windows 轻量级文本编辑器。多标签、大文件秒开、多编码支持、Lua 脚本扩展。
 
@@ -59,7 +59,7 @@ build\4_build_rust.bat
 REM ⑤ 编译 FLTK + Pecia 三件套,并跑 ctest
 build\5_build_pecia.bat
 
-REM ★ 总入口 = ②→③→④→⑤(等同于双击 full.bat)
+REM ★ 总入口 = ①→②→③→④→⑤(等同于双击 full.bat)
 build\full.bat
 ```
 
@@ -106,6 +106,13 @@ main/
 ├── README.md           本文档(含架构总览/技术栈/构建说明)
 ├── docs/               其他语言的 README(README.<语言>.md) + 演示文稿 intro.pptx
 ├── 目录结构说明.md      目录与模块规范(接手必读)
+├── 开发指南.md         开发/发版流程与提交前检查清单
+├── AGENTS.md           工程约定(协作者/AI 规则)
+├── HISTORY.md          版本更新历史(发版时在顶部追加新版本小节,旧内容不改)
+├── LICENSE             AGPL-3.0 官方逐字全文(UTF-8,无 BOM;不得改动条款)
+├── THIRD-PARTY-NOTICES.md  第三方库声明(名称/版本/许可证/补丁数量)
+├── .gitignore          版本控制忽略规则
+├── .gitattributes      行尾符与文本属性规则
 ├── core/               核心纯逻辑(无 UI)
 ├── editor/             编辑器控件
 ├── ui/                 窗口/对话框/工具栏
@@ -195,7 +202,7 @@ test  可依赖任何层，但只测纯逻辑（不依赖 GUI）
 ### 五、构建与测试
 
 - **五个编号脚本 + 总入口**（`main/build/`，职责单一，可单独重跑任一步）：
-  - `full.bat`：**总入口**（双击即用），按序调用 ②→③→④→⑤。
+  - `full.bat`：**总入口**（双击即用），按序调用 ①→②→③→④→⑤。
   - `1_check_env.bat`：只读工具链体检（cmake/cargo/cl/nmake/rc/tar/curl；
     `rustc -vV` 的 host 须为 `pc-windows-msvc`，否则编不出可链接的 `.lib`）。
   - `2_download.bat`：按 `deps.txt` 下载 + 解压第三方库到 `.thirdparty/`（幂等）。

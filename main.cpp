@@ -1,4 +1,4 @@
-﻿// main.cpp - Pecia entry point
+// main.cpp - Pecia entry point
 #include <FL/Fl.H>
 #include <FL/platform.H>
 #include "ui/MainWindow.h"
@@ -7,7 +7,10 @@
 #include "core/I18n.h"
 #include "core/CrashReport.h"
 #include "core/Theme.h"
+#include "core/PathUtils.h"
 #include <string>
+#include <filesystem>
+#include <fstream>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -35,6 +38,18 @@ int main(int /*argc*/, char ** /*argv*/) {
     // Install the crash handler early so we capture failures during
     // scheme setup, config load, and window construction too.
     CrashReport::install("pecia");
+#endif
+
+#if defined(_WIN32)
+    // 命名互斥体只作「电脑上是否还开着另一个 Pecia」的探针：每个 Pecia
+    // 进程启动时都创建并持有这个句柄，句柄随进程退出自动释放。创建时就
+    // 已存在（ERROR_ALREADY_EXISTS）说明还有别的 Pecia 在跑——多开、新建
+    // 窗口、分离标签都算。仅用于「固定启动文档」的判断，不影响多开本身。
+    HANDLE instanceMutex = CreateMutexA(nullptr, FALSE, "Pecia.MainInstance");
+    bool anotherPeciaRunning =
+        instanceMutex && GetLastError() == ERROR_ALREADY_EXISTS;
+#else
+    bool anotherPeciaRunning = false;
 #endif
 
     // Double-buffered visual for flicker-free drawing
@@ -141,6 +156,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     // English system); parse the real wide command line and convert to
     // UTF-8, which is the encoding openFile/Document expect.
 #if defined(_WIN32)
+    bool openedFromArgs = false;
     int wargc = 0;
     LPWSTR *wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
     for (int i = 1; wargv && i < wargc; ++i) {
@@ -152,19 +168,39 @@ int main(int /*argc*/, char ** /*argv*/) {
                 WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1,
                                     &u8[0], n, nullptr, nullptr);
                 win.openFile(u8.c_str());
+                openedFromArgs = true;
                 break;  // only one file for now
             }
         }
     }
     if (wargv) LocalFree(wargv);
 #else
+    bool openedFromArgs = false;
     for (int i = 1; i < argc; ++i) {
         if (argv[i] && argv[i][0] && argv[i][0] != '-') {
             win.openFile(argv[i]);
+            openedFromArgs = true;
             break;  // only one file for now
         }
     }
 #endif
+
+    // 设置-选项 > 固定启动文档：电脑上没有别的 Pecia 进程、且本次启动
+    // 原本只会打开一个空白新文档（命令行没带文件）时，改为打开 exe 同级
+    // 目录的 Test.txt；文件不存在就先建一个空文件再打开。这样开机双击
+    // 就能直接记录、Ctrl+S 保存，不必再走文件对话框。
+    if (!openedFromArgs && !anotherPeciaRunning && cfg.getFixedStartupDoc()) {
+        std::string dir = pathutil::exeDir();
+        if (!dir.empty()) {
+            std::string fixedPath = dir + "/Test.txt";
+            std::filesystem::path fp = pathutil::fromUtf8(fixedPath);
+            std::error_code ec;
+            if (!std::filesystem::exists(fp, ec)) {
+                std::ofstream out(fp, std::ios::binary);   // 新建空文件
+            }
+            win.openFile(fixedPath.c_str());
+        }
+    }
 
     int rc = Fl::run();
     return rc;

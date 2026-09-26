@@ -6,6 +6,8 @@
 //   * en/zh-CN lang files have identical key sets
 //   * third-party libs named in README.md exist under .thirdparty/
 //   * every file listed in doc/DOCS_MANIFEST.md exists
+//   * the "main/" top-level tree in 目录结构说明.md and in all 16 READMEs
+//     (root + 15 translations) matches main/'s real top level
 // Runs from build/ (ctest), so main/ = exeDir/../main.
 #include "test_assert.h"
 
@@ -249,6 +251,115 @@ static void test_manifest_files_exist() {
     CHECK_EQ((int)missing, 0);
 }
 
+// ---------------------------------------------------------------------------
+// 7. The "main/ top-level tree" in every shipped README (root README.md +
+//    docs/README.<lang>.md x15) and in 目录结构说明.md == main/'s real top level.
+// The rule is "list every top-level entry (.git excepted)": that is the only
+// standard that can be checked mechanically. A file/dir added on disk but
+// never registered in a tree (or an entry left behind after a rename) is
+// exactly the drift humans keep missing, so the build fails instead of
+// silently shipping a stale document.
+// ---------------------------------------------------------------------------
+// Extract the tree from the first fenced block whose first non-empty line is
+// "main/". Anchoring on that text (not on a heading) keeps this working for
+// the localized READMEs, whose section heading is translated.
+static bool treeEntries(const std::string &doc, std::set<fs::path> &out) {
+    // Top-level entries sit at column 0 behind a tree glyph ("|-- " / "`-- ",
+    // as UTF-8 bytes); deeper nesting is indented and ignored by construction.
+    const std::string kMid = "\xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 ";
+    const std::string kEnd = "\xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 ";
+    size_t pos = 0;
+    while ((pos = doc.find("```", pos)) != std::string::npos) {
+        size_t open = pos + 3;
+        size_t close = doc.find("```", open);
+        if (close == std::string::npos) return false;
+        std::istringstream ss(doc.substr(open, close - open));
+        std::set<fs::path> tmp;
+        std::string line;
+        bool seenRoot = false, isTree = true;
+        while (std::getline(ss, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (!seenRoot) {
+                if (line.empty()) continue;          // skip leading blank lines
+                if (line != "main/") { isTree = false; break; }
+                seenRoot = true;
+                continue;
+            }
+            if (line.compare(0, kMid.size(), kMid) != 0 &&
+                line.compare(0, kEnd.size(), kEnd) != 0)
+                continue;
+            size_t s = kMid.size();
+            size_t t = line.find_first_of(" \t", s);
+            if (t == std::string::npos) t = line.size();
+            std::string name = line.substr(s, t - s);
+            while (!name.empty() && (name.back() == '/' || name.back() == '\\')) name.pop_back();
+            if (!name.empty()) tmp.insert(fs::u8path(name));
+        }
+        if (isTree && seenRoot) { out = tmp; return true; }
+        pos = close + 3;
+    }
+    return false;
+}
+
+// Returns the number of mismatches for one document (0 = in sync).
+// `label` is kept ASCII: it is printed to the console on failure.
+static int checkTreeAgainstDisk(const std::string &label, const fs::path &docPath,
+                                const std::set<fs::path> &onDisk) {
+    std::string doc = readFile(docPath);
+    std::set<fs::path> inDoc;
+    if (doc.empty() || !treeEntries(doc, inDoc)) {
+        std::fprintf(stderr, "  %s: no \"main/\" directory tree block found\n", label.c_str());
+        return 1;
+    }
+    if (inDoc.size() < 20) {   // guards against a gutted / stub tree
+        std::fprintf(stderr, "  %s: tree lists only %d entries - looks like a stub\n",
+                     label.c_str(), (int)inDoc.size());
+        return 1;
+    }
+    int bad = 0;
+    for (const auto &p : onDisk)
+        if (!inDoc.count(p)) {
+            ++bad;
+            std::fprintf(stderr, "  %s: main/%s exists but is NOT registered in the tree\n",
+                         label.c_str(), p.u8string().c_str());
+        }
+    for (const auto &p : inDoc)
+        if (!onDisk.count(p)) {
+            ++bad;
+            std::fprintf(stderr, "  %s: tree lists %s - but it is NOT on disk\n",
+                         label.c_str(), p.u8string().c_str());
+        }
+    return bad;
+}
+
+static void test_dir_tree_matches() {
+    std::set<fs::path> onDisk;
+    for (const auto &ent : fs::directory_iterator(g_mainDirW)) {
+        fs::path name = ent.path().filename();
+        if (name == ".git") continue;   // VCS metadata, not a source entry
+        onDisk.insert(name);
+    }
+    CHECK(onDisk.size() >= 20);
+
+    int bad = 0;
+    // Wide literal: the doc filename is Chinese, and a narrow literal would be
+    // UTF-8 bytes misread as the ACP by std::filesystem (see test 2).
+    bad += checkTreeAgainstDisk("dir-tree doc",
+                                fs::path(g_mainDirW) / L"\u76ee\u5f55\u7ed3\u6784\u8bf4\u660e.md", onDisk);
+    bad += checkTreeAgainstDisk("README.md", fs::path(g_mainDirW) / "README.md", onDisk);
+
+    int localized = 0;
+    for (const auto &ent : fs::directory_iterator(fs::path(g_mainDirW) / "docs")) {
+        std::string fn = ent.path().filename().string();
+        if (fn.find("README.") != 0 || fn.compare(fn.size() - 3, 3, ".md") != 0)
+            continue;
+        ++localized;
+        bad += checkTreeAgainstDisk(fn, ent.path(), onDisk);
+    }
+    CHECK_EQ(localized, 15);   // 15 translated READMEs, no more no less
+    CHECK_EQ(bad, 0);
+}
+
 int main() {
     g_mainDirW = (fs::path(exeDirW()) / L".." / L"main").lexically_normal();
     test_key_files_exist();
@@ -258,6 +369,7 @@ int main() {
     test_lang_key_parity();
     test_readme_thirdparty_dirs();
     test_manifest_files_exist();
+    test_dir_tree_matches();
     int fails = test::failCount();
     std::fprintf(stderr, "%d checks, %d failures\n",
                  test::checkCount(), fails);

@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ Tải phiên bản mới nhất (1.0.1)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.1/Pecia_x64_1.0.1.zip)**
+**[⬇️ Tải phiên bản mới nhất (1.0.2)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.2/Pecia_x64_1.0.2.zip)**
 
 Trình soạn thảo văn bản nhẹ cho Windows, dựa trên C++17 + FLTK. Hỗ trợ nhiều tab, mở file lớn tức thì, đa mã hóa, mở rộng bằng script Lua.
 
@@ -54,7 +54,7 @@ build\4_build_rust.bat
 REM ⑤ Biên dịch FLTK + bộ ba Pecia, và chạy ctest
 build\5_build_pecia.bat
 
-REM ★ Tổng hợp = ②→③→④→⑤ (giống click đôi full.bat)
+REM ★ Tổng hợp = ①→②→③→④→⑤ (giống click đôi full.bat)
 build\full.bat
 ```
 
@@ -101,6 +101,13 @@ main/
 ├── README.md           Tài liệu này (tổng quan kiến trúc / stack kỹ thuật / hướng dẫn build)
 ├── docs/               Các phiên bản README bằng ngôn ngữ khác (README.<lang>.md) + intro.pptx
 ├── 目录结构说明.md      Quy chuẩn thư mục và module (bắt buộc đọc khi tiếp nhận)
+├── 开发指南.md         Quy trình phát triển/phát hành và danh sách kiểm tra trước commit
+├── AGENTS.md           Quy ước kỹ thuật (cộng tác viên/quy tắc AI)
+├── HISTORY.md          Lịch sử phiên bản (khi phát hành, thêm mục phiên bản mới lên trên cùng; giữ nguyên nội dung cũ)
+├── LICENSE             Nguyên văn văn bản chính thức AGPL-3.0 (UTF-8, không BOM; không được sửa đổi các điều khoản)
+├── THIRD-PARTY-NOTICES.md  Thông báo thư viện bên thứ ba (tên/phiên bản/giấy phép/số bản vá)
+├── .gitignore          Quy tắc bỏ qua của hệ thống quản lý phiên bản
+├── .gitattributes      Quy tắc ký tự xuống dòng và thuộc tính văn bản
 ├── core/               Logic thuần lõi (không UI)
 ├── editor/             Widget trình soạn thảo
 ├── ui/                 Cửa sổ / hộp thoại / thanh công cụ
@@ -190,7 +197,7 @@ test  có thể phụ thuộc bất kỳ tầng nào, nhưng chỉ test logic th
 ### V. Build và test
 
 - **5 script đánh số + tổng hợp** (`main/build/`, mỗi script một nhiệm vụ, có thể chạy lại từng bước):
-  - `full.bat`: **Tổng hợp** (click đôi để dùng), gọi lần lượt ②→③→④→⑤.
+  - `full.bat`: **Tổng hợp** (click đôi để dùng), gọi lần lượt ①→②→③→④→⑤.
   - `1_check_env.bat`: Kiểm tra công cụ build chỉ đọc (cmake/cargo/cl/nmake/rc/tar/curl; host `rustc -vV` phải là `pc-windows-msvc`, nếu không sẽ không tạo được `.lib` có thể link).
   - `2_download.bat`: Tải + giải nén thư viện bên thứ ba vào `.thirdparty/` theo `deps.txt` (idempotent).
   - `3_patch.bat`: Đồng bộ patch (`main/patches/ → .thirdparty/` ghi đè **một chiều** bắt buộc).

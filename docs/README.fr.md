@@ -2,7 +2,7 @@
 
 # Pecia — Éditeur de texte minimaliste
 
-**[⬇️ Télécharger la dernière version (1.0.1)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.1/Pecia_x64_1.0.1.zip)**
+**[⬇️ Télécharger la dernière version (1.0.2)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.2/Pecia_x64_1.0.2.zip)**
 
 Un éditeur de texte léger pour Windows basé sur C++17 + FLTK. Onglets multiples, ouverture rapide de gros fichiers, support multi-encodage et extensions par scripts Lua.
 
@@ -52,7 +52,7 @@ build\4_build_rust.bat
 REM ⑤ Compilation de FLTK + trio Pecia, puis exécution de ctest
 build\5_build_pecia.bat
 
-REM ★ Point d'entrée principal = ②→③→④→⑤ (équivalent à double-cliquer sur full.bat)
+REM ★ Point d'entrée principal = ①→②→③→④→⑤ (équivalent à double-cliquer sur full.bat)
 build\full.bat
 ```
 
@@ -93,6 +93,13 @@ main/
 ├── README.md           Ce document (avec vue d'ensemble de l'architecture/pile technologique/instructions de build)
 ├── docs/               README dans d'autres langues (README.<lang>.md) + intro.pptx
 ├── 目录结构说明.md      Spécifications des répertoires et modules (lecture obligatoire pour les nouveaux développeurs)
+├── 开发指南.md         Flux de développement/publication et liste de vérification avant commit
+├── AGENTS.md           Conventions d'ingénierie (contributeurs/règles IA)
+├── HISTORY.md          Historique des versions (à chaque publication, ajouter une nouvelle section de version en haut ; conserver l'ancien contenu inchangé)
+├── LICENSE             Texte officiel verbatim d'AGPL-3.0 (UTF-8, sans BOM ; les termes ne doivent pas être modifiés)
+├── THIRD-PARTY-NOTICES.md  Mentions des bibliothèques tierces (nom/version/licence/nombre de correctifs)
+├── .gitignore          Règles d'ignorance du contrôle de version
+├── .gitattributes      Règles de fin de ligne et d'attributs de texte
 ├── core/               Logique pure (sans UI)
 ├── editor/             Contrôleur d'éditeur
 ├── ui/                 Fenêtres/Dialogues/Barre d'outils
@@ -180,7 +187,7 @@ test  peut dépendre de n'importe quelle couche, mais ne teste que la logique pu
 ### 5. Build et tests
 
 - **Cinq scripts numérotés + point d'entrée principal** (`main/build/`, chacun responsable d'une seule tâche, relançable individuellement) :
-  - `full.bat` : **point d'entrée principal** (double-cliquer pour exécuter), appelle séquentiellement ②→③→④→⑤.
+  - `full.bat` : **point d'entrée principal** (double-cliquer pour exécuter), appelle séquentiellement ①→②→③→④→⑤.
   - `1_check_env.bat` : vérification en lecture seule de la chaîne d'outils (cmake/cargo/cl/nmake/rc/tar/curl ; l'hôte `rustc -vV` doit être `pc-windows-msvc`, sinon aucune `.lib` linkable n'est produite).
   - `2_download.bat` : télécharge et décompresse les bibliothèques tierces dans `.thirdparty/` selon `deps.txt` (idempotent).
   - `3_patch.bat` : synchronise les patches (`main/patches/ → .thirdparty/`, **unilatéral** forcé).

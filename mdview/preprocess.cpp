@@ -422,7 +422,8 @@ static bool render_formulas(const std::vector<FormulaItem>& formulas,
    并把完整 HTML 写入 build_dir/index.html（供浏览器直接打开）。 */
 std::string md_to_html(const std::string& markdown, const std::string& build_dir,
                        const std::string& doc_dir,
-                       std::vector<PreviewHeading>* headings_out)
+                       std::vector<PreviewHeading>* headings_out,
+                       const std::string& base_font)
 {
     // 0. 替换 emoji 简码为 Unicode（跳过 fenced code block 内部，避免误伤代码）
     std::vector<std::pair<size_t, size_t>> fences0 = find_fenced_ranges(markdown);
@@ -736,13 +737,21 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
     // [TOC] / <!-- TOC --> 占位文本已在解析前移除（见函数开头 0b）。
 
     // 6. 包装为完整 HTML
+    // 预览基准字体（编辑器 editor_font）放在候选列表首位，实现"预览跟随编辑器
+    // 字体"；后续候选保留，供导出到浏览器时在没有该字体的机器上兜底。
+    std::string body_fonts = "'Microsoft YaHei', 'Segoe UI', Arial, Helvetica, sans-serif";
+    std::string code_fonts = "'Consolas', 'Courier New', monospace";
+    if (!base_font.empty()) {
+        body_fonts = "'" + base_font + "', " + body_fonts;
+        code_fonts = "'" + base_font + "', " + code_fonts;
+    }
     std::ostringstream html;
     html << "<!DOCTYPE html>\n<html>\n<head>\n"
          << "<meta charset=\"utf-8\">\n"
          << "<style>\n"
          << "* { line-height: 1.6; margin: 0; }\n"
          << "body {\n"
-         << "  font-family: 'Microsoft YaHei', 'Segoe UI', Arial, Helvetica, sans-serif;\n"
+         << "  font-family: " << body_fonts << ";\n"
          << "  font-size: 16px;\n"
          << "  color: #222;\n"
          << "  padding: 20px;\n"
@@ -759,7 +768,7 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
          << "a { color: #0366d6; text-decoration: underline; }\n"
          << "ul, ol { padding-left: 32px; }\n"
          << "code { display: inline-block; background: #f0f0f0; padding: 2px 6px; border-radius: 3px;\n"
-         << "  font-family: 'Consolas', 'Courier New', monospace; font-size: 14px; }\n"
+         << "  font-family: " << code_fonts << "; font-size: 14px; }\n"
          << "pre { background: #f6f8fa; padding: 16px; border-radius: 6px;\n"
          << "  border: 1px solid #e1e4e8; white-space: pre-wrap; word-break: break-word; }\n"
          << "pre code { display: block; background: none; padding: 0; border-radius: 0; white-space: pre-wrap; word-break: break-word; }\n"
