@@ -167,6 +167,11 @@ bool MainWindow::spawnWindowWithFile(const char *path) {
     GetModuleFileNameW(nullptr, exePathW, MAX_PATH);
     std::wstring cmd = std::wstring(L"\"") + exePathW + L"\" \"" +
                        widen(path) + L"\"";
+    // 让新进程相对当前窗口层叠：否则它会读到同一个已保存位置，
+    // 与父窗口完全重叠（同 cbNewWindow / 分离标签的做法）。
+    char posValue[64];
+    snprintf(posValue, sizeof(posValue), "%d,%d", x(), y());
+    SetEnvironmentVariableA("PECIA_POS", posValue);
     STARTUPINFOW si = { sizeof(si) };
     PROCESS_INFORMATION pi = {};
     if (!CreateProcessW(exePathW, &cmd[0], nullptr, nullptr, FALSE, 0,

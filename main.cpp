@@ -107,28 +107,43 @@ int main(int /*argc*/, char ** /*argv*/) {
 
     // Persisted window size (main_win_w/main_win_h in settings.ini, saved
     // by MainWindow::saveSettings on exit). Clamp to a sane minimum and to
-    // the current desktop. Position keeps the existing centering/cascade
-    // logic below.
-    int x = -1, y = -1, w = DEFAULT_WIN_W, h = DEFAULT_WIN_H;
+    // the current desktop. 800x600 is only a fallback for a missing/absurd
+    // value - a real remembered size is always honoured.
+    int x = 0, y = 0, w = DEFAULT_WIN_W, h = DEFAULT_WIN_H;
     cfg.getToolSize("main", w, h, DEFAULT_WIN_W, DEFAULT_WIN_H);
-#if defined(_WIN32)
-    // 兜底：持久化的尺寸若已铺满工作区（关闭时正处于最大化，或被手动拉到
-    // 最大），它就不是一个可用的「普通尺寸」——按它建窗后既无法正常切换
-    // 最大化，也拖不动标题栏。此情况下回退到默认 800x600。
-    RECT wa;
-    if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0)) {
-        const int waw = wa.right - wa.left;
-        const int wah = wa.bottom - wa.top;
-        if (w >= waw - 2 && h >= wah - 2) {
-            w = DEFAULT_WIN_W;
-            h = DEFAULT_WIN_H;
-        }
-    }
-#endif
     if (w < 400) w = 400;
     if (h < 300) h = 300;
     if (w > Fl::w()) w = Fl::w();
     if (h > Fl::h()) h = Fl::h();
+
+    // Remembered position (main_win_x/main_win_y). Only trusted when BOTH
+    // keys exist: the legacy win_x/win_y keys defaulted to 0,0 and would
+    // otherwise pin the window to the top-left corner. Display layout
+    // changes (resolution / monitor removed) can leave the saved point off
+    // screen, in which case we fall back to centering.
+    bool hasSavedPos = false;
+    if (cfg.hasKey("main_win_x") && cfg.hasKey("main_win_y")) {
+        int sx = 0, sy = 0;
+        cfg.getWindowPos(sx, sy);
+#if defined(_WIN32)
+        const int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        const int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        const int vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+        const int vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        const int minVis = 64;  // 标题栏至少留这么多像素可供点击
+        if (sx <= vx + vw - minVis && sx + w >= vx + minVis &&
+            sy >= vy && sy + 32 <= vy + vh) {
+            hasSavedPos = true;
+        }
+#else
+        hasSavedPos = true;
+#endif
+        if (hasSavedPos) { x = sx; y = sy; }
+    }
+
+    // Whether the window was maximized on the last exit (main_win_max).
+    bool restoreMax = cfg.getWindowMax();
+
     MainWindow win(w, h, "Pecia");
 
     // Parse PECIA_POS environment variable for cascading new windows
@@ -141,26 +156,35 @@ int main(int /*argc*/, char ** /*argv*/) {
         }
     }
 
+    int targetX, targetY;
     if (hasPosEnv) {
         // New window: cascade from the given position, wrap around if off-screen
         // Offset by title bar height so the original title bar remains visible
         int screenW = Fl::w();
         int screenH = Fl::h();
         int offset = 32;  // title bar height
-        int nx = offsetX + offset;  // offset right
-        int ny = offsetY + offset;  // offset down
-        if (nx + w > screenW || ny + h > screenH) {
-            nx = 0;
-            ny = 0;
+        targetX = offsetX + offset;  // offset right
+        targetY = offsetY + offset;  // offset down
+        if (targetX + w > screenW || targetY + h > screenH) {
+            targetX = 0;
+            targetY = 0;
         }
-        win.position(nx, ny);
-    } else if (x >= 0 && y >= 0) {
-        // First window with saved position: use it
-        win.position(x, y);
+        restoreMax = false;  // cascaded windows always start normal
+    } else if (hasSavedPos) {
+        // First window with a saved position: use it
+        targetX = x;
+        targetY = y;
     } else {
-        // First launch: center on screen
-        win.position((Fl::w() - w) / 2, (Fl::h() - h) / 2);
+        // First launch (or unusable saved point): center on screen
+        targetX = (Fl::w() - w) / 2;
+        targetY = (Fl::h() - h) / 2;
     }
+    // Approximate placement before show() (avoids a flash at the origin).
+    // The exact position - and the maximized restore - are applied in
+    // fixTaskbarCb once the custom frame is installed, because that frame
+    // shifts the window by -NC_PAD.
+    win.position(targetX, targetY);
+    win.setRestoreGeometry(targetX, targetY, restoreMax);
 
     // Show the window WITHOUT passing argc/argv. Fl_Window::show(argc,argv)
     // calls Fl::args() which prints "options are:..." to stderr and pops a

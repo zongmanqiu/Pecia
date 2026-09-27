@@ -14,6 +14,7 @@
 #include "ui/ShortcutDialog.h"
 #include "ui/ConfirmDialog.h"
 #include "ui/TitleBar.h"
+#include "ui/WindowFrame.h"   // WindowFrame::NC_PAD (frame size)
 #include "ui/HoverMenuBar.h"
 #include "core/Config.h"
 #include "core/Theme.h"
@@ -31,10 +32,21 @@
 #include <FL/fl_draw.H>
 #include <FL/fl_string_functions.h>
 #include <FL/Fl_Tabs.H>
+#include <FL/platform.H>   // fl_xid
 #include <stdio.h>
 #include <string.h>
 #include <string>
 #include <vector>
+
+#if defined(_WIN32)
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#endif
 
 void MainWindow::applyScheme(const char *name) {
     if (name && *name) {
@@ -778,14 +790,50 @@ std::vector<ShortcutDialogRow> MainWindow::buildShortcutRows() {
 
 void MainWindow::saveSettings() {
     if (!m_cfg) return;
-    // Window SIZE is persisted (win_w/win_h): users have their own size
-    // preferences. Position is intentionally NOT persisted - every launch
-    // keeps the existing centering/cascade logic. Clamping happens on the
-    // read side (main.cpp).
-    // Always persist the current size, maximized or not. If that size ends
-    // up equal to the maximized (work-area) size, the read side in main.cpp
-    // detects it and falls back to the default 800x600 instead.
-    m_cfg->setToolSize("main", w(), h());
+    // Remember the window size, position and maximized state. When the
+    // window is maximized right now we store the geometry it had BEFORE
+    // maximizing (the system-maintained "normal" rect), so the next launch
+    // restores a sane normal size/position and then re-maximizes on top of
+    // it - instead of treating the maximized (full-screen) size as normal.
+    // The geometry is read from Win32 (GetWindowRect / GetWindowPlacement)
+    // rather than FLTK's x()/y(): the custom frame shifts the window by
+    // -NC_PAD after show, so FLTK's own coordinates would drift 6px per
+    // launch. The OS rect is authoritative and drift-free.
+    int persistW = w(), persistH = h();
+    int persistX = x(), persistY = y();
+    bool persistMax = m_maximized;
+#if defined(_WIN32)
+    if (HWND hwnd = fl_xid(this)) {
+        persistMax = IsZoomed(hwnd) != 0;
+        if (persistMax) {
+            WINDOWPLACEMENT wp = { sizeof(wp) };
+            if (GetWindowPlacement(hwnd, &wp)) {
+                persistX = wp.rcNormalPosition.left;
+                persistY = wp.rcNormalPosition.top;
+                // rcNormalPosition is the OUTER rect; MainWindow(w,h) takes
+                // the client size, so subtract the NC_PAD frame (2*NC_PAD
+                // horizontal, NC_PAD vertical) - otherwise the client grows
+                // by the frame size on every restart.
+                persistW = (wp.rcNormalPosition.right  - wp.rcNormalPosition.left)
+                           - 2 * WindowFrame::NC_PAD;
+                persistH = (wp.rcNormalPosition.bottom - wp.rcNormalPosition.top)
+                           - WindowFrame::NC_PAD;
+            }
+        } else {
+            RECT rc;
+            if (GetWindowRect(hwnd, &rc)) {
+                persistX = rc.left;
+                persistY = rc.top;
+                // Size stays in FLTK's client units: MainWindow(w,h) expects
+                // the client size, and the OS outer rect includes the NC_PAD
+                // frame (which would otherwise grow by 2*NC_PAD per launch).
+            }
+        }
+    }
+#endif
+    m_cfg->setToolSize("main", persistW, persistH);
+    m_cfg->setWindowPos(persistX, persistY);
+    m_cfg->setWindowMax(persistMax);
     // NOTE: Font size is intentionally NOT persisted here. The zoom level
     // (set via Ctrl+/-/0 or Ctrl+wheel) is per-session; saving it would
     // make the next startup show e.g. 107% instead of 100% (a saved size

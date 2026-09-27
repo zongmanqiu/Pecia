@@ -60,6 +60,16 @@ Config();
                      int defW, int defH) const;
     void setToolSize(const char *prefix, int w, int h);
 
+    // Main-window position + maximized state. Position lives under
+    // main_win_x / main_win_y; callers must gate on hasKey() for BOTH keys
+    // before trusting them, so the stale legacy win_x/win_y keys (whose
+    // defaults were 0,0) can never force the window to the top-left corner.
+    // main_win_max remembers whether the window was maximized on exit.
+    void getWindowPos(int &x, int &y) const;
+    void setWindowPos(int x, int y);
+    bool getWindowMax() const;
+    void setWindowMax(bool on);
+
     // Font (FLTK font id + size), derived at call time from the single
     // source of truth `editor_font` (font NAME, View > Font). The legacy
     // font_id/font_size keys are dead (no writer ever existed) and are

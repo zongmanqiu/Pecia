@@ -69,6 +69,13 @@ public:
     bool m_maximized = false;
     void toggleMaximize();
 
+    // Apply the persisted geometry once the custom frame is installed
+    // (see fixTaskbarCb): re-applies the exact saved position - undoing the
+    // -NC_PAD frame shift that FLTK's own coordinates do not compensate -
+    // and re-maximizes when the window was closed maximized. main() calls
+    // this before show(); the values are consumed inside fixTaskbarCb.
+    void setRestoreGeometry(int x, int y, bool maximized);
+
     Fl_Menu_Bar    *menuBar() const { return m_menu; }   // 右键菜单复用主菜单项
     bool isMenuBarVisible() const { return m_showMenuBar; }
 
@@ -603,6 +610,18 @@ private:
     // is shown (border(0) strips it, which hides the app from the
     // taskbar on Windows).
     static void fixTaskbarCb(void *data);
+
+    // Pending geometry to apply at the end of fixTaskbarCb (see
+    // setRestoreGeometry). m_hasRestoreGeom gates the whole thing.
+    bool m_hasRestoreGeom = false;
+    int  m_restoreGeomX = 0, m_restoreGeomY = 0;
+    bool m_restoreGeomMax = false;
+
+    // True when startup re-maximized the window (it was closed maximized).
+    // The first un-maximize then goes to the 800x600 "floor" size, centered,
+    // instead of the remembered normal rect - this is the fallback the user
+    // means by "托底". Cleared after that first restore.
+    bool m_startedMaximized = false;
 
     // Native OLE drop target (PeciaDropTarget*) for file drag&drop.
     // Stored as void* to avoid exposing COM interfaces in the header.

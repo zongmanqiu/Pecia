@@ -507,6 +507,27 @@ void MainWindow::fixTaskbarCb(void *data) {
         } else {
             dt->Release();  // registration failed, release our ref
         }
+
+        // Apply the persisted startup geometry LAST, once the custom frame
+        // (WS_THICKFRAME + NC_PAD) is fully installed: the SetWindowPos below
+        // moves the OUTER rect to the saved screen position, undoing the
+        // -NC_PAD shift applied earlier in this callback. Then re-maximize
+        // when the window was closed maximized.
+        if (self->m_hasRestoreGeom) {
+            RECT cur;
+            GetWindowRect(hwnd, &cur);
+            SetWindowPos(hwnd, nullptr,
+                         self->m_restoreGeomX, self->m_restoreGeomY,
+                         cur.right - cur.left, cur.bottom - cur.top,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
+            if (self->m_restoreGeomMax) {
+                self->m_maximized = true;
+                self->m_startedMaximized = true;
+                ShowWindow(hwnd, SW_MAXIMIZE);
+            }
+            self->m_hasRestoreGeom = false;
+            self->syncTitleBar();
+        }
     }
 #endif
     (void)self;
@@ -532,6 +553,14 @@ void MainWindow::resize(int X, int Y, int W, int H) {
     layoutTabs();
 }
 
+// Record the geometry to apply once the custom frame is ready (fixTaskbarCb).
+void MainWindow::setRestoreGeometry(int x, int y, bool maximized) {
+    m_hasRestoreGeom = true;
+    m_restoreGeomX = x;
+    m_restoreGeomY = y;
+    m_restoreGeomMax = maximized;
+}
+
 // Toggle between maximized and restored (previous geometry).
 void MainWindow::toggleMaximize() {
     HWND hwnd = fl_xid(this);
@@ -546,6 +575,20 @@ void MainWindow::toggleMaximize() {
         // FLTK handles to update its internal coordinates.
         ShowWindow(hwnd, SW_RESTORE);
         m_maximized = false;
+        if (m_startedMaximized) {
+            m_startedMaximized = false;
+            // 托底：启动时窗口就是最大化（上次退出时最大化），那么首次
+            // 还原不回到上次的普通尺寸，而是回到默认 800x600 并居中。
+            RECT work;
+            if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0)) {
+                const int outerW = DEFAULT_WIN_W + 2 * WindowFrame::NC_PAD;
+                const int outerH = DEFAULT_WIN_H + WindowFrame::NC_PAD;
+                int nx = work.left + ((work.right  - work.left) - outerW) / 2;
+                int ny = work.top  + ((work.bottom - work.top)  - outerH) / 2;
+                // SetWindowPos 的 WM_SIZE 会让 FLTK 同步 w/h 并触发 layoutTabs。
+                SetWindowPos(hwnd, nullptr, nx, ny, outerW, outerH, SWP_NOZORDER);
+            }
+        }
     } else {
         // Maximize — ShowWindow triggers WM_GETMINMAXINFO (which we
         // handle to constrain to the work area) and WM_NCCALCSIZE

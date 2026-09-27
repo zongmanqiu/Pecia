@@ -160,6 +160,9 @@ static const char *configKeyDesc(const char *key) {
     if (strcmp(key,"win_flags")==0) return "主窗口标志位";
     if (strcmp(key,"main_win_w")==0) return "主窗口宽度";
     if (strcmp(key,"main_win_h")==0) return "主窗口高度";
+    if (strcmp(key,"main_win_x")==0) return "主窗口 X 坐标（上次退出时的位置）";
+    if (strcmp(key,"main_win_y")==0) return "主窗口 Y 坐标（上次退出时的位置）";
+    if (strcmp(key,"main_win_max")==0) return "上次退出时是否最大化 (1=是 0=否)";
     if (strcmp(key,"lua_win_w")==0) return "Lua 控制台窗口宽度";
     if (strcmp(key,"lua_win_h")==0) return "Lua 控制台窗口高度";
     if (strcmp(key,"aichat_win_w")==0) return "AI 聊天窗口宽度";
@@ -530,6 +533,24 @@ void Config::setToolSize(const char *prefix, int w, int h) {
     std::string keyH = std::string(prefix) + "_win_h";
     writeInt(keyW.c_str(), w);
     writeInt(keyH.c_str(), h);
+}
+
+void Config::getWindowPos(int &x, int &y) const {
+    x = readInt("main_win_x", 0);
+    y = readInt("main_win_y", 0);
+}
+
+void Config::setWindowPos(int x, int y) {
+    writeInt("main_win_x", x);
+    writeInt("main_win_y", y);
+}
+
+bool Config::getWindowMax() const {
+    return readInt("main_win_max", 0) != 0;
+}
+
+void Config::setWindowMax(bool on) {
+    writeInt("main_win_max", on ? 1 : 0);
 }
 
 // ---------------------------------------------------------------------------
