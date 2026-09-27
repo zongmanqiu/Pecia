@@ -18,11 +18,16 @@
 #include "AIChat/AIChatWindow.h"
 
 #include <FL/Fl.H>
+#include <FL/Fl_Preferences.H>
 
 #include <cstdio>
 #include <string>
 
 int main() {
+    // 便携：与 Pecia 入口一致，禁止 FLTK 核心在 exe 之外读写 prefs。
+    // 构造控件会触发 Fl::option()，否则会在 %APPDATA%/%ProgramData% 下
+    // 生成 fltk.org/fltk.prefs。必须在任何 FLTK 调用之前设置。
+    Fl_Preferences::file_access(Fl_Preferences::APP_OK);
     Fl::visual(FL_DOUBLE | FL_RGB);
     Fl::scheme("gtk+");
     ui::g_smokeMode = true;   // no detached threads / blocking modal loops

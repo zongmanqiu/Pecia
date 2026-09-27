@@ -30,6 +30,7 @@
 #include "ui/ShortcutDialog.h"
 
 #include <FL/Fl.H>
+#include <FL/Fl_Preferences.H>
 #include <FL/Fl_Check_Button.H>
 #include <FL/Fl_Input.H>
 #include <FL/Fl_Choice.H>
@@ -240,6 +241,10 @@ void runDataFlowTest() {
 } // namespace
 
 int main() {
+    // 便携：与 Pecia 入口一致，禁止 FLTK 核心在 exe 之外读写 prefs。
+    // 构造控件会触发 Fl::option()，否则会在 %APPDATA%/%ProgramData% 下
+    // 生成 fltk.org/fltk.prefs。必须在任何 FLTK 调用之前设置。
+    Fl_Preferences::file_access(Fl_Preferences::APP_OK);
     Fl::visual(FL_DOUBLE | FL_RGB);
     Fl::scheme("gtk+");
     ui::g_smokeMode = true;   // no blocking modal loops during the smoke test

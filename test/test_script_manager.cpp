@@ -8,6 +8,7 @@
 #include <FL/fl_utf8.h>
 #include <FL/Fl_Group.H>
 #include <FL/Fl_Button.H>
+#include <FL/Fl_Preferences.H>
 #include <core/I18n.h>
 
 #if defined(_WIN32)
@@ -444,6 +445,10 @@ static void test_parse_meta_tolerance() {
 // ---------------------------------------------------------------------------
 
 int main() {
+    // 便携：与 Pecia 入口一致，禁止 FLTK 核心在 exe 之外读写 prefs。
+    // 本测试构造 Fl_Group 会触发 Fl::option()，否则会在
+    // %APPDATA%/%ProgramData% 下生成 fltk.org/fltk.prefs。
+    Fl_Preferences::file_access(Fl_Preferences::APP_OK);
     setup();
     test_two_level_scan();
     test_rescan_picks_up_new_scripts();
