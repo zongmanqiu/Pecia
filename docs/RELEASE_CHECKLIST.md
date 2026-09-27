@@ -16,15 +16,24 @@
 | `main/example/ex1.markdown/ex1.md` | 版本表 `Pecia \| x.y.z` | 示例文档中的版本引用 |
 | `main/HISTORY.md` | 在文件**顶部**追加新版本小节（日期 + 新增/修复/变更） | **增量原则：只追加，旧内容一律保持原样**，不修改不删除 |
 
+> **Windows 文件属性（VERSIONINFO）自动跟随，不算手工同步项**：三份 exe 的
+> 「属性 → 详细信息」版本由 `main/build/version_info.rc.in` 在 CMake 配置阶段
+> 经 `configure_file` 注入 `PROJECT_VERSION` 生成（见 CMakeLists 的
+> 「Windows VERSIONINFO resources」段）。改完 CMakeLists 第 2 行重新构建即可，
+> **不要手工改任何 `.rc`**。
+
 改完用 `grep -rn "旧版本号" main/` 复核零残留（注意排除 `.thirdparty/`）。
 
 ## 二、发行前质量门禁（全部通过才可发行）
 
 1. **全量构建**：双击 `build/full.bat`（或 `5_build_pecia.bat`）；
 2. **14 个 ctest 全绿**（构建链内置，红灯即中止）；
-3. **文档门禁**：`build/test_docs.exe` 输出 `28 checks, 0 failures`
+3. **文档门禁**：`build/test_docs.exe` 输出 `31 checks, 0 failures`
    （改过任何文档/API/目录后必跑）；
-4. **零 C 警告**（`/W4` 级别，构建日志无 `warning C`）。
+4. **零 C 警告**（`/W4` 级别，构建日志无 `warning C`）；
+5. **文件属性校验**：`build/Pecia.exe`、`PeciaLua.exe`、`PeciaAIChat.exe`
+   右键 → 属性 → 详细信息，`文件版本 / 产品版本` 均等于 `CMakeLists.txt`
+   的版本号（由 `build/version_info.rc.in` 自动生成，三份 exe 应一致）。
 
 ## 三、打包
 

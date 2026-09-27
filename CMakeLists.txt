@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Pecia VERSION 1.0.2 LANGUAGES C CXX)
+project(Pecia VERSION 1.0.3 LANGUAGES C CXX)
 
 # ── Supported target is strictly Windows x64 (64-bit) only. ────────────────
 # The project is deliberately single-platform / single-arch: it uses Windows
@@ -156,6 +156,40 @@ if(MSVC)
 endif()
 
 # ----------------------------------------------------------------------------
+# Windows VERSIONINFO resources (exe 属性 -> 详细信息 显示的版本/产品名)
+# ----------------------------------------------------------------------------
+# 由 PROJECT_VERSION 生成，作为"单一数据源"的一部分：版本号只在 CMakeLists
+# 第 2 行改一次，三份 exe 的文件属性自动跟随，不会出现第二处手工维护点。
+# 三个 target 各自的 ProductName / FileDescription / OriginalFilename 用变量
+# 区分，共用同一份模板 build/version_info.rc.in。
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/gen")
+set(PECIA_VMAJOR "${PROJECT_VERSION_MAJOR}")
+set(PECIA_VMINOR "${PROJECT_VERSION_MINOR}")
+set(PECIA_VPATCH "${PROJECT_VERSION_PATCH}")
+set(PECIA_VERSION "${PROJECT_VERSION}")
+
+set(PECIA_PRODUCT   "Pecia")
+set(PECIA_FILEDESC  "Pecia Text Editor")
+set(PECIA_INTERNAL  "Pecia")
+set(PECIA_ORIGNAME  "Pecia.exe")
+configure_file("${CMAKE_SOURCE_DIR}/build/version_info.rc.in"
+               "${CMAKE_BINARY_DIR}/gen/version_pecia.rc" @ONLY)
+
+set(PECIA_PRODUCT   "Pecia Lua")
+set(PECIA_FILEDESC  "Pecia Lua Script Tool")
+set(PECIA_INTERNAL  "PeciaLua")
+set(PECIA_ORIGNAME  "PeciaLua.exe")
+configure_file("${CMAKE_SOURCE_DIR}/build/version_info.rc.in"
+               "${CMAKE_BINARY_DIR}/gen/version_pecia_lua.rc" @ONLY)
+
+set(PECIA_PRODUCT   "Pecia AI Chat")
+set(PECIA_FILEDESC  "Pecia AI Chat")
+set(PECIA_INTERNAL  "PeciaAIChat")
+set(PECIA_ORIGNAME  "PeciaAIChat.exe")
+configure_file("${CMAKE_SOURCE_DIR}/build/version_info.rc.in"
+               "${CMAKE_BINARY_DIR}/gen/version_pecia_ai.rc" @ONLY)
+
+# ----------------------------------------------------------------------------
 # Pecia main exe
 # ----------------------------------------------------------------------------
 add_executable(Pecia WIN32
@@ -212,6 +246,7 @@ ui/MatchHighlight.cpp
     mdview/container.cpp
     mdview/preview_panel.cpp
     build/pecia.rc
+    "${CMAKE_BINARY_DIR}/gen/version_pecia.rc"
 )
 
 if(MSVC)
@@ -318,6 +353,7 @@ add_executable(PeciaLua WIN32
     core/ShortcutCore.cpp
     ui/Layout.cpp
     build/pecia_lua.rc
+    "${CMAKE_BINARY_DIR}/gen/version_pecia_lua.rc"
 )
 
 target_include_directories(PeciaLua PRIVATE
@@ -382,6 +418,7 @@ add_executable(PeciaAIChat WIN32
     ui/Layout.cpp
     ui/ImeInPlace.cpp
     build/pecia_ai.rc
+    "${CMAKE_BINARY_DIR}/gen/version_pecia_ai.rc"
 )
 
 target_include_directories(PeciaAIChat PRIVATE

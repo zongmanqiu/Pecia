@@ -927,7 +927,11 @@ struct ExtensionsDialog : DialogBase {
         int margin = 12;
         int rowH = 22;
         int btnH = 22;
-        int btnY = H;  // bottom bar y (window coords, before +TITLE_H)
+        // Bottom button bar sits flush against the window bottom and is
+        // gBarH tall - the shared convention for every dialog (a bit taller
+        // than the title bar, same as Settings/Param/Confirm/Shortcut).
+        // Window height is H + TITLE_H (see the DialogBase base call).
+        int btnY = TITLE_H + H - gBarH;  // bottom bar top (window coords)
 
         // Layout: scrollable checkbox area on top, custom input row
         // immediately below it, bottom button bar at the very bottom.
@@ -1037,13 +1041,13 @@ struct ExtensionsDialog : DialogBase {
         // padding) so they don't waste horizontal space; the toggle keeps
         // the wider of its two labels so it never jumps while switching.
         Fl_Color chromeCol = theme ? theme->colors().background2 : FL_BACKGROUND2_COLOR;
-        Fl_Group *btnBar = new Fl_Group(0, btnY, W, TITLE_H);
+        Fl_Group *btnBar = new Fl_Group(0, btnY, W, gBarH);
         btnBar->box(FL_FLAT_BOX);
         btnBar->color(chromeCol);
 
         const char *kAllLbl   = I18n::get("settings.selectall");
         int gap  = 8;
-        int okY  = btnY + (TITLE_H - btnH) / 2;
+        int okY  = btnY + (gBarH - btnH) / 2;
         // created with zero width; fitButtonRow sizes + right-aligns below.
         HoverButton *allBtn = new HoverButton(0, okY, 0, btnH, kAllLbl);
         HoverButton *okBtn  = new HoverButton(0, okY, 0, btnH, I18n::get("settings.ok"));

@@ -5,6 +5,29 @@
 
 ---
 
+## 1.0.3（2026-09-27）
+
+**修复**
+
+- 「文件类型」（加入"打开方式"菜单）窗口底部按钮区高度偏小：由原来与标题栏同高
+  （`TITLE_H`）改为与所有其它对话框一致的 `gBarH`（比标题栏略高），按钮随按钮区
+  重新垂直居中。已复核全仓 `DialogBase` 派生窗口，仅此一处不符通用规范。
+
+**新增**
+
+- 三份 exe 补齐 Windows 文件属性（VERSIONINFO）：右键「属性 → 详细信息」可看到
+  文件版本 / 产品版本（= 版本号）、产品名（Pecia / Pecia Lua / Pecia AI Chat）、
+  文件说明与版权。由 `build/version_info.rc.in` 在 CMake 配置阶段注入
+  `PROJECT_VERSION` 生成，随版本号自动更新，无需手工维护第二处。
+
+**变更**
+
+- 便携化：程序的所有数据都保留在 exe 同级目录，不再向系统目录写文件——
+  - 三处入口（Pecia / PeciaLua / PeciaAIChat）在任何 FLTK 调用之前调用
+    `Fl_Preferences::file_access(Fl_Preferences::APP_OK)`，禁止 FLTK 在
+    `%APPDATA%` 生成 `*.prefs`（含文件对话框的收藏夹/预览开关）；
+  - 远程图片缓存与预览兜底页由系统 `%TEMP%` 改到 exe 同级 `temp/` 目录。
+
 ## 1.0.2（2026-09-27）
 
 **新增**

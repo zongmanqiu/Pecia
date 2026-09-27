@@ -1,6 +1,7 @@
 // main.cpp - Pecia entry point
 #include <FL/Fl.H>
 #include <FL/platform.H>
+#include <FL/Fl_Preferences.H>
 #include "ui/MainWindow.h"
 #include "ui/Layout.h"
 #include "core/Config.h"
@@ -34,6 +35,11 @@ static void pecia_open_cb(const char *path) {
 }
 
 int main(int /*argc*/, char ** /*argv*/) {
+    // 便携：禁止 FLTK 核心在 exe 之外读写 prefs（Windows 上默认落在
+    // %APPDATA%\<vendor>\<app>.prefs）。Fl_File_Chooser 的收藏夹/预览开关、
+    // Fl::option 等都走 CORE 权限，APP_OK 会把它们全部挡掉，且程序自身也不
+    // 使用 Fl_Preferences。必须在任何 FLTK 调用之前设置。
+    Fl_Preferences::file_access(Fl_Preferences::APP_OK);
 #if defined(_WIN32)
     // Install the crash handler early so we capture failures during
     // scheme setup, config load, and window construction too.

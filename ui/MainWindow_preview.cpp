@@ -761,10 +761,12 @@ void MainWindow::openPreviewInBrowser()
     // 目录内包含本地图片拷贝/公式/meimaid，浏览器可完整显示。
     std::string path = m_previewDir + "\\index.html";
     if (GetFileAttributesW(widen(path).c_str()) == INVALID_FILE_ATTRIBUTES) {
-        // 目录未生成（如预览打开后未渲染过）：退回写临时文件
-        wchar_t tmpPathW[MAX_PATH];
-        if (!GetTempPathW(MAX_PATH, tmpPathW)) return;
-        path = narrow(tmpPathW) + "pecia_preview.html";
+        // 目录未生成（如预览打开后未渲染过）：退回把当前 HTML 写到
+        // exe 同级 temp/（便携：绝不写 exe 之外，不用 %TEMP%）。
+        std::string root = previewTempRoot();
+        if (root.empty()) return;
+        CreateDirectoryW(widen(root).c_str(), NULL);
+        path = root + "\\pecia_preview.html";
         FILE *f = fl_fopen(path.c_str(), "wb");
         if (!f) return;
         const std::string &html = m_preview->view()->current_html();

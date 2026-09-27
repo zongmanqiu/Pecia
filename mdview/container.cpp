@@ -1,12 +1,14 @@
 #include "container.h"
 #include "preprocess.h"
 #include "editor/Editor.h"   // FontUtils::findFontByName（CSS 字体名 → 已安装字体）
+#include "core/PathUtils.h"  // pathutil::exeDir()（便携：缓存写 exe 同级 temp/）
 
 #include <FL/Fl_Image_Surface.H>
 #include <FL/fl_draw.H>
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -33,15 +35,6 @@ static std::wstring widen(const std::string& s)
     std::wstring w((size_t)len, L'\0');
     MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), &w[0], len);
     return w;
-}
-// UTF-16 → UTF-8 转换
-static std::string narrow(const std::wstring& w)
-{
-    if (w.empty()) return {};
-    int len = WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-    std::string s((size_t)len, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), &s[0], len, nullptr, nullptr);
-    return s;
 }
 // 用 GDI 获取精确的字体度量
 static void get_gdi_metrics(const std::string& family, int pixel_size, int weight,
@@ -658,14 +651,18 @@ Fl_Image* MyContainer::load_image_file(const std::string& path)
     {
         // 远程图片：异步下载（后台线程），下载完成回主线程加载并重绘。
         // 同步 URLDownloadToFileW 会阻塞 UI（慢网下可卡死十几秒）。
-        wchar_t temp_dir[MAX_PATH];
-        if (GetTempPathW(MAX_PATH, temp_dir)) {
+        // 便携：缓存一律落在 exe 同级 temp/，绝不写 exe 之外（%TEMP% 会污染
+        // 系统临时目录，与"便携程序"目标冲突）。exe 目录解析失败则放弃下载。
+        std::string cache_dir = pathutil::exeDir();
+        if (!cache_dir.empty()) {
+            cache_dir += "\\temp";
+            CreateDirectoryW(widen(cache_dir).c_str(), NULL);
             // 缓存文件名 = URL 的简单哈希 + 扩展名
             unsigned h = 2166136261u;
             for (unsigned char c : path) h = (h ^ c) * 16777619u;
-            wchar_t temp_file[MAX_PATH];
-            swprintf(temp_file, MAX_PATH, L"%specia_img_%08x.img", temp_dir, h);
-            std::string cache_file = narrow(temp_file);
+            char name[64];
+            snprintf(name, sizeof(name), "pecia_img_%08x.img", h);
+            std::string cache_file = cache_dir + "\\" + name;
 
             if (GetFileAttributesW(widen(cache_file).c_str()) != INVALID_FILE_ATTRIBUTES) {
                 // 缓存已存在 → 直接加载（GIF 走多帧动画分支，key 用 URL）

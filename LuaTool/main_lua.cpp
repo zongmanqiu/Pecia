@@ -2,6 +2,7 @@
 // Single instance: a second launch activates the existing window.
 #include <FL/Fl.H>
 #include <FL/fl_string_functions.h>
+#include <FL/Fl_Preferences.H>
 #include <windows.h>
 #include <shellapi.h>
 #include <stdio.h>
@@ -42,6 +43,9 @@ static std::string parseArg(LPSTR cmdLine, int index) {
 }
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmdLine, int) {
+    // 便携：禁止 FLTK 核心在 exe 之外读写 prefs（默认落在 %APPDATA%）。
+    // 必须在任何 FLTK 调用之前设置，见 main.cpp 中的同类说明。
+    Fl_Preferences::file_access(Fl_Preferences::APP_OK);
     // Crash handler first: capture failures during startup too.
     CrashReport::install("pecialua");
     // COM (STA) for IFileSaveDialog in the Save As flow.
