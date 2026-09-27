@@ -251,10 +251,10 @@ static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
         MainWindow *self = dynamic_cast<MainWindow*>(win);
         if (self) {
             bool wasMax = self->m_maximized;
-            // Geometry is the source of truth: a window can be flagged
-            // SIZE_MAXIMIZED yet not actually fill the work area, and vice
-            // versa. Keep the caption icon in sync with the real size.
-            bool isMax  = (wp == SIZE_MAXIMIZED) || windowCoversWorkArea(self);
+            // The real zoom state drives the caption icon. A window that
+            // merely fills the work area without being zoomed is not
+            // maximized, so the icon must not claim otherwise.
+            bool isMax  = (wp == SIZE_MAXIMIZED);
             if (wasMax != isMax) {
                 self->m_maximized = isMax;
                 self->syncTitleBar();
@@ -325,7 +325,7 @@ static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
             }
 
             // Fill non-client border with window background color
-            if (!windowCoversWorkArea(win)) {
+            if (!IsZoomed(hwnd)) {
                 HBRUSH brush = CreateSolidBrush(fillClr);
                 RECT rcL = {0, 0, NC_PAD, wh};
                 FillRect(hdc, &rcL, brush);
@@ -367,7 +367,7 @@ static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
             pt.y < rc.top  || pt.y >= rc.bottom)
             return nativeSubclass::forward(hwnd, msg, wp, lp);
 
-        if (windowCoversWorkArea(fl_find(hwnd)))
+        if (IsZoomed(hwnd))
             return HTCLIENT;  // no resize when maximized
 
         bool onTop    = pt.y <  rc.top    + NC_PAD;
@@ -537,7 +537,11 @@ void MainWindow::toggleMaximize() {
     HWND hwnd = fl_xid(this);
     if (!hwnd) return;
 
-    if (IsZoomed(hwnd) || windowCoversWorkArea(this)) {
+    // Decide by the real zoom state only. A window that merely fills the
+    // work area (e.g. its persisted size happens to equal the maximized
+    // size) is NOT maximized; treating it as such made the maximize button
+    // a no-op (SW_RESTORE on a non-zoomed window does nothing).
+    if (IsZoomed(hwnd)) {
         // Restore — ShowWindow triggers WM_SIZE(SIZE_RESTORED) which
         // FLTK handles to update its internal coordinates.
         ShowWindow(hwnd, SW_RESTORE);

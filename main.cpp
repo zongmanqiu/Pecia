@@ -111,6 +111,20 @@ int main(int /*argc*/, char ** /*argv*/) {
     // logic below.
     int x = -1, y = -1, w = DEFAULT_WIN_W, h = DEFAULT_WIN_H;
     cfg.getToolSize("main", w, h, DEFAULT_WIN_W, DEFAULT_WIN_H);
+#if defined(_WIN32)
+    // 兜底：持久化的尺寸若已铺满工作区（关闭时正处于最大化，或被手动拉到
+    // 最大），它就不是一个可用的「普通尺寸」——按它建窗后既无法正常切换
+    // 最大化，也拖不动标题栏。此情况下回退到默认 800x600。
+    RECT wa;
+    if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0)) {
+        const int waw = wa.right - wa.left;
+        const int wah = wa.bottom - wa.top;
+        if (w >= waw - 2 && h >= wah - 2) {
+            w = DEFAULT_WIN_W;
+            h = DEFAULT_WIN_H;
+        }
+    }
+#endif
     if (w < 400) w = 400;
     if (h < 300) h = 300;
     if (w > Fl::w()) w = Fl::w();

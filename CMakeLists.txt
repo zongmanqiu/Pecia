@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Pecia VERSION 1.0.3 LANGUAGES C CXX)
+project(Pecia VERSION 1.0.4 LANGUAGES C CXX)
 
 # ── Supported target is strictly Windows x64 (64-bit) only. ────────────────
 # The project is deliberately single-platform / single-arch: it uses Windows

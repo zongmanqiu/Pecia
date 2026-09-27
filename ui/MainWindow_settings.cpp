@@ -782,6 +782,9 @@ void MainWindow::saveSettings() {
     // preferences. Position is intentionally NOT persisted - every launch
     // keeps the existing centering/cascade logic. Clamping happens on the
     // read side (main.cpp).
+    // Always persist the current size, maximized or not. If that size ends
+    // up equal to the maximized (work-area) size, the read side in main.cpp
+    // detects it and falls back to the default 800x600 instead.
     m_cfg->setToolSize("main", w(), h());
     // NOTE: Font size is intentionally NOT persisted here. The zoom level
     // (set via Ctrl+/-/0 or Ctrl+wheel) is per-session; saving it would
