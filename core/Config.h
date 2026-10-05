@@ -109,6 +109,15 @@ Config();
     bool getMultiTab() const;
     void setMultiTab(bool on);
 
+    // Options > Interface & System > "Open .md files with preview".
+    // When on, opening a Markdown file (.md/.markdown, any case) turns the
+    // preview on automatically. Only fires for a freshly opened file -- see
+    // MainWindow::openFile(). Default off: previewing is opt-in, and a large
+    // document would otherwise start a synchronous render the user never
+    // asked for.
+    bool getAutoPreviewMd() const;
+    void setAutoPreviewMd(bool on);
+
     // View > Always on Top - keep the window above other windows.
     bool getAlwaysOnTop() const;
     void setAlwaysOnTop(bool on);
@@ -181,14 +190,6 @@ Config();
     // Test.txt（不存在则新建空文件），省去开机时手动找文件。
     bool getFixedStartupDoc() const;
     void setFixedStartupDoc(bool on);
-
-    // System integration: comma-separated list of extensions (with leading
-    // dot, e.g. ".txt,.md,.log") registered for the "Open with" menu.
-    // Empty string means "no extensions selected". The default (when the
-    // key is missing) is the full supported list - see kDefaultOpenWithExts
-    // in SettingsDialog.cpp.
-    void getOpenWithExts(char *buf, int len, const char *fallback = "") const;
-    void setOpenWithExts(const char *exts);
 
     // UI chrome font size (menus, title bar, status bar, etc.).
     int  getUiFontSize() const;

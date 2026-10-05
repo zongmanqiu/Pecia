@@ -68,14 +68,32 @@ void PreviewPanel::workerLoop()
         }
         std::vector<PreviewHeading> headings;
         std::string html;
+        bool failed = false;
+        std::string failMsg;
         try {
             html = md_to_html(markdown, build_dir, doc_dir, &headings, base_font);
+        } catch (const std::bad_alloc &) {
+            failed = true;
+            failMsg = "Preview failed: out of memory (document too large).";
         } catch (...) {
-            // Rendering threw (e.g. bad_alloc building HTML strings). Do not
-            // let the exception kill the worker thread: m_workerBusy must
-            // still be reset so the pump timer can stop, otherwise the 30ms
-            // poll loop would spin forever waiting on a dead worker.
+            failed = true;
+            failMsg = "Preview failed while converting this document.";
+        }
+        if (failed) {
+            // Do not let the exception kill the worker thread: m_workerBusy
+            // must still be reset so the pump timer can stop, otherwise the
+            // 30ms poll loop would spin forever waiting on a dead worker.
+            // The failure is delivered like any other result because touching
+            // the widget has to happen on the UI thread. Preview has no size
+            // limit, so this is reachable — leaving the panel stuck on
+            // "Rendering..." forever would be its own bug.
             std::lock_guard<std::mutex> lock(m_mutex);
+            if (version == m_nextVersion) {
+                m_pendingHtml.clear();
+                m_pendingHeadings.clear();
+                m_pendingError = failMsg;
+                m_pendingVersion = version;
+            }
             m_workerBusy = false;
             continue;
         }
@@ -85,6 +103,7 @@ void PreviewPanel::workerLoop()
             if (version == m_nextVersion) {    // 仍是最新请求 → 交付结果
                 m_pendingHtml = std::move(html);
                 m_pendingHeadings = std::move(headings);
+                m_pendingError.clear();
                 m_pendingVersion = version;
             }
             m_workerBusy = false;              // 渲染完成（无论是否交付）
@@ -100,9 +119,12 @@ void PreviewPanel::clear()
         ++m_nextVersion;                       // 作废所有在途结果
         m_pendingVersion = 0;
         m_pendingHtml.clear();
+        m_pendingError.clear();
         m_hasRequest = false;
     }
     m_view->clear();
+    // 清掉上一份文档可能留下的失败提示，否则换文档后会显示过期的错误。
+    m_view->set_render_error("");
 }
 
 bool PreviewPanel::hasContent() const { return m_view->has_content(); }
@@ -116,6 +138,11 @@ void PreviewPanel::renderAsync(const std::string &markdown, const std::string &b
                                const std::string &doc_dir)
 {
     m_view->set_rendering(true);   // 空内容时显示 Rendering...
+    // 容器把远程图片直接下载到这个目录（用 URL 原名），于是该目录同时就是
+    // 预览的解码来源与浏览器/导出的资源目录 —— 同一张图只存一份。
+    // 必须在请求之前设置：容器可能在 worker 渲染完、applyResult 布局时就开始
+    // 下载，早设晚设都可能让第一批图又落回旧的缓存位置。
+    if (m_container) m_container->set_asset_dir(build_dir);
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         ++m_nextVersion;
@@ -139,18 +166,30 @@ void PreviewPanel::pump()
 {
     std::string html;
     std::vector<PreviewHeading> headings;
+    std::string error;
     bool hasResult = false;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (m_pendingVersion > 0) {
             html = m_pendingHtml;
             headings = std::move(m_pendingHeadings);
+            error = std::move(m_pendingError);
             m_pendingHtml.clear();
             m_pendingVersion = 0;
             hasResult = true;
         }
     }
-    if (hasResult) applyResult(html, std::move(headings));
+    if (!hasResult) return;
+    if (!error.empty()) {
+        // 转换阶段就失败了（无大小上限下可能是 oom）：面板上给出原因，
+        // 而不是停在 "Rendering..."。
+        m_view->set_rendering(false);
+        m_view->clear();
+        m_view->set_render_error(error);
+        if (m_headingsCb) m_headingsCb({});
+        return;
+    }
+    applyResult(html, std::move(headings));
 }
 
 void PreviewPanel::timerCb(void *data)
@@ -178,7 +217,11 @@ void PreviewPanel::applyResult(const std::string &html, std::vector<PreviewHeadi
     if (m_view->has_content() && m_view->content_height() > 0)
         ratio = (float)m_view->scroll_y() / (float)m_view->content_height();
     m_view->load_and_render(html);
-    if (ratio > 0.0f) m_view->scroll_to((int)(ratio * m_view->content_height()));
+    // Failure (e.g. bad_alloc laying out a huge document) leaves no content,
+    // so content_height() is 0 and scrolling must be skipped. load_and_render
+    // already reports the reason into the panel.
+    if (ratio > 0.0f && m_view->content_height() > 0)
+        m_view->scroll_to((int)(ratio * m_view->content_height()));
     m_view->redraw();
     if (m_headingsCb) m_headingsCb(headings);
 }

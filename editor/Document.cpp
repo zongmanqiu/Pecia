@@ -75,6 +75,9 @@ void Document::modifyCallback(int pos, int nInserted, int nDeleted,
     // sync with the dirty-tracking guards above: zero-size notifications
     // and no-op whole-buffer replaces don't change line counts either).
     self->m_lineCount = -1;
+    // Same guards apply: only real content changes bump the revision, so
+    // the preview's "unchanged → skip" test can't be fooled by restyles.
+    ++self->m_contentRev;
 }
 
 int Document::lineCount() {
@@ -369,6 +372,12 @@ bool Document::loadWithEncoding(const char *path, Encoding enc) {
     }
 
     fl_strlcpy(m_filePath, path, FL_PATH_MAX);
+    // Bump the revision explicitly: m_buffer->text() above does fire the
+    // modify callback, but that callback deliberately treats a whole-buffer
+    // equal-length replace as "nothing changed" (see the tab_distance guard),
+    // so it can swallow the load. The preview must see a freshly opened
+    // document as changed regardless.
+    ++m_contentRev;
     markClean();
     return true;
 }

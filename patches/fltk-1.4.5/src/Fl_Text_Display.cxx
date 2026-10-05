@@ -59,6 +59,56 @@
 
 #define NO_HINT -1
 
+/* PATCH (Pecia): how many blank rows the viewport may scroll past the last
+ line of the document.
+
+ Upstream's limit mNBufferLines + 3 - mNVisibleLines looks like it grants
+ "2 rows past the end", but it does not: the +3 also has to cover the one
+ phantom line that always follows the text, so the last real line lands
+ exactly on the bottom visible row and no blank space is left below it.
+
+ Every mainstream editor (VS Code, Sublime, Notepad++, ...) lets you scroll a
+ few rows past the last line. That is not cosmetic: it keeps the final line
+ off the bottom edge, so the line is not visually fused with the frame, and it
+ gives a natural overscroll when you keep pressing Down.
+
+ ★ This number is used in TWO places that MUST agree:
+     - scroll_()        : the top line the viewport may reach
+     - update_v_scrollbar(): the scrollbar maximum handed to scrollvalue()
+ If they disagree the thumb cannot reach the end of its own track again (the
+ value it can attain is short of the maximum, so the drawn thumb stops short)
+ -- that was the original "垂直滑块滑不到底" report. Both now call
+ vscroll_bottom_line() so they cannot drift apart. */
+static const int PECIA_BLANK_ROWS_PAST_END = 3;
+
+/* PATCH (Pecia): the top line that leaves PECIA_BLANK_ROWS_PAST_END blank rows
+ below the last line of the document.
+
+ mNBufferLines counts newlines, so the document's last line is number
+ mNBufferLines+1. For it to sitK rows above the bottom of the viewport:
+     mTopLineNum + mNVisibleLines - 1 - K = mNBufferLines + 1
+ i.e. mTopLineNum = mNBufferLines + 2 + K - mNVisibleLines.
+
+ ★ mNBufferLines is NOT stable within one display_needs_recalc() pass. In
+   continuous-wrap mode every scroll re-runs count_lines() over the buffer and
+   the trailing blank lines are only counted once the view reaches them, so the
+   counter grows as you scroll towards the end (measured on qw.md: 552 -> 554
+   -> 556). Recomputing the limit in two different places therefore yields two
+   different numbers, and the maximum the scrollbar advertises ends up larger
+   than the top line the viewport can actually be scrolled to -- which is
+   exactly the "thumb stops short of the end of its track" symptom.
+
+   So the limit is computed ONCE, inside scroll_() (the function that actually
+   clamps the top line) and stashed in vscroll_applied_limit; update_v_scrollbar()
+   reuses that recorded value instead of recomputing it. */
+static int vscroll_bottom_line(int nbuf, int nvis) {
+  return nbuf + 2 + PECIA_BLANK_ROWS_PAST_END - nvis;
+}
+
+/* PATCH (Pecia): the limit scroll_() actually applied on its last call, or 0
+ if it has not run yet. See vscroll_bottom_line() for why this is needed. */
+static int vscroll_applied_limit = 0;
+
 /* Masks for text drawing methods.  These are or'd together to form an
  integer which describes what drawing calls to use to draw a string */
 #define FILL_MASK         0x0100
@@ -550,7 +600,9 @@ void Fl_Text_Display::recalc_display() {
 
   if (mContinuousWrap && !mWrapMarginPix) {
 
-    int nvlines = (text_area.h + mMaxsize - 1) / mMaxsize;
+    /* PATCH (Pecia): floor, not ceil -- see the long note at the second
+     occurrence below (:591). Both places MUST agree. */
+    int nvlines = text_area.h / mMaxsize;
     int nlines = buffer()->count_lines(0,buffer()->length());
     if (nvlines < 1) nvlines = 1;
     if (nlines >= nvlines-1) {
@@ -588,7 +640,35 @@ void Fl_Text_Display::recalc_display() {
 
     /* reallocate and update the line starts array, which may have changed
      size and / or contents.  */
-    int nvlines = (text_area.h + mMaxsize - 1) / mMaxsize;
+
+    /* PATCH (Pecia): count only the lines that FULLY fit, i.e. round DOWN.
+
+     Upstream uses ceil:  nvlines = (text_area.h + mMaxsize - 1) / mMaxsize
+     That declares one more visible row than the viewport can actually show
+     whenever text_area.h is not an exact multiple of mMaxsize -- which is
+     the common case, because the editor height depends on the window size,
+     the menu bar, the tab strip, the script bar, the find bar and the status
+     bar. Each visible row is drawn mMaxsize pixels tall at
+     Y = text_area.y + row*mMaxsize and the drawing is clipped to text_area
+     (draw(), ~:4105), so that extra row has its bottom sliced off.
+
+     Measured with qw.md (479 lines), Consolas 16, wrap on:
+         editor h=545 -> text_area.h=539, mMaxsize=18
+         ceil  -> nVis=30, needs 540px, only 539 available -> bottom row cut 1px
+         floor -> nVis=29, needs 522px -> all rows intact, 17px spare
+     Scrolling to the bottom then puts the LAST text line exactly on that
+     clipped bottom row, so it is visibly sliced in half. With h=600 the
+     division happens to come out even (594 = 33*18) and nothing is cut,
+     which is why this only showed up "sometimes".
+
+     Rounding down removes the phantom row entirely: the viewport now only
+     ever claims rows it can really draw, and the leftover pixels become the
+     blank space below the last line that every mainstream editor shows.
+
+     ★ This must match the earlier occurrence in the same function (~:553),
+       otherwise the scrollbar is sized from a different row count than the
+       one actually drawn. */
+    int nvlines = text_area.h / mMaxsize;
     if (nvlines < 1) nvlines = 1;
     if (mNVisibleLines != nvlines) {
       mNVisibleLines = nvlines;
@@ -707,8 +787,30 @@ void Fl_Text_Display::recalc_display() {
   /* if empty lines become visible, there may be an opportunity to
    display more text by scrolling down */
   } else {
+
+   /* PATCH (Pecia): do not pull the view back up once the bottom of the
+    document is already on screen.
+
+    Upstream keeps calling scroll_(mTopLineNum-1) for as long as the row above
+    the last visible one is empty. That is a "show more text" optimisation for
+    the case where trailing blank lines drifted into view, but it also runs at
+    the very bottom of a document and there it cancels the blank rows that
+    scroll_() deliberately allows (PECIA_BLANK_ROWS_PAST_END), leaving the last
+    line flush against the bottom edge.
+
+    bottom_line is the top line scroll_() is willing to go to. Once mTopLineNum
+    has reached it the blank rows below the last line are intentional, so this
+    "show more text" pass must stop -- otherwise it walks the view back up and
+    cancels the very slack we just granted, which puts the thumb short of its
+    own track again. Below that, upstream behaviour is untouched. It comes from
+    vscroll_applied_limit (the limit scroll_() really used) rather than a fresh
+    computation, for the reason given on vscroll_bottom_line(). */
+    const int bottom_line = (vscroll_applied_limit > 0)
+                            ? vscroll_applied_limit
+                            : vscroll_bottom_line(mNBufferLines, mNVisibleLines);
     while (   mNVisibleLines>=2
            && (mLineStarts[mNVisibleLines-2]==-1)
+           && mTopLineNum > bottom_line
            && scroll_(mTopLineNum-1, mHorizOffset))
     { }
   }
@@ -3088,8 +3190,14 @@ void Fl_Text_Display::scroll(int topLineNum, int horizOffset) {
  */
 int Fl_Text_Display::scroll_(int topLineNum, int horizOffset) {
   /* Limit the requested scroll position to allowable values */
-  if (topLineNum > mNBufferLines + 3 - mNVisibleLines)
-    topLineNum = mNBufferLines + 3 - mNVisibleLines;
+  /* PATCH (Pecia): one shared bottom limit, recorded for update_v_scrollbar().
+     See vscroll_bottom_line() -- mNBufferLines drifts within a single
+     display_needs_recalc() pass, so the two must not recompute it. */
+  {
+    const int limit = vscroll_bottom_line(mNBufferLines, mNVisibleLines);
+    vscroll_applied_limit = limit;
+    if (topLineNum > limit) topLineNum = limit;
+  }
   if (topLineNum < 1) topLineNum = 1;
 
   if (horizOffset > longest_vline() - text_area.w)
@@ -3131,8 +3239,41 @@ void Fl_Text_Display::update_v_scrollbar() {
          mTopLineNum, mNVisibleLines, mNBufferLines);
 #endif // DEBUG
 
-  mVScrollBar->value(mTopLineNum, mNVisibleLines, 1, mNBufferLines+1+
-                     ((mContinuousWrap && mWrapMarginPix) ? 0 : 1));
+  /* PATCH (Pecia): the scrollbar maximum is the top line scroll_() actually
+   permits, so the thumb can reach the end of its own track.
+
+   Why this matters: Fl_Slider::scrollvalue(pos, size, first, total) does
+       bounds(first, total-size+first)
+   and the thumb is drawn at xx = int(val*(L-S)+0.5) with
+   val = (value-min)/(max-min). If the maximum is larger than the top line
+   the viewport can reach, val never reaches 1.0 at the bottom and the thumb
+   stops short of the end of the track by (L-S)/(max-min) pixels. That was the
+   original report: "垂直滑块没办法滑到最后，总是有一点小间隙", and because the
+   gap is (L-S)/(max-min) rather than a constant it only showed up sometimes.
+
+   ★ scroll_() and this function must use the SAME limit, so both call
+     vscroll_bottom_line(). An earlier attempt capped the maximum at
+     mTopLineNum, which made the two agree only at the very bottom -- and
+     because the cap was applied unconditionally it collapsed the range as
+     soon as you scrolled anywhere else, leaving a long file stuck on its
+     first screenful. Sharing one function makes that class of bug impossible.
+
+   The total passed below is not the limit itself: scrollvalue() turns
+   (pos, size, first, total) into bounds(first, total-size+first), so
+   total = limit + size - first reproduces exactly that limit.
+
+   ★ vscroll_applied_limit, not a fresh vscroll_bottom_line() call: the
+     mNBufferLines this function reads has already drifted past the value
+     scroll_() saw (see the comment on vscroll_bottom_line), so recomputing
+     here would advertise a maximum the viewport cannot reach. When scroll_()
+     has not run at all yet, fall back to computing it. */
+  int limit = vscroll_applied_limit;
+  if (limit < 1)
+    limit = vscroll_bottom_line(mNBufferLines, mNVisibleLines);
+  if (limit < 1) limit = 1;
+  const int total = limit + mNVisibleLines - 1;
+
+  mVScrollBar->value(mTopLineNum, mNVisibleLines, 1, total);
   mVScrollBar->linesize(3);
 }
 

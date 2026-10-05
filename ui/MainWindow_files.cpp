@@ -12,6 +12,7 @@
 #include "ui/ConfirmDialog.h"
 #include "ui/SettingsDialog.h"
 #include "core/Config.h"
+#include "core/PathUtils.h"   // pathutil::isMarkdownPath（自动预览的扩展名判定）
 #include "core/Theme.h"
 #include "core/I18n.h"
 #include "core/UiBridge.h"
@@ -183,6 +184,18 @@ bool MainWindow::spawnWindowWithFile(const char *path) {
     return true;
 }
 
+// --------------------------------------------------------------------------
+// "Open .md files with preview" (Options > Interface & System)
+// --------------------------------------------------------------------------
+
+void MainWindow::autoPreviewCb(void *data) {
+    MainWindow *self = static_cast<MainWindow *>(data);
+    if (!self) return;
+    // 延后一帧期间用户可能已经自己开了（或关了）预览、甚至关了窗口，
+    // 所以这里再判一次；togglePreview() 是幂等的一侧开关，重复调用会变成关闭。
+    if (!self->m_previewActive) self->togglePreview();
+}
+
 void MainWindow::openFile(const char *path) {
     bool multi = m_cfg->getMultiTab();
 
@@ -275,6 +288,17 @@ void MainWindow::openFile(const char *path) {
     updateStatusBar();
     // Markdown 预览：打开文件后立即刷新（预览先开启的场景也能同步呈现）
     if (m_previewActive) refreshPreview();
+
+    // 打开 .md/.markdown 时自动开启预览（Options > Interface & System）。
+    // 只有走到这里才算"新打开了一个文件" —— 已经打开过的走 switchToTab()、
+    // 加载失败、以及用户在保存确认框点了取消，都在上面提前 return 了。
+    // 所以切标签页和另存为都不会触发这里（另存为根本不经过 openFile）。
+    // 延后一帧：refreshPreview() 是同步渲染，大文档会把"打开"这一步本身
+    // 拖成白屏无响应；延后一帧则窗口先画出来、文件先显示，之后才渲染。
+    if (!m_previewActive && m_cfg && m_cfg->getAutoPreviewMd() && path &&
+        pathutil::isMarkdownPath(path)) {
+        Fl::add_timeout(0.0, autoPreviewCb, this);
+    }
 }
 
 // --------------------------------------------------------------------------

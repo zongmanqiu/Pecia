@@ -122,6 +122,7 @@ static const char *configKeyDesc(const char *key) {
     if (strcmp(key,"ai_model")==0) return "大模型名称";
     if (strcmp(key,"always_on_top")==0) return "窗口是否总是置顶 (1=是 0=否)";
     if (strcmp(key,"auto_indent")==0) return "是否自动缩进 (1=是 0=否)";
+    if (strcmp(key,"auto_preview_md")==0) return "打开 .md/.markdown 文件时自动开启预览 (1=是 0=否)";
     if (strcmp(key,"auto_save_interval")==0) return "自动保存间隔（秒）";
     if (strcmp(key,"bar_height")==0) return "标题栏/工具栏高度（像素）";
     if (strcmp(key,"btn_height")==0) return "按钮高度（像素）";
@@ -138,7 +139,6 @@ static const char *configKeyDesc(const char *key) {
     if (strcmp(key,"line_numbers")==0) return "是否显示行号 (1=是 0=否)";
     if (strcmp(key,"long_line_marker")==0) return "长行标记列数 (0=关闭)";
     if (strcmp(key,"multi_tab")==0) return "是否启用多标签页 (1=是 0=否)";
-    if (strcmp(key,"open_with_exts")==0) return "加入右键“打开方式”的扩展名（逗号分隔）";
     if (strcmp(key,"preview_auto_refresh")==0) return "Markdown 预览自动刷新间隔（毫秒，0=关闭）";
     if (strcmp(key,"preview_scroll_sync")==0) return "预览与编辑滚动是否同步 (1=是 0=否)";
     if (strcmp(key,"scheme")==0) return "FLTK 界面风格 (gtk+)";
@@ -699,6 +699,14 @@ void Config::setMultiTab(bool on) {
     writeInt("multi_tab", on ? 1 : 0);
 }
 
+bool Config::getAutoPreviewMd() const {
+    return readInt("auto_preview_md", 0) != 0;
+}
+
+void Config::setAutoPreviewMd(bool on) {
+    writeInt("auto_preview_md", on ? 1 : 0);
+}
+
 bool Config::getAlwaysOnTop() const {
     return readInt("always_on_top", 0) != 0;
 }
@@ -851,14 +859,6 @@ bool Config::getFixedStartupDoc() const {
 
 void Config::setFixedStartupDoc(bool on) {
     writeInt("fixed_startup_doc", on ? 1 : 0);
-}
-
-void Config::getOpenWithExts(char *buf, int len, const char *fallback) const {
-    readStr("open_with_exts", buf, len, fallback);
-}
-
-void Config::setOpenWithExts(const char *exts) {
-    writeStr("open_with_exts", exts ? exts : "");
 }
 
 int Config::getUiFontSize() const {

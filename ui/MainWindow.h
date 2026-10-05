@@ -5,15 +5,24 @@
 #include "ui/WindowFrame.h"
 #include "core/ShortcutCore.h"
 #include "mdview/preprocess.h"   // PreviewHeading
+#include "mdview/preview_gate.h" // PreviewRenderGate
 #include <FL/Fl_Double_Window.H>
 #include <vector>
 #include <string>
 #include <functional>
 #include <map>
 
-// Buffer sizes above this force word wrap off at open time (the wrap
-// layout measures every character via GDI and takes seconds on large
-// files). The user can still enable wrap manually afterwards.
+// Buffer sizes above this open with word wrap forced OFF (the wrap layout
+// measures every character via GDI and takes seconds on large files). The
+// user can still enable wrap manually afterwards.
+//
+// NOTE: this used to double as the markdown preview's size limit, and any
+// document over it silently rendered a blank preview panel. That limit is
+// gone on purpose (2026-10-05): a file you can open is a file you should be
+// able to preview, and a silent blank gives the user no way to tell "too
+// big" from "my markdown is broken". Slow is the user's choice; crashing the
+// process on their unsaved tabs is not. See refreshPreview() for the O(1)
+// "did the text change" test that makes large previews bearable.
 static const int kWrapLimitBytes = 4 * 1024 * 1024;   // 4 MB
 static const long long kTrimSkipBytes = 8LL * 1024 * 1024;   // skip working-set trim above this
 
@@ -139,6 +148,10 @@ public:
     static void cbPaste(Fl_Widget *w, void *data);
     static void cbDelete(Fl_Widget *w, void *data);
     static void cbSelectAll(Fl_Widget *w, void *data);
+    // 在光标处插入当前时间/日期（记事本同款，F5）。有选区时替换选区。
+    // 格式走系统本地区域设置（GetTimeFormatEx/GetDateFormatEx），
+    // 所以中文系统出中文格式、英文系统出英文格式，无需维护格式表。
+    static void cbTimeDate(Fl_Widget *w, void *data);
     static void cbSearchSelection(Fl_Widget *w, void *data); // 按配置的搜索引擎搜索选中内容
     static void cbSendToAi(Fl_Widget *w, void *data);        // 选中内容直接发给 AI（自动开窗+发送+解除选中）
 
@@ -183,6 +196,7 @@ public:
     // Markdown menu: manual refresh / open HTML in browser / auto-refresh interval.
     static void cbRefreshPreview(Fl_Widget *w, void *data);
     static void cbOpenPreviewInBrowser(Fl_Widget *w, void *data);
+    static void cbExportHtml(Fl_Widget *w, void *data);
     static void cbSetAutoRefresh(Fl_Widget *w, void *data);
     static void cbToggleScrollSync(Fl_Widget *w, void *data);
 
@@ -320,7 +334,14 @@ private:
     float           m_previewRatio = 0.5f;    // 左栏（编辑区）占比
     bool            m_autoRefreshArmed = false; // 自动刷新循环定时器已挂起
     bool            m_previewDestroyPending = false; // 关闭预览的延迟销毁已排期
-    std::string     m_lastRenderedMd;          // 上次渲染的文本（内容不变不重渲染）
+    // "内容变没变"判据（O(1)，见 mdview/preview_gate.h 的说明）：
+    //   曾用 std::string m_lastRenderedMd 存一份全文再逐字节比较，代价是
+    //   每次刷新 tick 三次全量分配+拷贝（buffer()->text()、
+    //   std::string(text)、m_lastRenderedMd=md）——50 MB 文档时每 5 秒
+    //   150 MB 且全在 UI 线程。**因为这个开销**，代码曾对 >4 MB 的文档
+    //   直接跳过预览（静默空白）。根因是判据而不是大文档本身，所以修的是
+    //   判据、限制已彻底移除：能打开就能预览，慢是用户自己的选择。
+    PreviewRenderGate m_previewGate;
     std::string     m_previewDir;              // 预览输出目录（exe 同级 temp/<文档名>/）
     bool            m_scrollSyncArmed = false;// 滚动同步轮询已挂起
     bool            m_scrollSyncEnabled = false; // 滚动同步开关（Markdown > Scroll Sync）
@@ -332,9 +353,14 @@ private:
     void            stopScrollSync();
     static void     autoRefreshLoopCb(void *data); // 固定间隔循环：无条件按档位刷新
     static void     destroyPreviewCb(void *data);  // 关闭预览的延迟销毁（0.1s 后）
+    // 打开 .md/.markdown 后延后一帧开启预览（Options > auto preview md）。
+    // 延后是为了不让同步渲染拖住"打开文件"这一步本身。
+    static void     autoPreviewCb(void *data);
     void            startAutoRefreshLoop();   // 按 m_autoRefreshMs 启动循环
     void            stopAutoRefreshLoop();
-    void            refreshPreview();           // 立即用当前标签内容刷新
+    // 立即用当前标签内容刷新。force=true 时无视"内容未变"判据重渲染
+    // —— 手动刷新（菜单/工具条按钮）必须真的重跑一次，否则用户点了没反应。
+    void            refreshPreview(bool force = false);
     void            togglePreview();            // 开/关预览模式
     void            layoutPreviewPanes(int contentTop, int tabsH); // 两栏排布
     void            rebuildPreviewToc(const std::vector<PreviewHeading> &headings); // 重建目录数据
@@ -342,7 +368,8 @@ private:
     static void     cbPreviewRefreshBtn(Fl_Widget *, void *); // 工具条：手动刷新
     static void     cbPreviewTocBtn(Fl_Widget *, void *);    // 工具条：弹出目录
     void            setAutoRefresh(int ms);     // 设置自动刷新间隔并持久化
-    void            openPreviewInBrowser();     // 导出 HTML 并用默认浏览器打开
+    void            openPreviewInBrowser();     // 导出 HTML 并用默认浏览器打开（与"另存为"同一实现）
+    void            exportHtmlToFile();         // 另存为自包含 HTML（文件框选路径）
 public:
     void  scrollPreview(int dy);                // 预览垂直滚动
     static void cleanupDeadPreviewDirs();       // 启动时清理死进程残留预览目录

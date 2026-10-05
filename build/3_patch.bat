@@ -60,6 +60,15 @@ if exist "%PATCHES%\litehtml-0.10\src" (
         echo     + src/%%~nxf
     )
 )
+REM 头文件同样要同步：position::round()（边对齐取整）在
+REM include/litehtml/types.h 里，只同步 src/ 会漏掉它。
+if exist "%PATCHES%\litehtml-0.10\include\litehtml" (
+    if not exist "%THIRDPARTY%\litehtml-0.10\include\litehtml" mkdir "%THIRDPARTY%\litehtml-0.10\include\litehtml"
+    for %%f in ("%PATCHES%\litehtml-0.10\include\litehtml\*") do (
+        copy /Y "%%f" "%THIRDPARTY%\litehtml-0.10\include\litehtml\%%~nxf" >nul
+        echo     + include/litehtml/%%~nxf
+    )
+)
 
 REM ---- Rust FFI shells -------------------------------------------------------
 echo   Rust FFI ke...

@@ -41,7 +41,7 @@ REM ── 1. 读取版本号 ────────────────�
 echo [1/3] 读取版本号...
 
 REM 从 CMakeLists.txt 提取版本号
-set "VERSION=1.0.4"
+set "VERSION=1.0.5"
 REM 注意：findstr 的搜索串里"空格"是分隔符（等价于 OR），直接写
 REM   findstr /i "project(Pecia VERSION"
 REM 会同时匹配 cmake_minimum_required(VERSION ...) 和

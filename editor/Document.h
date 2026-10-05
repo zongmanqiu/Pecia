@@ -69,6 +69,15 @@ public:
     // by the buffer's own modify callback (modifyCallback below).
     int lineCount();
 
+    // Monotonic content revision, bumped on every real content change
+    // (same triggers that invalidate m_lineCount, plus loadWithEncoding).
+    // The markdown preview uses it to decide "did the text change since
+    // the last render?" in O(1). It used to keep a full copy of the
+    // rendered text (m_lastRenderedMd) and string-compare it, which meant
+    // three whole-document allocations per refresh tick — ~150 MB of
+    // alloc+copy every 5 s on a 50 MB file, on the UI thread.
+    unsigned long long contentRev() const { return m_contentRev; }
+
 private:
     Fl_Text_Buffer *m_buffer;
     char            m_filePath[FL_PATH_MAX];
@@ -82,6 +91,7 @@ private:
     bool            m_expandTabs = false;
     int             m_tabWidth = 4;
     int             m_lineCount = -1;   // cached count_lines(0,len)+1; -1 = dirty
+    unsigned long long m_contentRev = 1;  // 起步为 1：0 表示"从未渲染过"
 
     void setDirty(bool v);
 

@@ -7,6 +7,7 @@
 
 #include "core/I18n.h"
 #include "core/Config.h"
+#include "core/EncodingCore.h"   // wideToUtf8（时间/日期插入用）
 #include "LuaTool/AiPushServer.h"
 #include "LuaTool/LuaPipeServer.h"
 #include "PipeProtocol.h"
@@ -256,6 +257,70 @@ void MainWindow::cbSelectAll(Fl_Widget * /*w*/, void *data) {
     Fl_Text_Buffer *buf = self->activeTab()->doc->buffer();
     buf->select(0, buf->length());
     self->activeTab()->editor->redraw();
+}
+
+// 当前时间/日期（记事本同款，F5）。有选区时替换选区，否则插在光标处；
+// 光标随后停在插入内容之后，连按 F5 不会互相覆盖。
+//
+// 格式刻意不写死：交给系统的本地区域设置（GetTimeFormatEx /
+// GetDateFormatEx + LOCALE_NAME_USER_DEFAULT）。这样中文系统出
+// "18:53 2026/10/5"、英文系统出 "6:53 PM 10/5/2026"，16 个语言版本都不用
+// 维护格式表，也和记事本的行为保持一致。
+void MainWindow::cbTimeDate(Fl_Widget * /*w*/, void *data) {
+    MainWindow *self = static_cast<MainWindow *>(data);
+    if (!self) return;
+    Tab *t = self->activeTab();
+    // 与 cbDelete 一致：只读文档（>100 MB 打开时选择"只读查看"）不写入。
+    if (!t || !t->doc || !t->editor || t->doc->isReadOnly()) return;
+
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+
+    wchar_t timeBuf[64] = {0};
+    wchar_t dateBuf[64] = {0};
+    // TIME_NOSECONDS：记事本只到分钟，秒对"插入时间戳"没有意义。
+    GetTimeFormatEx(LOCALE_NAME_USER_DEFAULT, TIME_NOSECONDS, &st,
+                    nullptr, timeBuf, (int)std::size(timeBuf));
+    GetDateFormatEx(LOCALE_NAME_USER_DEFAULT, DATE_SHORTDATE, &st,
+                    nullptr, dateBuf, (int)std::size(dateBuf), nullptr);
+
+    // 时区/区域名可能带 Unicode，先转 UTF-8 再交给 buffer（内部统一 UTF-8）。
+    // 注意 wideToUtf8() 对 len<=0 直接返回 out=nullptr，所以必须传真实长度，
+    // 不能图省事传 -1。
+    char *timeUtf8 = nullptr;
+    char *dateUtf8 = nullptr;
+    int timeLen = 0;
+    int dateLen = 0;
+    const int timeWLen = (int)wcslen(timeBuf);
+    const int dateWLen = (int)wcslen(dateBuf);
+    if (timeWLen == 0) return;
+    if (!wideToUtf8(timeBuf, timeWLen, &timeUtf8, &timeLen) || !timeUtf8) return;
+    std::string stamp(timeUtf8);
+    free(timeUtf8);
+    if (dateWLen > 0 &&
+        wideToUtf8(dateBuf, dateWLen, &dateUtf8, &dateLen) && dateUtf8) {
+        stamp += ' ';
+        stamp += dateUtf8;
+        free(dateUtf8);
+    }
+    if (stamp.empty()) return;
+
+    Fl_Text_Buffer *buf = t->doc->buffer();
+    int start = 0;
+    int end = 0;
+    if (buf->selection_position(&start, &end)) {
+        buf->replace(start, end, stamp.c_str());
+        end = start + (int)stamp.size();
+    } else {
+        start = t->editor->insert_position();
+        buf->insert(start, stamp.c_str());
+        end = start + (int)stamp.size();
+    }
+    // 光标移到插入内容之后，并清掉选区（否则下一次 F5 会把刚插入的内容又替掉）。
+    buf->unselect();
+    t->editor->insert_position(end);
+    t->editor->show_insert_position();
+    t->editor->redraw();
 }
 
 // 取选中文本（trim 后返回）；无选中返回空

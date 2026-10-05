@@ -46,6 +46,58 @@ inline void styleToolScrollbar(Fl_Scrollbar *sb, uchar type,
     sb->selection_color(thumb);
 }
 
+// Thumb geometry for a custom-drawn scrollbar.
+//
+// ★ It MUST match Fl_Slider::handle()'s hit test exactly, otherwise what is
+//   drawn and what can be grabbed are two different rectangles and the user
+//   sees "the thumb won't reach the bottom".
+//
+// Authoritative FLTK formulas (Fl_Slider.cxx:256-259 and :130-140):
+//     S  = int(slider_size * L + 0.5)      thumb length (L = track length)
+//     T  = (horizontal ? H : W)/2 + 1       minimum thumb length
+//     if (S < T) S = T;
+//     xx = int(val * (L - S) + 0.5)         thumb origin
+// Fl_Scrollbar::handle() uses that same S to decide whether a press landed on
+// the thumb (Fl_Scrollbar.cxx:89-99). A press inside keeps `offcenter`, so
+// dragging to the bottom clamps to L-S and reaches maximum; a press outside
+// gets `offcenter` clamped to S, and then the bottom is short by (S-1) px.
+//
+// History: this used `max(int(L*slider_size), 20)`. That 20px floor made the
+// drawn thumb LARGER than FLTK's hit area (which shrinks to T=6px for long
+// documents). Measured at 800x600 / Consolas 16 / wrap on: a 2000-line
+// document had 10 of 20 thumb rows dead (50%). That is the reported bug.
+// The caller resolves the axis-specific dimensions: pass the track length as
+// `trackLen` and the across-axis thickness as `crossSize`. That makes this
+// function identical for both axes, so there is no `horizontal` parameter
+// (an unused one would trip C4100).
+inline void scrollbarThumbGeometry(const Fl_Scrollbar *sb,
+                                   int trackOrigin, int trackLen,
+                                   int crossSize,
+                                   int *out_thumb_len, int *out_thumb_pos) {
+    const double minv = sb->minimum();
+    const double maxv = sb->maximum();
+    const double v = sb->value();
+    const float sl = sb->slider_size();
+
+    int S = (int)(sl * trackLen + 0.5f);
+    const int T = crossSize / 2 + 1;
+    if (S < T) S = T;
+    if (S > trackLen) S = trackLen;   // guard: never overflow a very short track
+
+    double val;
+    if (minv == maxv) {
+        val = 0.5;
+    } else {
+        val = (v - minv) / (maxv - minv);
+        if (val > 1.0) val = 1.0;
+        else if (val < 0.0) val = 0.0;
+    }
+    const int xx = (int)(val * (trackLen - S) + 0.5);
+
+    *out_thumb_len = S;
+    *out_thumb_pos = trackOrigin + xx;
+}
+
 // Draw one scrollbar exactly like the main editor does
 // (Editor::drawCustomScrollbar): plain track + thumb rectangles in
 // the theme colors, no FLTK native grooves/slider details.
@@ -58,36 +110,23 @@ inline void drawToolScrollbar(Fl_Scrollbar *sb, bool horizontal,
     int sw = sb->w();
     int sh = sb->h();
 
-    double minv = sb->minimum();
-    double maxv = sb->maximum();
-    double val  = sb->value();
-    float  sl   = sb->slider_size();
-
     Fl_Color track, thumb;
     scrollbarColors(tc, track, thumb);
 
     fl_color(track);
     fl_rectf(sx, sy, sw, sh);
 
-    if (horizontal) {
-        int tw = (int)(sw * sl);
-        if (tw < 20) tw = 20;
-        double range = maxv - minv;
-        int tx = sx;
-        if (range > 0.0)
-            tx = sx + (int)((val - minv) * (sw - tw) / range);
-        fl_color(thumb);
-        fl_rectf(tx, sy, tw, sh);
-    } else {
-        int th = (int)(sh * sl);
-        if (th < 20) th = 20;
-        double range = maxv - minv;
-        int ty = sy;
-        if (range > 0.0)
-            ty = sy + (int)((val - minv) * (sh - th) / range);
-        fl_color(thumb);
-        fl_rectf(sx, ty, sw, th);
-    }
+    int thumb_len = 0, thumb_pos = 0;
+    if (horizontal)
+        scrollbarThumbGeometry(sb, sx, sw, sh, &thumb_len, &thumb_pos);
+    else
+        scrollbarThumbGeometry(sb, sy, sh, sw, &thumb_len, &thumb_pos);
+
+    fl_color(thumb);
+    if (horizontal)
+        fl_rectf(thumb_pos, sy, thumb_len, sh);
+    else
+        fl_rectf(sx, thumb_pos, sw, thumb_len);
 }
 
 } // namespace
@@ -430,6 +469,12 @@ public:
     void draw() FL_OVERRIDE {
         Fl_Text_Editor::draw();
 
+        // Same overlay clipping as Editor.cpp: FLTK pops its text_area
+        // clip before returning, so the highlight strip and the caret
+        // would otherwise paint over the line-number gutter once the
+        // view is scrolled horizontally.
+        fl_push_clip(text_area.x, y(), text_area.w, h());
+
         // Current-line highlight - same two layers as the main Pecia
         // editor (Editor.cpp draw()):
         //  1. Character background via the style buffer ('B' style, set
@@ -479,6 +524,9 @@ public:
                 fl_rectf(curX - 1, curY, 3, barH);
             }
         }
+
+        // End of the overlay pass: release the text_area clip again.
+        fl_pop_clip();
 
         // Scrollbars last, on top of the highlight strip.
         drawToolScrollbar(mVScrollBar, false, m_tc);

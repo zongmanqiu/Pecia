@@ -85,6 +85,7 @@ private:
     // 结果侧
     std::string m_pendingHtml;
     std::vector<PreviewHeading> m_pendingHeadings;
+    std::string m_pendingError;            // 非空 = 这次转换失败了（带原因）
     int         m_pendingVersion = 0;
     bool        m_workerBusy = false;   // worker 正在渲染（泵的 keep 依据）
 

@@ -27,7 +27,7 @@
 ## 二、发行前质量门禁（全部通过才可发行）
 
 1. **全量构建**：双击 `build/full.bat`（或 `5_build_pecia.bat`）；
-2. **14 个 ctest 全绿**（构建链内置，红灯即中止）；
+2. **20 个 ctest 全绿**（构建链内置，红灯即中止）；
 3. **文档门禁**：`build/test_docs.exe` 输出 `31 checks, 0 failures`
    （改过任何文档/API/目录后必跑）；
 4. **零 C 警告**（`/W4` 级别，构建日志无 `warning C`）；

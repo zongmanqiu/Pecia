@@ -57,7 +57,17 @@ Fl_Menu_Item g_menu[] = {
     //   Go To...         Ctrl+G
     //   ─────────────────────────
     //   Select All       Ctrl+A
-    //   Time/Date        F5
+    //   ─────────────────────────
+    //   Find...          Ctrl+F
+    //   Find Next        F3
+    //   Find Previous    Shift+F3
+    //   Replace...       Ctrl+H
+    //   Go To...         Ctrl+G
+    //   ─────────────────────────
+    //   Time/Date        F5          ← 插入（记事本同款），与下面"基于选区
+    //   ─────────────────────────     的操作"归在一组，不属于选择/复制类
+    //   Search Selection
+    //   Send to AI
     { "Edit", 0, nullptr, nullptr, FL_SUBMENU },
     { "Undo",          FL_COMMAND | 'z',      MainWindow::cbUndo,       nullptr, 0 },
     { "Redo",          FL_COMMAND | 'y',      MainWindow::cbRedo,       nullptr, FL_MENU_DIVIDER },
@@ -71,6 +81,7 @@ Fl_Menu_Item g_menu[] = {
     { "Find Previous", FL_F + 3 | FL_SHIFT,   MainWindow::cbFindPrev,   nullptr },
     { "Replace...",    FL_COMMAND | 'h',      MainWindow::cbReplace,    nullptr },
     { "Go To...",      FL_COMMAND | 'g',      MainWindow::cbGotoLine,   nullptr, FL_MENU_DIVIDER },
+    { "Time/Date",     FL_F + 5,              MainWindow::cbTimeDate,   nullptr, 0 },
     { "Search Selection", 0,                  MainWindow::cbSearchSelection, nullptr },
     { "Send to AI",       0,                  MainWindow::cbSendToAi,      nullptr },
     { nullptr },
@@ -141,6 +152,7 @@ Fl_Menu_Item g_menu[] = {
     { "30s",                  0, MainWindow::cbSetAutoRefresh, (void *)(intptr_t)30000, FL_MENU_RADIO },
     { nullptr },
     { "Open in Browser",      0,                MainWindow::cbOpenPreviewInBrowser, nullptr, 0 },
+    { "Export HTML...",       0,                MainWindow::cbExportHtml,             nullptr, 0 },
     { nullptr },
 
     // Tools

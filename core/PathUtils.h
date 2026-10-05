@@ -67,4 +67,29 @@ inline std::filesystem::path exeDirPath() {
     return fromUtf8(dir);
 }
 
+// Is this a Markdown document? (.md / .markdown, case-insensitive.)
+// Drives "Options > Interface & System > Open .md files with preview", which
+// must fire for .md and .markdown but never for .txt, .cpp or an extension-less
+// path.
+//
+// Deliberately ASCII-only, NOT std::filesystem::path::extension(): on Windows
+// that constructor reinterprets UTF-8 bytes as ANSI(GBK) (see fromUtf8 above),
+// which mangles non-ASCII path components. Extension matching only cares about
+// the last '.' and ASCII letters, so no decoding is needed -- and none can go
+// wrong.
+//
+// The directory part is skipped so "C:\\my.dir\\notes" is not treated as a
+// ".dir" file. A trailing dot ("notes.") is not an extension either.
+inline bool isMarkdownPath(const std::string &path) {
+    const auto sep = path.find_last_of("\\/");
+    const size_t base = (sep == std::string::npos) ? 0 : sep + 1;
+    const auto dot = path.find_last_of('.');
+    if (dot == std::string::npos || dot < base || dot + 1 >= path.size())
+        return false;
+    std::string ext = path.substr(dot);        // includes the leading '.'
+    for (char &c : ext)
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    return ext == ".md" || ext == ".markdown";
+}
+
 } // namespace pathutil

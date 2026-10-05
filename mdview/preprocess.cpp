@@ -749,7 +749,19 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
     html << "<!DOCTYPE html>\n<html>\n<head>\n"
          << "<meta charset=\"utf-8\">\n"
          << "<style>\n"
-         << "* { line-height: 1.6; margin: 0; }\n"
+         << "/* 行高必须落在整数像素上：16 x 1.6 = 25.6px 不是整数，\n"
+         << "   逐行累加再取整会让间隔在 26/25 之间交替；\n"
+         << "   16 x 1.625 = 26.0px，累加永远是整数，间隔恒定 26。 */\n"
+         << "* { line-height: 1.625; }\n"
+         << "/* 块级元素默认外边距清零：必须用标签选择器，不能靠 *。\n"
+         << "   litehtml 自带样式表(master_css.h)里 p{margin:1em 0}、\n"
+         << "   h1{margin:.67em 0}、blockquote{1em}、hr{.5em} 都是标签\n"
+         << "   选择器(特异性 0-0-1)，而 * 是 0-0-0，压根盖不住它们 ——\n"
+         << "   结果顶层段落被 body>*+* 设成 8px、嵌套段落和标题却仍是\n"
+         << "   1em / 0.67em，行间隔因此忽大忽小。这里显式清零，间距\n"
+         << "   统一交给下面的 * + * 规则。 */\n"
+         << "body, p, ul, ol, li, dl, dt, dd, blockquote, pre, table, hr,\n"
+         << "h1, h2, h3, h4, h5, h6, figure, div { margin: 0; }\n"
          << "body {\n"
          << "  font-family: " << body_fonts << ";\n"
          << "  font-size: 16px;\n"
@@ -761,13 +773,32 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
          << "  overflow-wrap: break-word;\n"
          << "  word-break: break-word;\n"
          << "}\n"
-         << "/* 所有连续块级元素之间统一 8px 间距 */\n"
-         << "body > * + * { margin-top: 8px; }\n"
-         << "/* 列表项之间同样 8px 间距 */\n"
+         << "/* 块级元素之间留 8px 呼吸（仅限结构性块：标题/代码块/表格/\n"
+         << "   引用/分隔线/提示框等）。 */\n"
+         << "body > * + *,\n"
+         << "blockquote > * + *,\n"
+         << "li > * + *,\n"
+         << "td > * + *,\n"
+         << "th > * + *,\n"
+         << "div.admonition > * + * { margin-top: 8px; }\n"
          << "li + li { margin-top: 8px; }\n"
+         << "/* 正文级文本流不加任何额外间距：行间隔一律只由 line-height\n"
+         << "   (16px x 1.625 = 26px) 决定。这样\"段内硬换行<br>\"、\"单元格内\n"
+         << "   自动折行\"、\"段与段之间\"、\"列表项之间\"四种间距全部相同，\n"
+         << "   不会出现同一片普通文字忽紧忽松。\n"
+         << "   注意顺序：p+p (0-0-2) 特异性高于上面的 body>*+* (0-0-1)，\n"
+         << "   所以能覆盖它，而 h2+p / p+pre 等仍保留 8px。 */\n"
+         << "p + p, li + li { margin-top: 0; }\n"
          << "a { color: #0366d6; text-decoration: underline; }\n"
          << "ul, ol { padding-left: 32px; }\n"
-         << "code { display: inline-block; background: #f0f0f0; padding: 2px 6px; border-radius: 3px;\n"
+         << "/* 行内 code 的上下 padding 必须为 0。\n"
+         << "   code 是 inline-block，其纵向 padding 会被 litehtml 计入所在\n"
+         << "   行的行盒高度：正文行高 26px，含 <code> 的行变成 30px。脚注区\n"
+         << "   尤其明显 —— 脚注二是列表项且含 <code>，行距比脚注一整段大一\n"
+         << "   截，看上去像行距没对齐（浏览器侧 inline-block 的行高规则不同，\n"
+         << "   故同一份 HTML 在浏览器里是正常的，这正是纯渲染层问题）。\n"
+         << "   保留左右 padding（视觉内边距需要），只清纵向。 */\n"
+         << "code { background: #f0f0f0; padding: 0 6px; border-radius: 3px;\n"
          << "  font-family: " << code_fonts << "; font-size: 14px; }\n"
          << "pre { background: #f6f8fa; padding: 16px; border-radius: 6px;\n"
          << "  border: 1px solid #e1e4e8; white-space: pre-wrap; word-break: break-word; }\n"
@@ -778,7 +809,7 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
          << "h4 { font-size: 1em; font-weight: bold; }\n"
          << "h5 { font-size: 0.875em; font-weight: bold; }\n"
          << "h6 { font-size: 0.85em; font-weight: bold; }\n"
-         << "table { border-collapse: collapse; }\n"
+         << "table { border-collapse: collapse; border-spacing: 0; }\n"
          << "th, td { border: 1px solid #dfe2e5; padding: 6px 13px; }\n"
          << "th { background: #f6f8fa; }\n"
          << "blockquote { border-left: 4px solid #dfe2e5; padding: 0 1em;\n"
@@ -789,7 +820,13 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
           << ".formula-img { display: block; margin: 0 auto; max-width: 90%; }\n"
           << ".math-inline { display: inline; vertical-align: middle; }\n"
           << ".mermaid-img { max-width: 100%; height: auto; display: block; }\n"
-          << "mark, .highlight { background: #ffff8c; padding: 1px 4px; }\n"
+          << "/* 垂直 padding 不给：inline 元素的上下 padding 会被计进行框，\n"
+          << "   使含 ==高亮== 的表格行比其它行高一截，看起来像行距不齐。 */\n"
+          << "/* mark 必须是 inline-block：litehtml 对跨行 inline 的背景\n"
+          << "   box 坐标有 bug（split 后每个片段的 y 比文字低一个行高，\n"
+          << "   窄表格里换行的高亮会与文字错位）。inline-block 是原子盒、\n"
+          << "   整块换行不拆分，绕开该路径；行高实测不受影响。 */\n"
+          << "mark, .highlight { background: #ffff8c; padding: 0 4px; display: inline-block; }\n"
           << "del, s { text-decoration: line-through; }\n"
           << ".task-list-item { list-style: none; }\n"
           << "ul ul { list-style-type: circle; }\n"
@@ -798,6 +835,14 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
           << "ol ol ol { list-style-type: lower-alpha; }\n"
           << ".footnotes { margin-top: 2em; padding-top: 1em; border-top: 1px solid #ddd; font-size: 14px; color: #666; }\n"
          << ".footnotes li { margin-bottom: 4px; }\n"
+         << "/* 脚注回流箭头：FLTK 的 fl_draw() 只按 face 用【单个】字体绘制，\n"
+         << "   没有 CSS 那种逐字符字体回退。字体缺 U+2199 字形时不是回退到\n"
+         << "   符号字体，而是直接画一个方框（豆腐块）。实测微软雅黑/Segoe UI\n"
+         << "   本身都有该字形，但预览字体由用户在 View > Font 里选，换成不含\n"
+         << "   箭头字形的字体（等宽/手写体等）就必然出现方块。故显式指定符号\n"
+         << "   字体族，让该字符有确定归属。Segoe UI Symbol 是 Windows 自带且\n"
+         << "   覆盖 U+2199；找不到时下面的 sans-serif 至少不会更糟。 */\n"
+         << ".footnote-backref { font-family: 'Segoe UI Symbol', 'Segoe UI', sans-serif; }\n"
          << "div.admonition { padding: 8px 16px; border-left: 4px solid #0969da; background: #f0f6ff; }\n"
          << "div.admonition-note { border-left: 4px solid #0969da; background: #f0f6ff; padding: 8px 16px; }\n"
          << "div.admonition-tip { border-left: 4px solid #1a7f37; background: #dafbe1; padding: 8px 16px; }\n"
@@ -811,13 +856,49 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
 
     std::string html_str = html.str();
 
+    // 注意：这里【绝不】做远程图片本地化。
+    // md_to_html() 是渲染与导出两条路径共用的，产出的 HTML 有两个消费者，
+    // 它们解析相对路径的基准完全不同：
+    //   · 预览容器 MyContainer::resolve_image_path() —— 以【源文档目录】
+    //     （setBaseUrl 传入的 doc_dir）为基准；
+    //   · 浏览器/导出 —— 以【build_dir】为基准。
+    // 曾经在这里调 localize_remote_images()，把远程 URL 改写成一串
+    // "pecia_img_xxxxxx.png" 之类的相对文件名并拷进 build_dir。预览容器
+    // 拿到这种相对路径会去源文档目录找，那里根本没有这些文件 —— 所有在线
+    // 图片一起断链。更糟的是改写后 URL 不再是 http 开头，
+    // is_remote_url() 为 false，容器连下载分支都不再进，重渲染也救不回来。
+    // （首次打开看起来正常，是因为那一刻缓存还没生成、远程 URL 被原样
+    //   保留；之后每次重新渲染缓存都在，就全挂。）
+    // 本地化只属于"落盘"场景，由调用方自己做：
+    //   · MainWindow::openPreviewInBrowser → localizeRemoteImagesInIndexHtml()
+    //   · MainWindow::exportHtmlToFile     → localize_remote_images(..., fetch)
+
     // 7. 把本地相对图片拷贝进 build_dir（保留相对路径结构）：
     //    浏览器打开 index.html 时按相对路径解析，图片完整显示。
     //    仅处理非 URL、非绝对路径的本地相对引用；公式/meimaid 为绝对路径，跳过。
     if (!doc_dir.empty() && !build_dir.empty()) {
         std::string docBase = doc_dir;
         for (auto& c : docBase) if (c == '/') c = '\\';
-        if (!docBase.empty() && docBase.back() != '\\') docBase += '\\';
+        // 归一成"带尾分隔符的目录"：契约是 doc_dir 指向文档所在目录，但实际
+        // 传进来的形态有两种（下面第 2 种正是曾经把浏览器打开路径弄坏的元凶）：
+        //   A) 文件全路径  "...\ex1.markdown\ex1.md"   ← exportHtmlToFile / e2e
+        //   B) 目录 + 尾分隔符 "...\ex1.markdown\"     ← MainWindow 预览路径
+        // 早先直接拼一级，形态 A 得到 "...\ex1.md\sample-png.png"（多一层文件
+        // 名）；后来改成"先无条件弹掉尾分隔符、再无条件砍掉最后一级"，形态 A
+        // 对了，形态 B 却把**目录名本身**吃掉一层（"...\ex1.markdown\" →
+        // "...\build\"），于是又找不到文件 —— 表现为「导出正常、但在浏览器里
+        // 打开时本地图片全断」。故必须先判形态再动手。
+        bool wasDir = !docBase.empty() &&
+                      (docBase.back() == '\\' || docBase.back() == '/');
+        while (!docBase.empty() && (docBase.back() == '\\' || docBase.back() == '/'))
+            docBase.pop_back();
+        if (!wasDir) {                          // 形态 A：砍掉文件名
+            size_t sep = docBase.find_last_of('\\');
+            docBase = (sep == std::string::npos) ? std::string()
+                                                : docBase.substr(0, sep + 1);
+        } else if (!docBase.empty()) {
+            docBase += '\\';                    // 形态 B：原样保留目录名
+        }
 
         std::string hay = html_str;
         size_t imgPos = 0;

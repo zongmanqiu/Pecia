@@ -80,6 +80,12 @@ public:
     void draw_borders(litehtml::uint_ptr, const litehtml::borders&, const litehtml::position&, bool) override;
     void set_caption(const char*) override;
     void set_base_url(const char*) override;
+    // 预览产物目录（exe 同级 temp/<文档名>-<PID>/）。远程图片直接下载到这里，
+    // 用URL 里的原始文件名与真实扩展名 —— 于是这个目录本身就是一份完整
+    // 自包含的网页资源：浏览器直接打开 index.html 即可，导出到别处也只是
+    // 把整个文件夹复制过去。不再另设 temp\*.img 缓存（同一张图会存两份，
+    // 且哈希名既不可读也打不开）。
+    void set_asset_dir(const std::string& dir) { m_asset_dir = dir; }
     void link(const std::shared_ptr<litehtml::document>&, const litehtml::element::ptr&) override;
     void on_anchor_click(const char*, const litehtml::element::ptr&) override;
     void on_mouse_event(const litehtml::element::ptr&, litehtml::mouse_event) override;
@@ -105,6 +111,7 @@ private:
     float m_screen_dpi = 96.0f;
     float m_font_scale = 1.0f;   // 预览字体缩放（Ctrl+滚轮）
     std::string m_base_url;
+    std::string m_asset_dir;
     std::map<std::string, Fl_Image*> m_images;
     std::map<std::string, Fl_Image*> m_scaledImages; // 按 路径@WxH 键的缩放缓存
     std::map<std::string, GifAnim*> m_gifs;
@@ -124,6 +131,9 @@ private:
     Fl_Image* load_bitmap_file(const std::string&);   // stb_image 加载位图（本地/缓存）
     Fl_Image* load_gif_file(const std::string& file, const std::string& key);  // GIF 多帧加载（本地/远程缓存），注册动画，返回首帧
     Fl_Image* load_svg_text(const std::string&);      // mmdr FFI 渲染 SVG 文本为位图
+    // 按 URL 类型分派加载缓存文件（SVG/GIF/位图）。远程"下载完成"与
+    // "缓存已存在"两条路径必须共用它，否则会首次显示、之后变占位。
+    Fl_Image* load_cached_image(const std::string& cache_file, const std::string& url);
     std::string resolve_image_path(const std::string&, const std::string&) const;
 };
 
@@ -139,6 +149,10 @@ class ViewWidget : public Fl_Widget {
     bool m_dragging_vscroll = false;
     bool m_dragging_hscroll = false;
     bool m_rendering = false;             // 后台渲染进行中（空内容时显示 Rendering...）
+    // 渲染失败提示（空内容时显示在中间，替代 "Rendering..."）。
+    // 预览没有大小上限了，超大文档走到 litehtml 布局阶段可能 oom；
+    // 那时必须有一句可读的话，而不是让异常逃出事件循环把整个进程带走。
+    std::string m_renderError;
     std::string m_current_html;       // 当前渲染的 HTML 内容（用于导出）
     std::function<void(const std::string&)> m_open_cb;  // 拖放打开路径回调
     std::function<void(float)> m_zoom_cb;               // Ctrl+滚轮缩放回调
@@ -159,7 +173,9 @@ public:
     int scroll_x() const { return m_scroll_x; }
     const std::string& current_html() const { return m_current_html; }
     void set_open_callback(std::function<void(const std::string&)> cb) { m_open_cb = std::move(cb); }
-    void set_rendering(bool r) { m_rendering = r; redraw(); }
+    void set_rendering(bool r) { m_rendering = r; if (r) m_renderError.clear(); redraw(); }
+    // 布局失败（通常是 oom）：显示一行原因，替代 Rendering...。
+    void set_render_error(const std::string& msg) { m_renderError = msg; redraw(); }
     void set_zoom_callback(std::function<void(float)> cb) { m_zoom_cb = std::move(cb); }
     void setScrollbarColors(Fl_Color track, Fl_Color thumb) {
         m_trackColor = track;

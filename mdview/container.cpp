@@ -2,12 +2,14 @@
 #include "preprocess.h"
 #include "editor/Editor.h"   // FontUtils::findFontByName（CSS 字体名 → 已安装字体）
 #include "core/PathUtils.h"  // pathutil::exeDir()（便携：缓存写 exe 同级 temp/）
+#include "image_export.h"    // remote_image_file_name（远程图命名，与导出一致）
 
 #include <FL/Fl_Image_Surface.H>
 #include <FL/fl_draw.H>
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>      // floorf()：边框像素量化
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -493,17 +495,8 @@ void MyContainer::remote_download_done_cb(void* data)
     if (!task) return;
     std::shared_ptr<MyContainer> self = task->wc.lock();
     if (self) {
-        // 按类型加载缓存文件：SVG 用 resvg 渲染，GIF 走多帧动画，其余按位图（stb）
-        Fl_Image* img = nullptr;
-        if (is_svg_path(task->url)) {
-            std::string svg_text = read_file(task->cache_file.c_str());
-            if (!svg_text.empty()) img = self->load_svg_text(svg_text);
-        } else if (is_gif_path(task->url)) {
-            // 远程 GIF 与本地一致地注册动画；key 用 URL（= draw_image 的 full）
-            img = self->load_gif_file(task->cache_file, task->url);
-        } else {
-            img = self->load_bitmap_file(task->cache_file);
-        }
+        // 按类型加载缓存文件（与"缓存已存在"路径共用同一分派函数）
+        Fl_Image* img = self->load_cached_image(task->cache_file, task->url);
         if (img) self->m_images[task->url] = img;
         else self->m_images[task->url] = unsupportedImage();   // 下载成功但解析失败 → 占位
         if (self->m_remote_done_cb) self->m_remote_done_cb();
@@ -639,6 +632,21 @@ std::string MyContainer::resolve_image_path(const std::string& url, const std::s
     return url;
 }
 
+// 按 URL 类型分派加载缓存文件：SVG 用 resvg 渲染，GIF 走多帧动画，
+// 其余按位图（stb）。远程"下载完成"与"缓存已存在"两条路径共用本函数——
+// 若两条路径各自分派，一旦漏掉 SVG 就会出现"首次显示、再次打开变占位"
+// （stb 无法解析 SVG 文本）。
+Fl_Image* MyContainer::load_cached_image(const std::string& cache_file,
+                                         const std::string& url)
+{
+    if (is_svg_path(url)) {
+        std::string svg_text = read_file(cache_file.c_str());
+        return svg_text.empty() ? nullptr : load_svg_text(svg_text);
+    }
+    if (is_gif_path(url)) return load_gif_file(cache_file, url);
+    return load_bitmap_file(cache_file);
+}
+
 Fl_Image* MyContainer::load_image_file(const std::string& path)
 {
     // 检查缓存
@@ -651,23 +659,35 @@ Fl_Image* MyContainer::load_image_file(const std::string& path)
     {
         // 远程图片：异步下载（后台线程），下载完成回主线程加载并重绘。
         // 同步 URLDownloadToFileW 会阻塞 UI（慢网下可卡死十几秒）。
-        // 便携：缓存一律落在 exe 同级 temp/，绝不写 exe 之外（%TEMP% 会污染
-        // 系统临时目录，与"便携程序"目标冲突）。exe 目录解析失败则放弃下载。
-        std::string cache_dir = pathutil::exeDir();
-        if (!cache_dir.empty()) {
-            cache_dir += "\\temp";
+        //
+        // 下载目标就是【预览产物目录本身】（temp/<文档名>-<PID>/），文件名用
+        // URL 里的原始名字与真实扩展名。原来的做法是下到 temp\*.img 缓存、
+        // 导出时再拷进产物目录 —— 同一张图存两份，缓存名还是
+        // pecia_img_<hash>.img，用户既看不懂也打不开。现在只有一份，且这个
+        // 目录天生就是一份完整自包含的网页资源：浏览器直接打开 index.html
+        // 即可，导出到别处也只是把整个文件夹复制过去。
+        //
+        // 命名规则必须走 remote_image_file_name()，与导出时的本地化共用同一
+        // 函数；否则两边算出不同名字，同一张图会出现两份、互相覆盖。
+        //
+        // 便携：目录一律在 exe 之下，绝不写 exe 之外（%TEMP% 会污染系统临时
+        // 目录，与"便携程序"目标冲突）。拿不到目录则放弃下载。
+        std::string cache_dir = m_asset_dir;
+        if (cache_dir.empty()) cache_dir = pathutil::exeDir() + "\\temp";
+        while (!cache_dir.empty() &&
+               (cache_dir.back() == '\\' || cache_dir.back() == '/'))
+            cache_dir.pop_back();
+
+        const std::string local_name = remote_image_file_name(path);
+        if (!cache_dir.empty() && !local_name.empty()) {
             CreateDirectoryW(widen(cache_dir).c_str(), NULL);
-            // 缓存文件名 = URL 的简单哈希 + 扩展名
-            unsigned h = 2166136261u;
-            for (unsigned char c : path) h = (h ^ c) * 16777619u;
-            char name[64];
-            snprintf(name, sizeof(name), "pecia_img_%08x.img", h);
-            std::string cache_file = cache_dir + "\\" + name;
+            std::string cache_file = cache_dir + "\\" + local_name;
 
             if (GetFileAttributesW(widen(cache_file).c_str()) != INVALID_FILE_ATTRIBUTES) {
-                // 缓存已存在 → 直接加载（GIF 走多帧动画分支，key 用 URL）
-                img = is_gif_path(path) ? load_gif_file(cache_file, path)
-                                        : load_bitmap_file(cache_file);
+                // 已存在（本次或上次渲染下载过）→ 直接加载。必须走统一分派：
+                // 这里若只判 GIF，SVG 会被误送进 stb_image 而变成占位图
+                //（首次能显示、之后不能）。
+                img = load_cached_image(cache_file, path);
             } else {
                 // 后台下载：任务持 weak_ptr（容器析构后回调为空操作）
                 auto wp = shared_from_this();
@@ -917,29 +937,55 @@ void MyContainer::draw_borders(litehtml::uint_ptr, const litehtml::borders& bord
             && b.style != litehtml::border_style_hidden;
     };
 
-    int x = (int)draw_pos.x;
-    int y = (int)draw_pos.y;
-    int w = (int)draw_pos.width;
-    int h = (int)draw_pos.height;
+    // 像素量化：坐标四舍五入，边框宽度最小 1px。
+    // 原来一律 (int) 直接截断：CSS 的 1px 边框在字体缩放(0.6~2.5)后
+    // 常落在 x.5 这类位置上，截断使相邻单元格的同一条网格线错开一个
+    // 像素（或各画一条、叠加成 2px），于是表格线看起来粗细不一。
+    // 统一用同一个量化函数，保证同一条网格线落在同一像素行/列上。
+    auto px   = [](float v) { return (int)floorf(v + 0.5f); };
+    auto bwid = [](float v) { int w = (int)floorf(v + 0.5f); return w < 1 ? 1 : w; };
+    auto setcol = [](const litehtml::border& b) {
+        fl_color(fl_rgb_color(b.color.red, b.color.green, b.color.blue));
+    };
 
-    if (visible(borders.top)) {
-        fl_color(fl_rgb_color(borders.top.color.red, borders.top.color.green, borders.top.color.blue));
-        fl_rectf(x, y, w, (int)borders.top.width);
+    int x = px(draw_pos.x);
+    int y = px(draw_pos.y);
+    int w = px(draw_pos.width);
+    int h = px(draw_pos.height);
+    if (w <= 0 || h <= 0) return;
+
+    int bt = visible(borders.top)    ? bwid(borders.top.width)    : 0;
+    int bb = visible(borders.bottom) ? bwid(borders.bottom.width) : 0;
+    int bl = visible(borders.left)   ? bwid(borders.left.width)   : 0;
+    int br = visible(borders.right)  ? bwid(borders.right.width)  : 0;
+
+    if (bt) {
+        if (bt > h) bt = h;
+        setcol(borders.top);
+        fl_rectf(x, y, w, bt);
     }
-    if (visible(borders.bottom)) {
-        fl_color(fl_rgb_color(borders.bottom.color.red, borders.bottom.color.green, borders.bottom.color.blue));
-        fl_rectf(x, y + h - (int)borders.bottom.width, w, (int)borders.bottom.width);
+    if (bb && h > bt) {
+        int yy = y + h - bb;
+        int hh = bb;
+        // 高度不足时退让，避免 bottom 反盖住 top 造成角点加深
+        if (yy < y + bt) { yy = y + bt; hh = h - bt; }
+        if (hh > 0) { setcol(borders.bottom); fl_rectf(x, yy, w, hh); }
     }
-    if (visible(borders.left)) {
-        fl_color(fl_rgb_color(borders.left.color.red, borders.left.color.green, borders.left.color.blue));
-        fl_rectf(x, y + (int)borders.top.width, (int)borders.left.width,
-                 h - (int)borders.top.width - (int)borders.bottom.width);
+
+    // 左右边框夹在上下边框之间，避免四角被画两次（叠加处颜色加深）
+    int innerY = y + bt;
+    int innerH = h - bt - bb;
+    if (innerH <= 0) return;
+    if (bl) {
+        if (bl > w) bl = w;
+        setcol(borders.left);
+        fl_rectf(x, innerY, bl, innerH);
     }
-    if (visible(borders.right)) {
-        fl_color(fl_rgb_color(borders.right.color.red, borders.right.color.green, borders.right.color.blue));
-        fl_rectf(x + w - (int)borders.right.width, y + (int)borders.top.width,
-                 (int)borders.right.width,
-                 h - (int)borders.top.width - (int)borders.bottom.width);
+    if (br && w > bl) {
+        int xx = x + w - br;
+        int ww = br;
+        if (xx < x + bl) { xx = x + bl; ww = w - bl; }
+        if (ww > 0) { setcol(borders.right); fl_rectf(xx, innerY, ww, innerH); }
     }
 }
 
@@ -1035,14 +1081,35 @@ ViewWidget::ViewWidget(int x, int y, int w, int h, MyContainer* container)
 void ViewWidget::load_and_render(const std::string& html)
 {
     if (!m_container) return;
-    m_current_html = html;
-    auto doc = litehtml::document::createFromString(html.c_str(), m_container);
-    if (!doc) return;
-    m_container->set_document(doc);
-    m_scroll_y = 0;
-    m_scroll_x = 0;
-    doc->render(litehtml::pixel_t((float)w()));
-    redraw();
+    // Litehtml parsing and layout allocate per-node DOM structures: a huge
+    // document can throw bad_alloc here. The preview no longer has a size
+    // limit (see MainWindow.h), so this path is reachable — and an escaping
+    // exception would unwind straight out of the FLTK event loop and take the
+    // whole process (with every other tab's unsaved work) down with it.
+    // Report it in the panel instead.
+    try {
+        m_current_html = html;
+        auto doc = litehtml::document::createFromString(html.c_str(), m_container);
+        if (!doc) return;
+        m_container->set_document(doc);
+        m_scroll_y = 0;
+        m_scroll_x = 0;
+        doc->render(litehtml::pixel_t((float)w()));
+        m_renderError.clear();
+        redraw();
+    } catch (const std::bad_alloc &) {
+        m_current_html.clear();
+        if (m_container) m_container->set_document(nullptr);
+        m_scroll_y = 0;
+        m_scroll_x = 0;
+        set_render_error("Preview failed: out of memory (document too large to lay out).");
+    } catch (...) {
+        m_current_html.clear();
+        if (m_container) m_container->set_document(nullptr);
+        m_scroll_y = 0;
+        m_scroll_x = 0;
+        set_render_error("Preview failed while rendering this document.");
+    }
 }
 
 void ViewWidget::clear()
@@ -1161,8 +1228,17 @@ void ViewWidget::draw()
     }
     else
     {
-        // 空内容：渲染中显示提示；否则纯白（无导航界面）
-        if (m_rendering) {
+        // 空内容：渲染中显示提示，失败时显示原因；否则纯白（无导航界面）
+        if (!m_renderError.empty()) {
+            // 预览无大小上限，超大文档可能在这一步（litehtml 布局）耗尽内存。
+            // 必须给出可读提示 —— 静默空白用户无从判断是"太大"还是"写错了"。
+            fl_font(FL_HELVETICA, 15);
+            fl_color(fl_rgb_color(190, 60, 60));
+            int cx = x() + w() / 2;
+            int cy = y() + h() / 2;
+            fl_draw(m_renderError.c_str(), cx - (int)fl_width(m_renderError.c_str()) / 2, cy);
+        }
+        else if (m_rendering) {
             const char* msg = "Rendering...";
             fl_font(FL_HELVETICA, 18);
             fl_color(fl_rgb_color(160, 160, 160));

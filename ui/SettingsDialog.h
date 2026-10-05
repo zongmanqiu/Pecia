@@ -63,12 +63,14 @@ private:
 
     Fl_Check_Button *m_multiTabChk;
     Fl_Check_Button *m_fixedStartupDocChk;  // 固定启动文档（无其它 Pecia 时打开 Test.txt）
+    Fl_Check_Button *m_autoPreviewMdChk;    // 打开 .md/.markdown 时自动开预览
     Fl_Check_Button *m_trimTrailingChk;
     Fl_Check_Button *m_trimLeadingChk;
     Fl_Check_Button *m_trimEndingChk;
     Fl_Check_Button *m_expandTabsChk;
     Fl_Choice       *m_autoSaveChoice;   // Off / 30s / 60s / 120s / 300s
     Fl_Check_Button *m_integNewTxt;      // System: New > Text Document
+    bool             m_initialNewTxt = false;  // registry state when the dialog opened
     Fl_Button       *m_chooseExtsBtn;    // Opens ExtensionsDialog (add to "Open with")
     Fl_Check_Button *m_detectUrlsChk;    // Editor: URL detection
     Fl_Check_Button *m_cleanupTempChk;   // Exit: clean 7-day-old temp files
@@ -82,8 +84,9 @@ private:
 
     // Currently selected extensions for the "Open with" menu, stored as
     // individual entries (e.g. L".txt", L".md"). Edited via the
-    // ExtensionsDialog sub-dialog (m_chooseExtsBtn callback). Persisted
-    // to settings.ini as a comma-separated string on saveTo().
+    // ExtensionsDialog sub-dialog (m_chooseExtsBtn callback). Deliberately
+    // NOT persisted: the dialog always starts from an empty selection and
+    // the registry is written only when that dialog is confirmed.
     std::vector<std::wstring> m_openWithExts;
 
     int handle(int event) FL_OVERRIDE;   // OK shortcut support

@@ -96,6 +96,7 @@ void MainWindow::buildMenuKeys() {
         { "Markdown/Auto Refresh",         "menu.markdown.autorefresh" },
         { "Markdown/Auto Refresh/Off",     "menu.markdown.off" },
         { "Markdown/Open in Browser",      "menu.markdown.openinbrowser" },
+        { "Markdown/Export HTML...",       "menu.markdown.exporthtml" },
 
         { "View",                          "menu.view" },
         { "View/Menu Bar",                   "menu.view.menubar" },

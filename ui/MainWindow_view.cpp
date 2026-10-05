@@ -155,9 +155,9 @@ void MainWindow::cbSelectFont(Fl_Widget *w, void *data) {
         t.editor->setFontFace(fontName);
     }
     // 预览跟随编辑器字体：字体名写进了注入 CSS，文档内容没变但样式变了，
-    // 必须先清掉"内容未变则跳过"的记忆再刷新（与 togglePreview 同法）。
+    // 必须强制重渲染（与 togglePreview 同法）。
     if (self->m_preview && self->m_previewActive) {
-        self->m_lastRenderedMd.clear();
+        self->m_previewGate.invalidate();
         self->refreshPreview();
     }
 }

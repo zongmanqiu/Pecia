@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Pecia VERSION 1.0.4 LANGUAGES C CXX)
+project(Pecia VERSION 1.0.5 LANGUAGES C CXX)
 
 # ── Supported target is strictly Windows x64 (64-bit) only. ────────────────
 # The project is deliberately single-platform / single-arch: it uses Windows
@@ -243,6 +243,7 @@ ui/MatchHighlight.cpp
     core/AiApiClient.cpp
     core/Updater.cpp
     mdview/preprocess.cpp
+    mdview/image_export.cpp
     mdview/container.cpp
     mdview/preview_panel.cpp
     build/pecia.rc
@@ -613,6 +614,239 @@ target_link_libraries(test_document PRIVATE
     gdiplus
 )
 add_test(NAME document COMMAND test_document)
+
+# 预览的"内容变没变"判据 + 旧的 4 MB 静默拦截已移除（2026-10-05，#8）。
+# 判据必须是 O(1) 的（文档指针 + Document::contentRev()），不能再存一份
+# 全文做逐字节比较 —— 那才是当初对大文档直接跳过预览的真实原因。
+add_executable(test_preview_gate
+    test/test_preview_gate.cpp
+    test/test_stubs.cpp
+    editor/Document.cpp
+    core/EncodingCore.cpp
+    core/UiBridge.cpp
+    core/I18n.cpp
+)
+target_include_directories(test_preview_gate PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${FLTK_INCLUDE_DIRS}
+)
+if(MSVC)
+    target_compile_options(test_preview_gate PRIVATE /utf-8 /permissive- /W4 /MD)
+    target_compile_definitions(test_preview_gate PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+target_link_libraries(test_preview_gate PRIVATE
+    ${FLTK_LIBRARIES}
+    comctl32
+    shell32
+    user32
+    imm32
+    gdi32
+    kernel32
+    winspool
+    ole32
+    oleaut32
+    uuid
+    comdlg32
+    advapi32
+    ws2_32
+    gdiplus
+)
+add_test(NAME preview_gate COMMAND test_preview_gate)
+
+# --- preview chain sanity ---------------------------------------------------
+# Kept after #8 removed the 4 MB limit. It runs the real chain
+# md_to_html -> createFromString -> render on SMALL generated documents and
+# asserts the amplification relationships hold, so a converter regression
+# (HTML inflating) or a litehtml upgrade that changes per-node cost shows up
+# here instead of in a bug report.
+#
+# NOTE (2026-10-05): the standalone diagnostic tool md_mem_probe.exe was
+# removed on purpose -- large-document preview performance is explicitly out
+# of scope, so there is nothing to profile for. See plan_分级.md.
+# The gate: runs the real chain on small generated documents and asserts the
+# amplification relationships hold. Kept deliberately small (8 KB + 64 KB) so
+# it stays a fast gate -- large documents are out of scope entirely.
+add_executable(test_preview_mem
+    test/test_preview_mem.cpp
+    mdview/preprocess.cpp
+)
+target_include_directories(test_preview_mem PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/mdview
+    ${PECIA_THIRDPARTY}/stb-2026-08-02
+    ${FLTK_INCLUDE_DIRS}
+)
+if(MSVC)
+    target_compile_options(test_preview_mem PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /MD)
+    target_compile_definitions(test_preview_mem PRIVATE
+        UNICODE _UNICODE NOMINMAX _CRT_SECURE_NO_WARNINGS)
+    set_target_properties(test_preview_mem PROPERTIES LINK_FLAGS "/FORCE:MULTIPLE")
+endif()
+target_link_libraries(test_preview_mem PRIVATE
+    ${FLTK_LIBRARIES}
+    lua_static
+    pcre2-8-static
+    md4c
+    md4c-html
+    litehtml
+    ${CMAKE_SOURCE_DIR}/../.thirdparty/mermaid-rs-renderer-0.3.1/mmdr-ffi/target/release/mermaid_ffi.lib
+    ${CMAKE_SOURCE_DIR}/../.thirdparty/RaTeX-0.1.14/ratex-ffi/target/release/ratex_ffi.lib
+    comctl32 shell32 user32 imm32 gdi32 kernel32 winspool ole32 oleaut32
+    uuid comdlg32 advapi32 winhttp
+    ws2_32 userenv ntdll bcrypt gdiplus psapi
+)
+# TIMEOUT is load-bearing, not decoration. The first version of this gate
+# checked its memory budget only AFTER building the DOM; since DOM build time is
+# super-linear, an injected regression hung the test for 20+ minutes instead of
+# failing. The gate now predicts the cost and bails before the work, but the
+# timeout stays so that any future runaway fails the suite in 60 s rather than
+# stalling the whole build.
+add_test(NAME preview_mem COMMAND test_preview_mem)
+set_tests_properties(preview_mem PROPERTIES TIMEOUT 60)
+
+# 图片导出（远程图片落盘/命名）单测。只链 image_export.cpp，不碰
+# md4c/litehtml/两个 Rust FFI，链接面最小。
+add_executable(test_md_export
+    test/test_md_export.cpp
+    mdview/image_export.cpp
+)
+target_include_directories(test_md_export PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/mdview
+    ${FLTK_INCLUDE_DIRS}
+)
+if(MSVC)
+    target_compile_options(test_md_export PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /MD)
+    target_compile_definitions(test_md_export PRIVATE
+        UNICODE _UNICODE NOMINMAX _CRT_SECURE_NO_WARNINGS)
+endif()
+
+# winhttp: image_export.cpp 的缺省取图实现（default_remote_fetch）用它做
+# 带重试的同步 GET；单测注入假 fetch，但符号仍需链接得上。
+target_link_libraries(test_md_export PRIVATE kernel32 winhttp)
+add_test(NAME md_export COMMAND test_md_export)
+
+# 滚动条滑块几何门禁：绘制的滑块矩形必须与 FLTK 命中矩形重合。
+# 两者一旦错开，Fl_Slider::handle() 会把 offcenter 钳到 S，拖到轨道底时
+# 取到的 v < maximum —— 即"垂直滑块滑不到底，总是有一点小间隙"。
+# 只测 ui/ThemeWidgets.h 里的 scrollbarThumbGeometry()（inline，无 .cpp），
+# 因此链接面最小：仅需 FLTK + 主题头（Theme.h 是纯头）。
+add_executable(test_vscroll_geom
+    test/test_vscroll_geom.cpp
+)
+target_include_directories(test_vscroll_geom PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/ui
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/test
+    ${FLTK_INCLUDE_DIRS}
+)
+if(MSVC)
+    target_compile_options(test_vscroll_geom PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /MD)
+    target_compile_definitions(test_vscroll_geom PRIVATE
+        UNICODE _UNICODE NOMINMAX _CRT_SECURE_NO_WARNINGS)
+endif()
+target_link_libraries(test_vscroll_geom PRIVATE
+    ${FLTK_LIBRARIES}
+    comctl32
+    shell32
+    user32
+    imm32
+    gdi32
+    kernel32
+    winspool
+    ole32
+    oleaut32
+    uuid
+    comdlg32
+    advapi32
+    ws2_32
+    gdiplus
+    dwmapi
+    dbghelp
+)
+add_test(NAME vscroll_geom COMMAND test_vscroll_geom)
+
+# 门禁：拖到最底时滑块必须真的到底 + 末行之后留空白。
+# 与 vscroll_geom 互补 —— 后者守"绘制==命中"，本条守"到底==到底"
+# （FLTK 的 scroll_ 上限与 scrollvalue 的bounds 上限差 1 行那类缺陷）。
+add_executable(test_vscroll_reach
+    test/test_vscroll_reach.cpp
+)
+target_include_directories(test_vscroll_reach PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/ui
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/test
+    ${FLTK_INCLUDE_DIRS}
+)
+if(MSVC)
+    target_compile_options(test_vscroll_reach PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /MD)
+    target_compile_definitions(test_vscroll_reach PRIVATE
+        UNICODE _UNICODE NOMINMAX _CRT_SECURE_NO_WARNINGS)
+endif()
+target_link_libraries(test_vscroll_reach PRIVATE
+    ${FLTK_LIBRARIES}
+    comctl32
+    shell32
+    user32
+    gdi32
+    ole32
+    oleaut32
+    uuid
+    advapi32
+    comdlg32
+    winmm
+    gdiplus
+    dwmapi
+    dbghelp
+)
+add_test(NAME vscroll_reach COMMAND test_vscroll_reach)
+
+# 端到端："Markdown > 导出 HTML"整条链路的产物质量。
+# test_md_export 只单测 image_export.cpp（不碰 md4c/litehtml/FFI，链接面最小），
+# 因此"md_to_html() 擅自本地化远程图片"这个回归当时无人拦截——而它一发作就让
+# 预览里所有在线图片断链。这里直接跑 md_to_html() 做端到端校验，把它钉死。
+# 需要链 preprocess.cpp，故要带上 md4c/litehtml/两个 Rust FFI；用 /FORCE:MULTIPLE
+# 忽略两个 staticlib 在 LTO 后的重复 std 符号（理由同 Pecia 目标）。
+add_executable(test_export_e2e
+    test/test_export_e2e.cpp
+    mdview/preprocess.cpp
+    mdview/image_export.cpp
+)
+target_include_directories(test_export_e2e PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/mdview
+    # preprocess.cpp 要 stb_image_write.h（公式/图表落盘），路径复用主目标的
+    # 变量，不写死版本化目录名。
+    ${PECIA_THIRDPARTY}/stb-2026-08-02
+)
+if(MSVC)
+    target_compile_options(test_export_e2e PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /MD)
+    target_compile_definitions(test_export_e2e PRIVATE
+        UNICODE _UNICODE NOMINMAX _CRT_SECURE_NO_WARNINGS)
+    set_target_properties(test_export_e2e PROPERTIES LINK_FLAGS "/FORCE:MULTIPLE")
+endif()
+target_link_libraries(test_export_e2e PRIVATE
+    ${FLTK_LIBRARIES}
+    lua_static
+    pcre2-8-static
+    md4c
+    md4c-html
+    litehtml
+    ${CMAKE_SOURCE_DIR}/../.thirdparty/mermaid-rs-renderer-0.3.1/mmdr-ffi/target/release/mermaid_ffi.lib
+    ${CMAKE_SOURCE_DIR}/../.thirdparty/RaTeX-0.1.14/ratex-ffi/target/release/ratex_ffi.lib
+    comctl32 shell32 user32 imm32 gdi32 kernel32 winspool ole32 oleaut32
+    uuid comdlg32 advapi32 winhttp
+    # Rust FFI（mermaid/ratex 的 std）在 Windows 上要 ntdll 的 NtReadFile /
+    # NtWriteFile，要 ws2_32/userenv/bcrypt/gdiplus；缺任何一个都会 LNK2019。
+    # 这里与 Pecia 目标保持同一组，别只补报错的那一个。
+    ws2_32 userenv ntdll bcrypt gdiplus
+)
+# 它要读 example/ex1.markdown/ex1.md 并往 temp/exp_out 落产物，属于会写盘的
+# 集成测试：串在 md_export 之后跑，避免与其它用例争 temp/。
+add_test(NAME export_e2e COMMAND test_export_e2e)
+set_tests_properties(export_e2e PROPERTIES RUN_SERIAL TRUE)
 
 add_executable(test_match_highlight
     test/test_match_highlight.cpp

@@ -322,6 +322,15 @@ Editor::~Editor() {
 }
 
 // ---- Scrollbar drawing ---------------------------------------------------
+//
+// 滑块几何复用 ui/ThemeWidgets.h 的 scrollbarThumbGeometry()，与工具窗共用一份，
+// 且与 Fl_Slider::handle() 的命中测试逐字一致（详见该函数注释）。
+//
+// ★ 历史 bug：这里曾用 `thumb = max(int(L*slider_size), 20)`。那个 20px 下限让
+//   **绘制**比FLTK 的**命中区**大（长文档时 slider_size 很小，命中区缩到
+//   T=6px，而仍画 20px）。实测（800x600 / Consolas 16 / wrap 开）：2000 行
+//   文档下可见滑块 20 行里有 10 行是死区（50%），478 行文档 40 行里有 1 行
+//   死区、间隙 1~2px —— 正是"垂直滑块没办法滑到最后，总是有一点小间隙"。
 
 void Editor::drawCustomScrollbar(Fl_Scrollbar *sb, bool horizontal) {
     if (!sb || !sb->visible_r()) return;
@@ -338,11 +347,6 @@ void Editor::drawCustomScrollbar(Fl_Scrollbar *sb, bool horizontal) {
         sw = w() - vscroll_w;
     }
 
-    double minv = sb->minimum();
-    double maxv = sb->maximum();
-    double val  = sb->value();
-    float  sl   = sb->slider_size();
-
     Fl_Color trackColor, thumbColor;
     if (m_theme) scrollbarColors(m_theme->colors(), trackColor, thumbColor);
     else { trackColor = fl_rgb_color(240, 240, 240); thumbColor = fl_rgb_color(180, 180, 180); }
@@ -351,26 +355,18 @@ void Editor::drawCustomScrollbar(Fl_Scrollbar *sb, bool horizontal) {
     fl_color(trackColor);
     fl_rectf(sx, sy, sw, sh);
 
-    // Thumb
-    if (horizontal) {
-        int thumb_w = (int)(sw * sl);
-        if (thumb_w < 20) thumb_w = 20;
-        double range = maxv - minv;
-        int thumb_x = sx;
-        if (range > 0.0)
-            thumb_x = sx + (int)((val - minv) * (sw - thumb_w) / range);
-        fl_color(thumbColor);
-        fl_rectf(thumb_x, sy, thumb_w, sh);
-    } else {
-        int thumb_h = (int)(sh * sl);
-        if (thumb_h < 20) thumb_h = 20;
-        double range = maxv - minv;
-        int thumb_y = sy;
-        if (range > 0.0)
-            thumb_y = sy + (int)((val - minv) * (sh - thumb_h) / range);
-        fl_color(thumbColor);
-        fl_rectf(sx, thumb_y, sw, thumb_h);
-    }
+    // Thumb —— 几何来自与 FLTK 命中测试共用的公式
+    int thumb_len = 0, thumb_pos = 0;
+    if (horizontal)
+        scrollbarThumbGeometry(sb, sx, sw, sh, &thumb_len, &thumb_pos);
+    else
+        scrollbarThumbGeometry(sb, sy, sh, sw, &thumb_len, &thumb_pos);
+
+    fl_color(thumbColor);
+    if (horizontal)
+        fl_rectf(thumb_pos, sy, thumb_len, sh);
+    else
+        fl_rectf(sx, thumb_pos, sw, thumb_len);
 }
 
 // ---- Current-line highlight ----------------------------------------------
@@ -1357,6 +1353,17 @@ int Editor::handle(int event) {
 void Editor::draw() {
     Fl_Text_Editor::draw();
 
+    // Overlay clipping: FLTK clips the text itself to text_area, but pops
+    // that clip before returning. Every overlay we paint on top (current
+    // line strip, caret, space dots, long-line marker) is therefore
+    // unconstrained and, once the view is scrolled horizontally, leaks to
+    // the LEFT over the line-number gutter (position_to_xy() returns a
+    // px smaller than text_area.x, even negative) and to the RIGHT over
+    // the vertical scrollbar. Clip the whole overlay pass horizontally to
+    // text_area; vertically keep the full widget height (same as the IME
+    // overlay below) so partially visible bottom rows are not cut off.
+    fl_push_clip(text_area.x, y(), text_area.w, h());
+
     // Current-line highlight, two layers:
     //  1. Character background via the style buffer ('B' style, set by
     //     applyLineHighlight) - FLTK draws it natively, overlapping the
@@ -1459,6 +1466,8 @@ void Editor::draw() {
 
     // 覆盖层：长行标记
     drawLongLineMarker();
+
+    fl_pop_clip();
 
     // Reposition horizontal scrollbar to span full widget width
     if (mHScrollBar && mHScrollBar->visible()) {

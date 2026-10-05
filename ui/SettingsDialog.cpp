@@ -342,7 +342,11 @@ static void applyOpenWithRegistry(const std::wstring &openWithExts) {
         // REG_NONE with zero bytes is the standard type used by Windows
         // and other apps (Positron, QoderCN, etc.) for these entries.
         for (const auto &ext : exts) {
-            std::wstring key = L"Software\\Classes" + ext + L"\\OpenWithProgids";
+            // NOTE: the trailing separator matters - without it the key
+            // became "Software\Classes.txt\OpenWithProgids" (ext starts
+            // with a dot, not a backslash), so these entries never landed
+            // where Windows looks for them.
+            std::wstring key = L"Software\\Classes\\" + ext + L"\\OpenWithProgids";
             HKEY extHk;
             if (RegCreateKeyExW(HKEY_CURRENT_USER, key.c_str(), 0, nullptr,
                                 REG_OPTION_NON_VOLATILE, KEY_WRITE | sam, nullptr, &extHk, nullptr) == ERROR_SUCCESS) {
@@ -513,6 +517,14 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
                                                I18n::get("settings.fixedstartupdoc"));
     y += rowH + 6;
 
+    // --- 打开 .md/.markdown 时自动开预览 ---
+    // 只对"新打开的文件"生效（MainWindow::openFile 末尾），切标签页 / 另存为
+    // / 重新打开已开的文件都不触发。渲染延后一帧执行，避免大文档把"打开"
+    // 这一步本身拖成白屏无响应。
+    m_autoPreviewMdChk = new Fl_Check_Button(margin + labelW, y, ctrlW, rowH,
+                                             I18n::get("settings.autopreviewmd"));
+    y += rowH + 6;
+
     // --- System Integration ---
     m_integNewTxt = new Fl_Check_Button(margin + labelW, y, ctrlW, rowH,
         I18n::get("settings.newtxtdoc"));
@@ -571,6 +583,7 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
     styleChk(m_autoIndentChk);
     styleChk(m_multiTabChk);
     styleChk(m_fixedStartupDocChk);
+    styleChk(m_autoPreviewMdChk);
     styleChk(m_trimTrailingChk);
     styleChk(m_trimLeadingChk);
     styleChk(m_trimEndingChk);
@@ -673,6 +686,7 @@ void SettingsDialog::loadFrom(const Config &cfg) {
     m_autoIndentChk->value(const_cast<Config &>(cfg).getAutoIndent() ? 1 : 0);
     m_multiTabChk->value(const_cast<Config &>(cfg).getMultiTab() ? 1 : 0);
     m_fixedStartupDocChk->value(const_cast<Config &>(cfg).getFixedStartupDoc() ? 1 : 0);
+    m_autoPreviewMdChk->value(const_cast<Config &>(cfg).getAutoPreviewMd() ? 1 : 0);
     m_trimTrailingChk->value(const_cast<Config &>(cfg).getTrimTrailingWhitespace() ? 1 : 0);
     m_trimLeadingChk->value(const_cast<Config &>(cfg).getTrimLeadingBlank() ? 1 : 0);
     m_trimEndingChk->value(const_cast<Config &>(cfg).getTrimEndingBlank() ? 1 : 0);
@@ -691,24 +705,15 @@ void SettingsDialog::loadFrom(const Config &cfg) {
     // extension (preset OR custom from the INI) has a Pecia entry under
     // OpenWithProgids.
     m_integNewTxt->value(regKeyExists(HKEY_CURRENT_USER, L"Software\\Classes\\.txt\\ShellNew", L"NullFile") ? 1 : 0);
+    m_initialNewTxt = m_integNewTxt->value() != 0;
 
-    // Load the persisted extension selection. If the INI key is missing
-    // (first run or upgraded from an older version) we default to ALL
-    // preset extensions checked so the user sees the full list on first
-    // use and can uncheck what they don't need.
-    {
-        char buf[1024];
-        const_cast<Config &>(cfg).getOpenWithExts(buf, sizeof(buf), "");
-        std::wstring ws;
-        for (const char *p = buf; *p; ++p) ws.push_back((wchar_t)(unsigned char)*p);
-        if (ws.empty()) {
-            for (int i = 0; i < kAssocExtCount; ++i) {
-                if (i) ws += L",";
-                ws += kAssocExts[i];
-            }
-        }
-        m_openWithExts = splitExts(ws);
-    }
+    // The extension selection is deliberately NOT restored from the INI:
+    // registering Pecia in the "Open with" menu is a one-shot, overwrite
+    // -style action that only ever happens when the user presses OK in the
+    // ExtensionsDialog. Restoring a previous selection (or defaulting to all
+    // 20 presets) would make merely opening the dialog look like "these are
+    // already associated", which is exactly what we must avoid.
+    m_openWithExts.clear();
 
     m_detectUrlsChk->value(const_cast<Config &>(cfg).getDetectUrls() ? 1 : 0);
     m_cleanupTempChk->value(const_cast<Config &>(cfg).getCleanupTempOld() ? 1 : 0);
@@ -759,6 +764,13 @@ bool SettingsDialog::saveTo(Config &cfg) const {
         changed = true;
     }
 
+    // 打开 .md/.markdown 自动预览：纯持久化，实际生效在下次打开文件时。
+    bool apm = m_autoPreviewMdChk->value() != 0;
+    if (cfg.getAutoPreviewMd() != apm) {
+        cfg.setAutoPreviewMd(apm);
+        changed = true;
+    }
+
     bool tt = m_trimTrailingChk->value() != 0;
     if (cfg.getTrimTrailingWhitespace() != tt) {
         cfg.setTrimTrailingWhitespace(tt);
@@ -792,26 +804,23 @@ bool SettingsDialog::saveTo(Config &cfg) const {
         changed = true;
     }
 
-    // System integration: apply "New > Text Document" registry changes
-    // and persist the extension list. The "Open with" registry entries
-    // are applied immediately when the ExtensionsDialog is confirmed
-    // (see cbChooseExts), not here - this keeps the add-only semantics
-    // (unchecking an extension in the dialog leaves its registry entries
-    // alone, it just won't be re-added on future OKs).
+    // System integration: apply "New > Text Document" registry changes.
+    // The "Open with" registry entries are NOT touched here at all - they
+    // are written only when the ExtensionsDialog is confirmed (see
+    // cbChooseExts), so the Options dialog's OK can never associate
+    // anything on its own.
     bool newTxt = m_integNewTxt->value() != 0;
-    applyNewTxtRegistry(newTxt);
-    {
-        // Persist the extension list as a UTF-8 string. All supported
-        // extensions are ASCII, so a simple narrowing copy is safe.
-        std::wstring extsStr = joinExts(m_openWithExts);
-        std::string utf8;
-        utf8.reserve(extsStr.size());
-        for (wchar_t wc : extsStr) utf8.push_back((char)wc);
-        cfg.setOpenWithExts(utf8.c_str());
+    // Only touch the registry (and notify Explorer) when this switch
+    // actually changed. It used to run unconditionally on every OK, so
+    // closing Options always flashed the whole desktop - and with the
+    // box off it also ran the cleanup branch, deleting .txt\\ShellNew
+    // and forcing .txt back to txtfile even when nothing was edited.
+    if (newTxt != m_initialNewTxt) {
+        applyNewTxtRegistry(newTxt);
+        // Mark changed so the caller refreshes things even if only the
+        // registry was updated (the INI value itself is unchanged).
+        changed = true;
     }
-    // Always mark changed so the caller refreshes things even if only
-    // the registry was updated (the INI value itself may be unchanged).
-    changed = true;
 
     bool du = m_detectUrlsChk->value() != 0;
     if (cfg.getDetectUrls() != du) {
@@ -1051,9 +1060,11 @@ struct ExtensionsDialog : DialogBase {
         // created with zero width; fitButtonRow sizes + right-aligns below.
         HoverButton *allBtn = new HoverButton(0, okY, 0, btnH, kAllLbl);
         HoverButton *okBtn  = new HoverButton(0, okY, 0, btnH, I18n::get("settings.ok"));
+        HoverButton *cancelBtn = new HoverButton(0, okY, 0, btnH,
+                                                 I18n::get("settings.cancel"));
         m_allBtn = allBtn;
         m_okBtn = okBtn;
-        for (auto *b : { allBtn, okBtn }) {
+        for (auto *b : { allBtn, okBtn, cancelBtn }) {
             b->color(chromeCol);
             b->selection_color(theme ? theme->colors().highlight1 : FL_SELECTION_COLOR);
             b->setPressColor(theme ? theme->colors().highlight2 : 0);
@@ -1064,11 +1075,10 @@ struct ExtensionsDialog : DialogBase {
         // re-fits it on every toggle (so it always matches the text shown).
         allBtn->copy_label(kAllLbl);
         allBtn->fit();
-        okBtn->fit();
-        int okW = okBtn->w();
-        int okX  = W - margin - okW;
-        allBtn->position(okX - gap - allBtn->w(), okY);
-        okBtn->position(okX, okY);
+        // Right-align [OK] [Cancel] with the same shared helper the Options
+        // dialog uses, then pin the Select-All toggle to the left of OK.
+        fitButtonRow({okBtn, cancelBtn}, W, btnY + gBarH / 2, margin, gap);
+        allBtn->position(okBtn->x() - gap - allBtn->w(), okY);
         allBtn->callback([](Fl_Widget*, void *data){
             auto *self = static_cast<ExtensionsDialog*>(data);
             // Toggle: everything selected -> clear all, otherwise select all.
@@ -1081,6 +1091,13 @@ struct ExtensionsDialog : DialogBase {
         okBtn->callback([](Fl_Widget*, void *data){
             auto *self = static_cast<ExtensionsDialog*>(data);
             self->user_data(reinterpret_cast<void*>((intptr_t)1));
+            self->hide();
+        }, this);
+        // Cancel (and the title bar X) leave user_data at 0, which the
+        // caller reads as "not confirmed" -> nothing is written.
+        cancelBtn->callback([](Fl_Widget*, void *data){
+            auto *self = static_cast<ExtensionsDialog*>(data);
+            self->user_data(reinterpret_cast<void*>((intptr_t)0));
             self->hide();
         }, this);
         btnBar->end();
@@ -1181,40 +1198,13 @@ void SettingsDialog::cbChooseExts(Fl_Widget * /*w*/, void *data) {
     ExtensionsDialog dlg(dlgW, dlgH, I18n::get("settings.filetype"), self->m_theme, self->m_uiFontSize);
     dlg.position((Fl::w() - dlgW) / 2, (Fl::h() - dlgH - TITLE_H) / 2);
 
-    // Initialize checkboxes from the current selection. Track which selected
-    // extensions are NOT in the preset list - those go into the Custom box.
-    std::vector<std::wstring> customExts;
-    for (int i = 0; i < kAssocExtCount; ++i) {
-        bool sel = false;
-        for (const auto &e : self->m_openWithExts) {
-            if (e == kAssocExts[i]) { sel = true; break; }
-        }
-        dlg.m_checks[i]->value(sel ? 1 : 0);
-    }
+    // Every visit starts from an empty selection (see the note at the
+    // m_openWithExts reset above): nothing is pre-checked and the Custom box
+    // starts empty, so its grey example hint is visible.
+    for (int i = 0; i < kAssocExtCount; ++i) dlg.m_checks[i]->value(0);
     dlg.refreshToggleLabel();
-    for (const auto &e : self->m_openWithExts) {
-        bool inPreset = false;
-        for (int i = 0; i < kAssocExtCount; ++i) {
-            if (e == kAssocExts[i]) { inPreset = true; break; }
-        }
-        if (!inPreset) customExts.push_back(e);
-    }
-    // Render the custom list as a space-separated string for the input.
-    {
-        std::string customStr;
-        for (size_t i = 0; i < customExts.size(); ++i) {
-            if (i) customStr += " ";
-            for (wchar_t wc : customExts[i]) {
-                if (wc < 128) customStr += (char)wc;
-            }
-        }
-        dlg.m_customInput->value(customStr.c_str());
-        // Sync the grey example hint: visible only when the box is empty.
-        if (dlg.m_customHint) {
-            if (customStr.empty()) dlg.m_customHint->show();
-            else                  dlg.m_customHint->hide();
-        }
-    }
+    dlg.m_customInput->value("");
+    if (dlg.m_customHint) dlg.m_customHint->show();
 
     dlg.user_data(reinterpret_cast<void *>((intptr_t)0));
     dlg.show();
@@ -1238,6 +1228,15 @@ void SettingsDialog::cbChooseExts(Fl_Widget * /*w*/, void *data) {
         }
         if (!dup) self->m_openWithExts.push_back(e);
     }
+
+    // Nothing selected: touch nothing at all.
+    // applyOpenWithRegistry() always creates the Pecia ProgID and
+    // Applications\Pecia.exe (the shared "Choose another app" pool)
+    // and ends with SHChangeNotify, so calling it with an empty list
+    // would still register Pecia system-wide and flash the desktop
+    // even though the user picked no format. Per the contract, an
+    // empty selection must be a complete no-op.
+    if (self->m_openWithExts.empty()) return;
 
     // Immediately register the selected extensions in the registry.
     // This is an add-only operation - unchecked extensions are left

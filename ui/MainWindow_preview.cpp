@@ -8,6 +8,7 @@
 #include "editor/Document.h"
 #include "editor/Editor.h"
 #include "mdview/mmdr_ffi.h"
+#include "mdview/image_export.h"
 #include "mdview/preview_panel.h"
 #include "ui/HoverMenuBar.h"
 #include "ui/Layout.h"   // MENU_H
@@ -20,8 +21,10 @@
 #include <FL/Fl_Tabs.H>
 #include <FL/fl_draw.H>
 #include <FL/fl_utf8.h>
+#include <FL/filename.h>   // fl_filename_name / fl_filename_ext
 #include <FL/platform.H>
 #include <shellapi.h>
+#include <shobjidl.h>   // IFileSaveDialog（另存为 HTML 的路径选择）
 
 // --------------------------------------------------------------------------
 // 预览临时目录管理（exe 同级 temp/<文档名>-<PID>/）：
@@ -463,7 +466,7 @@ void MainWindow::togglePreview()
     m_previewActive = true;
     m_preview->view()->show();
     m_previewDivider->show();
-    m_lastRenderedMd.clear();   // 强制首次渲染
+    m_previewGate.invalidate();   // 强制首次渲染
     layoutTabs();
     refreshPreview();   // 开启即渲染当前内容（含未保存的编辑）
     startAutoRefreshLoop();
@@ -507,7 +510,7 @@ void MainWindow::destroyPreviewCb(void *data)
 void MainWindow::cbRefreshPreview(Fl_Widget *w, void *data)
 {
     auto *win = static_cast<MainWindow *>(data ? data : w->window());
-    if (win) win->refreshPreview();
+    if (win) win->refreshPreview(true);   // 手动刷新：无条件重渲染
 }
 
 void MainWindow::setAutoRefresh(int ms)
@@ -608,32 +611,24 @@ void MainWindow::autoRefreshLoopCb(void *data)
     Fl::repeat_timeout(win->m_autoRefreshMs / 1000.0, autoRefreshLoopCb, win);
 }
 
-void MainWindow::refreshPreview()
+void MainWindow::refreshPreview(bool force)
 {
     if (!m_preview || !m_previewActive) return;
-    // Large-document guard: refreshPreview copies the WHOLE document text
-    // (activeDocumentText below) and string-compares it against the last
-    // render - with a 50 MB document that is a 50 MB alloc+copy on every
-    // tab switch / refresh tick before any parsing even starts. Skip the
-    // preview entirely for such files (same threshold as auto word wrap).
-    {
-        Tab *t0 = activeTab();
-        if (t0 && t0->doc && t0->doc->buffer() &&
-            t0->doc->buffer()->length() > kWrapLimitBytes) {
-            m_preview->clear();
-            m_lastRenderedMd.clear();   // also frees a stale 50 MB copy
-            return;
-        }
-    }
+    // 内容变化判据：O(1) 的 (文档, 版本号)。切标签页 → 指针不同 → 必渲染；
+    // 同一文档内编辑 → contentRev 变 → 必渲染；都没变 → 跳过，
+    // 省掉一次全量取文 + 解析 + litehtml 布局。手动刷新走 force。
+    // 旧实现留着一份全文 m_lastRenderedMd 做逐字节比较，每次 tick 要付
+    // 三次全量分配+拷贝；这里曾因此对 >4 MB 的文档直接跳过预览（静默空白）。
+    // 现在任何能打开的文档都走真实渲染，慢是用户自己的选择。
+    // force 由 shouldRender() 自行消费（内部置 m_force），无需先 invalidate。
+    Tab *t = activeTab();
+    const Document *doc = (t && t->doc) ? t->doc : nullptr;
+    const unsigned long long rev = doc ? doc->contentRev() : 0;
+    if (!m_previewGate.shouldRender(doc, rev, force))
+        return;
     std::string md = activeDocumentText();
-    // Skip when the document text is unchanged (fixes the auto-refresh timer
-    // re-rendering the full document every tick even when nothing changed).
-    // togglePreview() clears m_lastRenderedMd to force the first/initial render.
-    if (!m_lastRenderedMd.empty() && md == m_lastRenderedMd) return;
-    m_lastRenderedMd = md;   // 记忆（循环定时器据此跳过未变化的内容）
     // 设置文档基础目录（解析相对图片路径；未命名标签则为空）
     std::string base;
-    Tab *t = activeTab();
     {
         if (t && t->doc && t->doc->filePath() && t->doc->filePath()[0]) {
             base = t->doc->filePath();
@@ -754,32 +749,235 @@ void MainWindow::scrollSyncCb(void *data)
     }
 }
 
+// ---------------------------------------------------------------------------
+// 自包含页面输出 —— "导出 HTML" 与 "在浏览器中打开" 的【唯一】实现。
+//
+// 为什么必须只有一份：这两条功能以前各写一套（一个重新渲染并落盘、一个
+// 读回 index.html 做局部改写），结果就是两边对"本地图要不要拷、远程图要不要
+// 下载、文件叫什么"的判断逐渐分叉 —— 用户看到的正是"导出正常，但直接打开
+// 那个 index.html 不行"。凡是要落到磁盘上给人看的 HTML，都必须走这里。
+//
+// outDir 已存在且可写；本函数在其中产出：
+//   index.html        —— 页面本体
+//   <原文件名>        —— 文档里的本地相对图片（保持原名与相对结构）
+//   <URL 原文件名>    —— 远程图片，命中预览缓存或当场下载
+//   formulas/ mermaid/—— 公式与图表位图
+// 返回 false 表示连 index.html 都没写成；*remoteRemaining > 0 表示页面里仍有
+// 远程地址（离线打开会缺图），调用方应如实告知用户而不是假装成功。
+static bool writeStandaloneHtml(const std::string& md,
+                                const std::string& outDir,
+                                const std::string& srcPath,
+                                const std::string& baseFont,
+                                int* remoteRemaining)
+{
+    if (remoteRemaining) *remoteRemaining = 0;
+
+    // 相对图片以源文档目录为解析基准。md_to_html 的 doc_dir 形参接受
+    // "文件全路径"或"目录"两种形态（第 7 步会自行判别），这里给文件全路径。
+    std::string docBase = srcPath;
+
+    std::string html;
+    try {
+        html = md_to_html(md, outDir, docBase, nullptr, baseFont);
+    } catch (...) {
+        html.clear();
+    }
+    if (html.empty()) return false;
+
+    // 远程图片：命中预览缓存就复用，缺的当场下载（WinHTTP + 重试 + 2xx 校验）。
+    // 预览缓存是容器异步写的，渲染完成时图往往还没到，所以这里必须真下载。
+    localize_remote_images(html, outDir, default_remote_fetch());
+
+    if (remoteRemaining) *remoteRemaining = count_remote_image_srcs(html);
+
+    const std::string indexPath = outDir + "\\index.html";
+    FILE* f = fl_fopen(indexPath.c_str(), "wb");
+    if (!f) return false;
+    std::fwrite(html.data(), 1, html.size(), f);
+    std::fclose(f);
+    return true;
+}
+
+// 基准【字体名】（如 "Consolas"），不是字号。md_to_html 的 base_font 形参只
+// 被写进 CSS font-family 的首位候选，不参与 font-size。原先这里传的是
+// "%dpx" 字号串，于是导出页里出现 font-family: '15px' 这种无效声明 ——
+// 浏览器忽略它，而字号其实也没跟上（body 字号由 CSS 固定），等于两个目的
+// 都没达成。预览侧的字号缩放走 MyContainer::m_font_scale，与本参数无关。
+static std::string editorFontName(const Config* cfg)
+{
+    char fb[64] = {0};
+    if (cfg) cfg->getEditorFont(fb, sizeof(fb));
+    return fb;
+}
+
 void MainWindow::openPreviewInBrowser()
 {
     if (!m_preview || !m_previewActive || !m_preview->hasContent()) return;
-    // 直接打开预览目录里的 index.html（渲染时由后台线程写出）：
-    // 目录内包含本地图片拷贝/公式/meimaid，浏览器可完整显示。
-    std::string path = m_previewDir + "\\index.html";
-    if (GetFileAttributesW(widen(path).c_str()) == INVALID_FILE_ATTRIBUTES) {
-        // 目录未生成（如预览打开后未渲染过）：退回把当前 HTML 写到
-        // exe 同级 temp/（便携：绝不写 exe 之外，不用 %TEMP%）。
-        std::string root = previewTempRoot();
-        if (root.empty()) return;
-        CreateDirectoryW(widen(root).c_str(), NULL);
-        path = root + "\\pecia_preview.html";
-        FILE *f = fl_fopen(path.c_str(), "wb");
-        if (!f) return;
-        const std::string &html = m_preview->view()->current_html();
-        fwrite(html.data(), 1, html.size(), f);
-        fclose(f);
+
+    Tab* tab = activeTab();
+    const std::string md = activeDocumentText();
+    if (md.empty()) return;
+    const std::string srcPath = (tab && tab->doc) ? tab->doc->filePath() : "";
+
+    // 与导出走同一个函数、同一套判定：预览目录里的 index.html 从此就是
+    // 完整自包含页面，用户事后直接双击该文件也能看到全部图片，不依赖这次
+    // 是否点过菜单。
+    std::string outDir = m_previewDir;
+    if (outDir.empty()) {
+        outDir = previewTempRoot();
+        if (outDir.empty()) return;
+        outDir += "\\preview";
+        CreateDirectoryW(widen(outDir).c_str(), NULL);
     }
+
+    int remoteLeft = 0;
+    if (!writeStandaloneHtml(md, outDir, srcPath, editorFontName(m_cfg),
+                             &remoteLeft))
+        return;
+
+    const std::string path = outDir + "\\index.html";
     ShellExecuteW(NULL, L"open", widen(path).c_str(), NULL, NULL, SW_SHOWNORMAL);
+
+    if (remoteLeft > 0) {
+        char msg[512];
+        std::snprintf(msg, sizeof(msg), "%s\n\n%d",
+                      I18n::get("export.partial"), remoteLeft);
+        MessageBoxW(NULL, widen(msg).c_str(), L"Pecia", MB_OK | MB_ICONWARNING);
+    }
 }
 
 void MainWindow::cbOpenPreviewInBrowser(Fl_Widget *w, void *data)
 {
     auto *win = static_cast<MainWindow *>(data ? data : w->window());
     if (win) win->openPreviewInBrowser();
+}
+
+// 另存为 HTML：与"在浏览器打开"共用同一条渲染链路，区别只在落点。
+//
+// 为什么是"选文件夹、导出一个文件夹"而不是"选一个 .html"：
+//   自包含的 markdown 导出必然产生一串旁证文件（图片、KaTeX 公式 SVG、
+//   Mermaid 图）。让用户只挑一个 .html，浏览器打开后照样看不到图 —— 页
+//   面的相对引用在孤立文件里全部断链。用户真正要的是"一个能整份发给别
+//   人的东西"，那它就必须是文件夹：选个位置，落一个以文档命名的子目录，
+//   index.html 与所有资源都在里面。
+// 因此这里重新走一遍 md_to_html（而不是拷预览目录的 index.html：那份
+// 引用是相对预览目录的，搬走就断），输出目录直接就是用户选的位置。
+void MainWindow::exportHtmlToFile()
+{
+    Tab *tab = activeTab();
+    if (!tab || !tab->doc || !tab->doc->buffer()) return;
+
+    std::string md = activeDocumentText();
+    if (md.empty()) return;
+
+    std::string srcPath = tab->doc->filePath();
+
+    // 输出子目录名 = 文档名去扩展名；未保存的新文档用 pecia。
+    std::string folderName = "pecia";
+    if (srcPath[0]) {
+        const char *name = fl_filename_name(srcPath.c_str());
+        const char *dot = fl_filename_ext(name);
+        size_t stem = dot && dot[0] ? (size_t)(dot - name) : strlen(name);
+        if (stem > 0) folderName.assign(name, stem);
+    }
+    // 文件系统不允许这些字符出现在目录名里（源文件名合法时一般不会命中，
+    // 但文档名可能来自网络下载/临时文件，仍要兜住）。
+    for (char &c : folderName)
+        if (c == '\\' || c == '/' || c == ':' || c == '*' || c == '?' ||
+            c == '"' || c == '<' || c == '>' || c == '|') c = '_';
+    while (!folderName.empty() && (folderName.back() == ' ' || folderName.back() == '.'))
+        folderName.pop_back();
+    if (folderName.empty()) folderName = "pecia";
+
+    // 起始目录：源文档所在目录优先，否则当前工作目录。
+    std::string startDir = ".";
+    if (srcPath[0]) {
+        const char *slash = strrchr(srcPath.c_str(), '\\');
+        if (slash) startDir.assign(srcPath.c_str(), slash - srcPath.c_str());
+    }
+    WCHAR startDirW[FL_PATH_MAX];
+    MultiByteToWideChar(CP_UTF8, 0, startDir.c_str(), -1, startDirW, FL_PATH_MAX);
+    WCHAR folderNameW[FL_PATH_MAX];
+    MultiByteToWideChar(CP_UTF8, 0, folderName.c_str(), -1, folderNameW, FL_PATH_MAX);
+
+    // 文件夹选择器：让用户选"放在哪"，子目录名由我们定。
+    IFileOpenDialog *pfd = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
+                                   IID_IFileOpenDialog, (void**)&pfd);
+    if (FAILED(hr) || !pfd) return;
+
+    FILEOPENDIALOGOPTIONS opts = 0;
+    pfd->GetOptions(&opts);
+    pfd->SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
+    pfd->SetTitle(widen(I18n::get("export.folder.title")).c_str());
+    pfd->SetFileName(folderNameW);
+
+    IShellItem *psiFolder = nullptr;
+    if (SUCCEEDED(SHCreateItemFromParsingName(startDirW, nullptr, IID_IShellItem,
+                                              (void**)&psiFolder)) && psiFolder) {
+        pfd->SetFolder(psiFolder);
+        psiFolder->Release();
+    }
+
+    hr = pfd->Show(nullptr);
+    if (FAILED(hr)) { pfd->Release(); return; }
+
+    IShellItem *psiResult = nullptr;
+    hr = pfd->GetResult(&psiResult);
+    if (FAILED(hr) || !psiResult) { pfd->Release(); return; }
+
+    PWSTR pszPath = nullptr;
+    bool done = false;
+    bool remoteFailed = false;
+    int remoteTotal = 0;
+    char chosen[FL_PATH_MAX] = { 0 };
+    if (SUCCEEDED(psiResult->GetDisplayName(SIGDN_FILESYSPATH, &pszPath)) && pszPath) {
+        WideCharToMultiByte(CP_UTF8, 0, pszPath, -1, chosen, FL_PATH_MAX, nullptr, nullptr);
+        CoTaskMemFree(pszPath);
+
+        // 选中的目录 + 文档名 = 最终输出目录。不覆盖已存在的同名目录里的
+        // 旧内容：整个目录本来就是这次导出的产物，重复导出直接覆盖同名
+        // 文件即可（CopyFileW / fopen "wb" 语义），残留的旧图片无害。
+        std::string outDir(chosen);
+        if (!outDir.empty() && outDir.back() != '\\' && outDir.back() != '/') outDir += '\\';
+        outDir += folderName;
+        CreateDirectoryW(widen(outDir).c_str(), NULL);
+
+        // 与"在浏览器中打开"共用 writeStandaloneHtml()：两条路径产出的目录
+        // 结构、文件命名、缺图判定必须逐字一致，否则又会各坏各的。
+        int left = 0;
+        if (writeStandaloneHtml(md, outDir, srcPath, editorFontName(m_cfg),
+                                &left)) {
+            remoteTotal = left;
+            remoteFailed = (remoteTotal > 0);
+            done = true;
+        }
+    }
+    psiResult->Release();
+    pfd->Release();
+
+    if (done) {
+        std::string indexPath = std::string(chosen) + "\\" + folderName + "\\index.html";
+        if (remoteFailed) {
+            // 有图没抓到：明说，别让用户对着缺图的页面猜。用 i18n 的失败
+            // 提示 + 数量，路径放在同一条消息里。
+            char msg[1024];
+            std::snprintf(msg, sizeof(msg), "%s\n\n%d",
+                          I18n::get("export.partial"), remoteTotal);
+            MessageBoxW(NULL, widen(msg).c_str(), widen(indexPath).c_str(),
+                        MB_OK | MB_ICONWARNING);
+        } else {
+            // 全部自包含：只报路径。"导出"的语义是存文件，不代劳打开浏览器。
+            MessageBoxW(NULL, widen(indexPath).c_str(), L"Pecia",
+                        MB_OK | MB_ICONINFORMATION);
+        }
+    }
+}
+
+void MainWindow::cbExportHtml(Fl_Widget *w, void *data)
+{
+    auto *win = static_cast<MainWindow *>(data ? data : w->window());
+    if (win) win->exportHtmlToFile();
 }
 
 // 在 layoutTabs() 末尾调用：按预览模式排布两栏（编辑区 | 分隔条 | 预览）。
@@ -820,7 +1018,7 @@ void MainWindow::layoutPreviewPanes(int contentTop, int tabsH)
 void MainWindow::cbPreviewRefreshBtn(Fl_Widget * /*w*/, void *data)
 {
     auto *win = static_cast<MainWindow *>(data);
-    if (win) win->refreshPreview();
+    if (win) win->refreshPreview(true);   // 手动刷新：无条件重渲染
 }
 
 // 工具条：目录按钮 → 弹出目录面板（按钮下方，限高+滚动条）
