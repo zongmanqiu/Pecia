@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ Baixar a versão mais recente (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)**
+**[⬇️ Baixar a versão mais recente (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [Repositório Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Espelho GitHub](https://github.com/zongmanqiu/Pecia) | [Demo no Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 Editor de texto leve para Windows baseado em C++17 + FLTK. Suporte a múltiplas abas, abertura instantânea de arquivos grandes, suporte a múltiplas codificações, extensão por scripts Lua.
 

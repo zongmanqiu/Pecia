@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ Unduh Versi Terbaru (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)**
+**[⬇️ Unduh Versi Terbaru (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [Repo Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Mirror GitHub](https://github.com/zongmanqiu/Pecia) | [Demo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 Editor teks ringan untuk Windows berbasis C++17 + FLTK. Mendukung multi-tab, membuka file besar secara instan, multi-encoding, dan ekstensi skrip Lua.
 

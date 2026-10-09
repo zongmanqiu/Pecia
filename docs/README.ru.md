@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ Скачать последнюю версию (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)**
+**[⬇️ Скачать последнюю версию (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [Репозиторий Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Зеркало GitHub](https://github.com/zongmanqiu/Pecia) | [Демо на Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 Легковесный текстовый редактор для Windows на базе C++17 + FLTK. Много вкладок, мгновенное открытие больших файлов, поддержка множества кодировок, расширение скриптами на Lua.
 

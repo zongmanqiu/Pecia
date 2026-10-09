@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ تنزيل أحدث إصدار (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)**
+**[⬇️ تنزيل أحدث إصدار (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [مستودع Gitee](https://gitee.com/qiuzongman/pecia) ｜ [مرآة GitHub](https://github.com/zongmanqiu/Pecia) | [عرض فيديو Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 محرر نصوص خفيف الوزن للنظام التشغيلي Windows مبني على C++17 + FLTK. دعم علامات تبويب متعددة، فتح الملفات الكبيرة فوراً، ترميزات متعددة، وامتدادات سكريبت Lua.
 

@@ -2,7 +2,7 @@
 
 # Pecia — Editor de texto minimalista
 
-**[⬇️ Descargar la última versión (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)**
+**[⬇️ Descargar la última versión (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [Repo de Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Espejo de GitHub](https://github.com/zongmanqiu/Pecia) | [Demo en Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 Un editor de texto ligero para Windows basado en C++17 + FLTK. Con pestañas múltiples, apertura instantánea de archivos grandes, soporte multi-codificación y extensiones mediante scripts Lua.
 

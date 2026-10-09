@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ नवीनतम संस्करण डाउनलोड करें (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)**
+**[⬇️ नवीनतम संस्करण डाउनलोड करें (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [Gitee रिपॉज़िटरी](https://gitee.com/qiuzongman/pecia) ｜ [GitHub मिरर](https://github.com/zongmanqiu/Pecia) | [Bilibili डेमो](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 C++17 + FLTK आधारित Windows हल्का पाठ संपादक। मल्टी-टैब, बड़ी फ़ाइलें तुरंत खुलती हैं, बहु-एन्कोडिंग समर्थन, Lua स्क्रिप्ट एक्सटेंशन।
 

@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ 최신 버전 다운로드 (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)**
+**[⬇️ 최신 버전 다운로드 (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [Gitee 저장소](https://gitee.com/qiuzongman/pecia) ｜ [GitHub 미러](https://github.com/zongmanqiu/Pecia) | [Bilibili 데모](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 C++17 + FLTK 기반 Windows 경량 텍스트 편집기. 멀티 탭, 대용량 파일 즉시 열기, 다중 인코딩 지원, Lua 스크립트 확장.
 
