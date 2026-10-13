@@ -34,6 +34,11 @@
 - Lua脚本
   - ![7.Lua脚本](./docs/README/7.Lua脚本.gif)
 
+* 测试gitee图片
+测试
+![aaa](./image/ai_bot.png)
+
+
 ## 快速开始
 
 ### 环境要求(基础环境,除源码和第三方库之外)
