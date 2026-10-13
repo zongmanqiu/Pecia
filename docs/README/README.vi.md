@@ -1,14 +1,34 @@
-> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — Trình soạn thảo văn bản tối giản
 
 ---
 
-**[⬇️ Tải phiên bản mới nhất (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [Kho Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Mirror GitHub](https://github.com/zongmanqiu/Pecia) | [Demo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ Tải phiên bản mới nhất (1.0.6) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ **[⬇️ Tải phiên bản mới nhất (1.0.6) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ [Kho Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Mirror GitHub](https://github.com/zongmanqiu/Pecia) | [Demo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 Trình soạn thảo văn bản nhẹ cho Windows, dựa trên C++17 + FLTK. Hỗ trợ nhiều tab, mở file lớn tức thì, đa mã hóa, mở rộng bằng script Lua.
 
 > **Định vị nền tảng**: Chỉ hỗ trợ **Windows x64 (64-bit)**. Không cung cấp phiên bản 32-bit và không còn duy trì đa nền tảng (Linux/mac/32-bit). Script build có sẵn kiểm tra 64-bit (xem đầu CMakeLists), nếu thiết lập nhầm 32-bit sẽ báo lỗi ngay.
+
+## Giao diện phần mềm
+
+- Xem trước Markdown
+  - ![0.MD预览](0.Makrodnw预览.png)
+- Nhiều tab
+  - ![2.多标签页](1.多标签页.png)
+- Thanh trạng thái tối giản
+  - ![2.极简状态](2.极简状态.png)
+- Tùy chọn
+  - ![3.选项](3.选项.png)
+- Cài đặt phím tắt
+  - ![4.快捷键](4.快捷键.png)
+- Trò chuyện AI
+  - ![5.AI对话](5.AI对话.png)
+- Bảng điều khiển Lua
+  - ![6.Lua控制台](6.Lua控制台.gif)
+- Kịch bản Lua
+  - ![7.Lua脚本](7.Lua脚本.gif)
+
 
 ## Bắt đầu nhanh
 
@@ -213,6 +233,6 @@ test  có thể phụ thuộc bất kỳ tầng nào, nhưng chỉ test logic th
 
 ## Giấy phép
 
-[GNU AGPL-3.0](../LICENSE).
+[GNU AGPL-3.0](../../LICENSE).
 
-Giấy phép, mô tả thay đổi (patch) và nghĩa vụ phân phối của các thành phần bên thứ ba (FLTK/Lua/PCRE2/md4c/litehtml/stb và các crate Rust) xem tại [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
+Giấy phép, mô tả thay đổi (patch) và nghĩa vụ phân phối của các thành phần bên thứ ba (FLTK/Lua/PCRE2/md4c/litehtml/stb và các crate Rust) xem tại [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md).

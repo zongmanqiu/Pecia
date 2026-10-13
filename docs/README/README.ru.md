@@ -1,14 +1,34 @@
-> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — минималистичный текстовый редактор
 
 ---
 
-**[⬇️ Скачать последнюю версию (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [Репозиторий Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Зеркало GitHub](https://github.com/zongmanqiu/Pecia) | [Демо на Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ Скачать последнюю версию (1.0.6) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ **[⬇️ Скачать последнюю версию (1.0.6) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ [Репозиторий Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Зеркало GitHub](https://github.com/zongmanqiu/Pecia) | [Демо на Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 Легковесный текстовый редактор для Windows на базе C++17 + FLTK. Много вкладок, мгновенное открытие больших файлов, поддержка множества кодировок, расширение скриптами на Lua.
 
 > **Платформа**: поддерживается только **Windows x64 (64 бит)**. 32-битная версия не предоставляется, кроссплатформенная поддержка (Linux/macOS/32 бита) более не ведётся. Скрипты сборки включают проверку на 64-битность (см. начало CMakeLists); при ошибочной конфигурации 32 бит будет выдана ошибка.
+
+## Интерфейс программы
+
+- Предпросмотр Markdown
+  - ![0.MD预览](0.Makrodnw预览.png)
+- Несколько вкладок
+  - ![2.多标签页](1.多标签页.png)
+- Минимальная строка состояния
+  - ![2.极简状态](2.极简状态.png)
+- Настройки
+  - ![3.选项](3.选项.png)
+- Настройки горячих клавиш
+  - ![4.快捷键](4.快捷键.png)
+- AI-чат
+  - ![5.AI对话](5.AI对话.png)
+- Консоль Lua
+  - ![6.Lua控制台](6.Lua控制台.gif)
+- Сценарии Lua
+  - ![7.Lua脚本](7.Lua脚本.gif)
+
 
 ## Быстрый старт
 
@@ -212,6 +232,6 @@ test  может зависеть от любого уровня, но тест�
 
 ## Лицензия
 
-[GNU AGPL-3.0](../LICENSE).
+[GNU AGPL-3.0](../../LICENSE).
 
-Лицензии, описание модификаций (патчей) и обязательства по распространению сторонних компонентов (FLTK/Lua/PCRE2/md4c/litehtml/stb и Rust-крейтов) приведены в [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
+Лицензии, описание модификаций (патчей) и обязательства по распространению сторонних компонентов (FLTK/Lua/PCRE2/md4c/litehtml/stb и Rust-крейтов) приведены в [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md).

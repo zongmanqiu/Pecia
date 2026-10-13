@@ -64,4 +64,23 @@
   撤销/重做时整组一起回放，避免历史被海量细碎事件污染；
 - 暴露 `mUndoGrouping` 供 Pecia 的 buffer 锁定逻辑读取事务状态。
 
-**修改文件：** `src/Fl_Text_Buffer.cxx`、`FL/Fl_Text_Buffer.H`
+**修改文件：** `src/Fl_Text_Display.cxx`、`FL/Fl_Text_Buffer.H`
+
+## Fl_Text_Display.cxx — 垂直滚动量程封顶 (2026-10-05)
+
+`update_v_scrollbar()` 把滚动条量程封顶到 `mTopLineNum`，消除三处独立计算的
+滚动上限不一致导致的「拖到底仍差 1~6 像素」与长文档滑块死区。封顶守卫只在
+真边界（文档末行）生效，中途状态不受影响。
+
+**修改文件：** `src/Fl_Text_Display.cxx`
+
+## Fl_Scrollbar.cxx — 滚动条单一整轨道（去箭头区）(2026-10-13)
+
+上游 `Fl_Scrollbar::handle()` 与 `draw()` 在 `H >= 3*W`（竖向）时把轨道两端各
+抠掉一个 W 像素的箭头区再做命中/绘制。Pecia 的滚动条箭头由自绘主题覆盖
+（不可见、不可用），这 20px 死区导致「可见滑块」与「命中区」错位约 10px
+（滑块在上半部要按下方才抓得住）。现移除两处箭头区裁剪：滚动条 = 一条完整
+轨道，`handle()` 命中、`draw()` 绘制与 Pecia 自绘几何（`scrollbarThumbGeometry`）
+三方对齐；滑块仍可贴到轨道最底。
+
+**修改文件：** `src/Fl_Scrollbar.cxx`

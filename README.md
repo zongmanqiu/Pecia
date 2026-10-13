@@ -1,15 +1,38 @@
 # Pecia — 极简文本编辑器
 
-> **🌐 语言 / Languages**: [中文](README.md) | [English](docs/README.en.md) | [日本語](docs/README.ja.md) | [한국어](docs/README.ko.md) | [Deutsch](docs/README.de.md) | [Français](docs/README.fr.md) | [Español](docs/README.es.md) | [Русский](docs/README.ru.md) | [Português-BR](docs/README.pt-BR.md) | [Italiano](docs/README.it.md) | [繁體中文](docs/README.zh-TW.md) | [العربية](docs/README.ar.md) | [हिन्दी](docs/README.hi.md) | [Indonesia](docs/README.id.md) | [Türkçe](docs/README.tr.md) | [Tiếng Việt](docs/README.vi.md)
+> **🌐** [中文](README.md) | [English](docs/README/README.en.md) | [日本語](docs/README/README.ja.md) | [한국어](docs/README/README.ko.md) | [Deutsch](docs/README/README.de.md) | [Français](docs/README/README.fr.md) | [Español](docs/README/README.es.md) | [Русский](docs/README/README.ru.md) | [Português-BR](docs/README/README.pt-BR.md) | [Italiano](docs/README/README.it.md) | [繁體中文](docs/README/README.zh-TW.md) | [العربية](docs/README/README.ar.md) | [हिन्दी](docs/README/README.hi.md) | [Indonesia](docs/README/README.id.md) | [Türkçe](docs/README/README.tr.md) | [Tiếng Việt](docs/README/README.vi.md)
 
 ---
 
-**[⬇️ 下载最新版 (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [Gitee主仓](https://gitee.com/qiuzongman/pecia) ｜ [GitHub镜像](https://github.com/zongmanqiu/Pecia) | [B站视频演示](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ 下载 1.0.6 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)**
+ ｜ **[⬇️ 下载 1.0.6 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)**
+ ｜ [Gitee主仓](https://gitee.com/qiuzongman/pecia)
+ ｜ [GitHub镜像](https://github.com/zongmanqiu/Pecia)
+ ｜ [B站视频演示](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 基于 C++17 + FLTK 的 Windows 轻量级文本编辑器。多标签、大文件秒开、多编码支持、Lua 脚本扩展。
 
 > **平台定位**:仅支持 **Windows x64(64 位)**。不提供 32 位版本,也不再维护跨平台
 > (Linux/mac/32 位)。构建脚本已内置 64 位校验(见 CMakeLists 顶部),误配 32 位会直接报错。
+
+## 软件界面
+
+- Markdown预览
+  - ![0.MD预览](./docs/README/0.Makrodnw预览.png)
+- 多标签页
+  - ![2.多标签页](./docs/README/1.多标签页.png)
+- 极简状态
+  - ![2.极简状态](./docs/README/2.极简状态.png)
+- 选项设置
+  - ![3.选项](./docs/README/3.选项.png)
+- 快捷键设置
+  - ![4.快捷键](./docs/README/4.快捷键.png)
+- AI对话
+  - ![5.AI对话](./docs/README/5.AI对话.png)
+- Lua控制台
+  - ![6.Lua控制台](./docs/README/6.Lua控制台.gif)
+- Lua脚本
+  - ![7.Lua脚本](./docs/README/7.Lua脚本.gif)
 
 ## 快速开始
 
@@ -104,7 +127,7 @@ main/
 ├── CMakeLists.txt      构建规则(CMake 入口)
 ├── main.cpp            程序入口
 ├── README.md           本文档(含架构总览/技术栈/构建说明)
-├── docs/               其他语言的 README(README.<语言>.md) + 演示文稿 intro.pptx
+├── docs/               文档目录(docs/README/ 下其他语言 README + 界面截图;intro.pptx)
 ├── 目录结构说明.md      目录与模块规范(接手必读)
 ├── 开发指南.md         开发/发版流程与提交前检查清单
 ├── AGENTS.md           工程约定(协作者/AI 规则)

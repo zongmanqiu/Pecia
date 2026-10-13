@@ -1,14 +1,34 @@
-> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 ---
 
 # Pecia — Minimalist Text Editor
 
-**[⬇️ Download Latest (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [Gitee Repo](https://gitee.com/qiuzongman/pecia) ｜ [GitHub Mirror](https://github.com/zongmanqiu/Pecia) | [Bilibili Demo](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ Download Latest (1.0.6) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ **[⬇️ Download Latest (1.0.6) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ [Gitee Repo](https://gitee.com/qiuzongman/pecia) ｜ [GitHub Mirror](https://github.com/zongmanqiu/Pecia) | [Bilibili Demo](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 A lightweight text editor for Windows built with C++17 + FLTK. Multi-tab, instant opening of large files, multiple encoding support, Lua scripting extensions.
 
 > **Platform scope**: Supports **Windows x64 (64-bit) only**. No 32-bit version is provided, and cross-platform support (Linux/macOS/32-bit) is no longer maintained. The build scripts include a built-in 64-bit check (see the top of CMakeLists); attempting to build for 32-bit will produce an error.
+
+## Software Interface
+
+- Markdown preview
+  - ![0.MD预览](0.Makrodnw预览.png)
+- Multi-tab
+  - ![2.多标签页](1.多标签页.png)
+- Minimal status bar
+  - ![2.极简状态](2.极简状态.png)
+- Options
+  - ![3.选项](3.选项.png)
+- Shortcut settings
+  - ![4.快捷键](4.快捷键.png)
+- AI chat
+  - ![5.AI对话](5.AI对话.png)
+- Lua console
+  - ![6.Lua控制台](6.Lua控制台.gif)
+- Lua scripts
+  - ![7.Lua脚本](7.Lua脚本.gif)
+
 
 ## Quick Start
 
@@ -211,6 +231,6 @@ test  can depend on any layer, but only tests pure logic (no GUI dependency)
 
 ## License
 
-[GNU AGPL-3.0](../LICENSE).
+[GNU AGPL-3.0](../../LICENSE).
 
-Licenses, modification (patch) notes, and distribution obligations for third-party components (FLTK/Lua/PCRE2/md4c/litehtml/stb and Rust crates) are listed in [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
+Licenses, modification (patch) notes, and distribution obligations for third-party components (FLTK/Lua/PCRE2/md4c/litehtml/stb and Rust crates) are listed in [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md).

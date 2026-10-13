@@ -1,17 +1,37 @@
-> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — 極簡文字編輯器
 
-> **🌐 語言 / Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 語言 / Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 ---
 
-**[⬇️ 下載最新版 (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [Gitee 主倉](https://gitee.com/qiuzongman/pecia) ｜ [GitHub 鏡像](https://github.com/zongmanqiu/Pecia) | [B 站影片示範](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ 下載最新版 (1.0.6) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ **[⬇️ 下載最新版 (1.0.6) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ [Gitee 主倉](https://gitee.com/qiuzongman/pecia) ｜ [GitHub 鏡像](https://github.com/zongmanqiu/Pecia) | [B 站影片示範](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 基於 C++17 + FLTK 的 Windows 輕量級文字編輯器。多標籤、大檔案秒開、多編碼支援、Lua 腳本擴充。
 
 > **平台定位**：僅支援 **Windows x64（64 位元）**。不提供 32 位元版本，也不再維護跨平台
 >（Linux/mac/32 位元）。建構腳本已內建 64 位元校驗（見 CMakeLists 頂部），誤配 32 位元會直接報錯。
+
+## 軟體介面
+
+- Markdown預覽
+  - ![0.MD预览](0.Makrodnw预览.png)
+- 多標籤頁
+  - ![2.多标签页](1.多标签页.png)
+- 極簡狀態
+  - ![2.极简状态](2.极简状态.png)
+- 選項設定
+  - ![3.选项](3.选项.png)
+- 快捷鍵設定
+  - ![4.快捷键](4.快捷键.png)
+- AI對話
+  - ![5.AI对话](5.AI对话.png)
+- Lua主控台
+  - ![6.Lua控制台](6.Lua控制台.gif)
+- Lua腳本
+  - ![7.Lua脚本](7.Lua脚本.gif)
+
 
 ## 快速開始
 
@@ -227,7 +247,7 @@ test  可依賴任何層，但只測純邏輯（不依賴 GUI）
 
 ## License
 
-[GNU AGPL-3.0](../LICENSE)。
+[GNU AGPL-3.0](../../LICENSE)。
 
 第三方元件（FLTK/Lua/PCRE2/md4c/litehtml/stb 與 Rust crates）的授權條款、
-修改（patch）說明及分發義務見 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)。
+修改（patch）說明及分發義務見 [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md)。

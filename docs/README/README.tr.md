@@ -1,14 +1,34 @@
-> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — Minimalist Metin Düzenleyici
 
 ---
 
-**[⬇️ En son sürümü indir (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [Gitee Deposu](https://gitee.com/qiuzongman/pecia) ｜ [GitHub Aynası](https://github.com/zongmanqiu/Pecia) | [Bilibili Demosu](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ En son sürümü indir (1.0.6) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ **[⬇️ En son sürümü indir (1.0.6) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ [Gitee Deposu](https://gitee.com/qiuzongman/pecia) ｜ [GitHub Aynası](https://github.com/zongmanqiu/Pecia) | [Bilibili Demosu](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 C++17 + FLTK tabanlı Windows için hafif metin düzenleyici. Çoklu sekme, büyük dosyaları anında açma, çoklu kodlama desteği, Lua betik genişletme desteği.
 
 > **Platform hedefi**: Yalnızca **Windows x64 (64-bit)** desteklenmektedir. 32-bit sürüm sağlanmamaktadır ve çapraz platform (Linux/mac/32-bit) artık bakılmamaktadır. Derleme betikleri 64-bit doğrulaması içerir (CMakeLists'in üst kısmına bakın), yanlışlıkla 32-bit ayarlanırsa hata verir.
+
+## Yazılım Arayüzü
+
+- Markdown önizleme
+  - ![0.MD预览](0.Makrodnw预览.png)
+- Çoklu sekme
+  - ![2.多标签页](1.多标签页.png)
+- Minimal durum çubuğu
+  - ![2.极简状态](2.极简状态.png)
+- Seçenekler
+  - ![3.选项](3.选项.png)
+- Kısayol ayarları
+  - ![4.快捷键](4.快捷键.png)
+- AI sohbeti
+  - ![5.AI对话](5.AI对话.png)
+- Lua konsolu
+  - ![6.Lua控制台](6.Lua控制台.gif)
+- Lua betikleri
+  - ![7.Lua脚本](7.Lua脚本.gif)
+
 
 ## Hızlı Başlangıç
 
@@ -212,7 +232,7 @@ test  her katmana bağımlı olabilir, ancak yalnızca saf mantığı test eder 
 
 ## Lisans
 
-[GNU AGPL-3.0](../LICENSE).
+[GNU AGPL-3.0](../../LICENSE).
 
 Üçüncü bileşenlerin (FLTK/Lua/PCRE2/md4c/litehtml/stb ve Rust crate'leri) lisansları,
-değişiklik (yama) açıklamaları ve dağıtım yükümlülükleri için [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md) dosyasına bakın.
+değişiklik (yama) açıklamaları ve dağıtım yükümlülükleri için [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md) dosyasına bakın.

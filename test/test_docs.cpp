@@ -7,7 +7,7 @@
 //   * third-party libs named in README.md exist under .thirdparty/
 //   * every file listed in doc/DOCS_MANIFEST.md exists
 //   * the "main/" top-level tree in 目录结构说明.md and in all 16 READMEs
-//     (root + 15 translations) matches main/'s real top level
+//     (root + 15 translations under docs/README/) matches main/'s real top level
 // Runs from build/ (ctest), so main/ = exeDir/../main.
 #include "test_assert.h"
 
@@ -253,7 +253,7 @@ static void test_manifest_files_exist() {
 
 // ---------------------------------------------------------------------------
 // 7. The "main/ top-level tree" in every shipped README (root README.md +
-//    docs/README.<lang>.md x15) and in 目录结构说明.md == main/'s real top level.
+//    docs/README/README.<lang>.md x15) and in 目录结构说明.md == main/'s real top level.
 // The rule is "list every top-level entry (.git excepted)": that is the only
 // standard that can be checked mechanically. A file/dir added on disk but
 // never registered in a tree (or an entry left behind after a rename) is
@@ -349,7 +349,8 @@ static void test_dir_tree_matches() {
     bad += checkTreeAgainstDisk("README.md", fs::path(g_mainDirW) / "README.md", onDisk);
 
     int localized = 0;
-    for (const auto &ent : fs::directory_iterator(fs::path(g_mainDirW) / "docs")) {
+    // 语言 README 位于 docs/README/ 子目录（与界面截图同目录，图片走相对路径）。
+    for (const auto &ent : fs::directory_iterator(fs::path(g_mainDirW) / "docs" / "README")) {
         std::string fn = ent.path().filename().string();
         if (fn.find("README.") != 0 || fn.compare(fn.size() - 3, 3, ".md") != 0)
             continue;

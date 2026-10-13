@@ -178,6 +178,33 @@ static bool isSafeRelative(const std::string &rel)
     return true;
 }
 
+/* URL 百分号解码（与 container.cpp 的 url_decode 同语义）：
+   md4c-html 对 src 里的非 ASCII 字节输出 %XX，磁盘文件名是解码后的原文。 */
+static std::string url_decode(const std::string& s)
+{
+    if (s.find('%') == std::string::npos) return s;
+    auto hexval = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == '%' && i + 2 < s.size()) {
+            int hi = hexval(s[i + 1]), lo = hexval(s[i + 2]);
+            if (hi >= 0 && lo >= 0) {
+                out += (char)((hi << 4) | lo);
+                i += 2;
+                continue;
+            }
+        }
+        out += s[i];
+    }
+    return out;
+}
+
 static void sanitizeBrowserHtml(std::string& html)
 {
     stripHtmlBlock(html, "script");
@@ -909,13 +936,17 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
             if (srcEnd == std::string::npos) break;
             std::string src = hay.substr(srcPos + 5, srcEnd - srcPos - 5);
             imgPos = srcEnd + 1;
-            // 跳过 URL / 绝对路径 / data: 引用
+            // 跳过 URL / data: 引用（远程不落盘拷贝）
             if (src.find("://") != std::string::npos ||
-                src.find("data:") != std::string::npos ||
-                (!src.empty() && (src[0] == '/' || src[0] == '\\')) ||
-                (src.size() > 2 && src[1] == ':')) {
+                src.find("data:") != std::string::npos) {
                 continue;
             }
+            // md4c-html 对 src 里的中文/空格等输出 %XX（NEED_URL_ESC），
+            // 磁盘文件名是解码后的原文：先解码再判绝对路径/拷贝。
+            src = url_decode(src);
+            // 跳过绝对路径引用（/ 或盘符）
+            if (!src.empty() && (src[0] == '/' || src[0] == '\\')) continue;
+            if (src.size() > 2 && src[1] == ':') continue;
             std::string rel = src;
             if (!isSafeRelative(rel)) continue;   // ".." escape: skip
             for (auto& c : rel) if (c == '/') c = '\\';

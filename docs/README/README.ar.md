@@ -1,15 +1,35 @@
-> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — محرر نصوص بسيط للغاية
 
 ---
 
-**[⬇️ تنزيل أحدث إصدار (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [مستودع Gitee](https://gitee.com/qiuzongman/pecia) ｜ [مرآة GitHub](https://github.com/zongmanqiu/Pecia) | [عرض فيديو Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ تنزيل أحدث إصدار (1.0.6) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ **[⬇️ تنزيل أحدث إصدار (1.0.6) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ [مستودع Gitee](https://gitee.com/qiuzongman/pecia) ｜ [مرآة GitHub](https://github.com/zongmanqiu/Pecia) | [عرض فيديو Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 محرر نصوص خفيف الوزن للنظام التشغيلي Windows مبني على C++17 + FLTK. دعم علامات تبويب متعددة، فتح الملفات الكبيرة فوراً، ترميزات متعددة، وامتدادات سكريبت Lua.
 
 > **نظام التشغيل المدعوم**: يدعم فقط **Windows x64 (64 بت)**. لا يوجد نسخة 32 بت، ولا يُooter upkeep عبر المنصات
 > (Linux/Mac/32 بت). تحتوي سكريبتات البناء على فحص 64 بت مدمج (انظر أعلى CMakeLists)، وسيُظهر خطأ عند تكوين 32 بت عن غير قصد.
+
+## واجهة البرنامج
+
+- معاينة Markdown
+  - ![0.MD预览](0.Makrodnw预览.png)
+- تبويبات متعددة
+  - ![2.多标签页](1.多标签页.png)
+- شريط حالة بسيط
+  - ![2.极简状态](2.极简状态.png)
+- الإعدادات
+  - ![3.选项](3.选项.png)
+- إعدادات الاختصارات
+  - ![4.快捷键](4.快捷键.png)
+- محادثة AI
+  - ![5.AI对话](5.AI对话.png)
+- وحدة تحكم Lua
+  - ![6.Lua控制台](6.Lua控制台.gif)
+- نصوص Lua
+  - ![7.Lua脚本](7.Lua脚本.gif)
+
 
 ## البدء السريع
 
@@ -224,7 +244,7 @@ test  يمكن أن تعتمد على أي طبقة، لكنها تختبر ال
 
 ## الترخيص
 
-[GNU AGPL-3.0](../LICENSE).
+[GNU AGPL-3.0](../../LICENSE).
 
 تراخيص المكونات الخارجية (FLTK/Lua/PCRE2/md4c/litehtml/stb و حزم Rust)،
-وصف التعديلات (الرقع) والتزامات التوزيع موثقة في [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
+وصف التعديلات (الرقع) والتزامات التوزيع موثقة في [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md).

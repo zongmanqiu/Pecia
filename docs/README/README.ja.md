@@ -1,15 +1,35 @@
-> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — 極小テキストエディタ
 
 ---
 
-**[⬇️ 最新版をダウンロード (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [Gitee リポジトリ](https://gitee.com/qiuzongman/pecia) ｜ [GitHub ミラー](https://github.com/zongmanqiu/Pecia) | [Bilibili デモ](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ 最新版をダウンロード (1.0.6) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ **[⬇️ 最新版をダウンロード (1.0.6) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ [Gitee リポジトリ](https://gitee.com/qiuzongman/pecia) ｜ [GitHub ミラー](https://github.com/zongmanqiu/Pecia) | [Bilibili デモ](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 C++17 + FLTK ベースの Windows 軽量テキストエディタ。マルチタブ、大ファイルの高速オープン、マルチエンコーディング対応、Lua スクリプト拡張。
 
 > **プラットフォーム**: **Windows x64（64ビット）** のみ対応。32ビット版は提供せず、クロスプラットフォーム（Linux/mac/32ビット）のメンテナンスも行っていません。
 > ビルドスクリプトには64ビットチェックが組み込まれています（CMakeLists の冒頭参照）。誤って32ビットを設定するとエラーになります。
+
+## ソフトウェア画面
+
+- Markdownプレビュー
+  - ![0.MD预览](0.Makrodnw预览.png)
+- マルチタブ
+  - ![2.多标签页](1.多标签页.png)
+- ミニマルステータス
+  - ![2.极简状态](2.极简状态.png)
+- オプション設定
+  - ![3.选项](3.选项.png)
+- ショートカット設定
+  - ![4.快捷键](4.快捷键.png)
+- AIチャット
+  - ![5.AI对话](5.AI对话.png)
+- Luaコンソール
+  - ![6.Lua控制台](6.Lua控制台.gif)
+- Luaスクリプト
+  - ![7.Lua脚本](7.Lua脚本.gif)
+
 
 ## クイックスタート
 
@@ -217,7 +237,7 @@ test  は任意のレイヤーに依存可能だが、純論理のみをテス�
 
 ## ライセンス
 
-[GNU AGPL-3.0](../LICENSE)。
+[GNU AGPL-3.0](../../LICENSE)。
 
 サードパーティコンポーネント（FLTK/Lua/PCRE2/md4c/litehtml/stb および Rust crates）のライセンス、
-修正（パッチ）の説明、および配布義務は [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md) を参照してください。
+修正（パッチ）の説明、および配布義務は [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md) を参照してください。

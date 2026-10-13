@@ -1,12 +1,32 @@
-> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — Éditeur de texte minimaliste
 
-**[⬇️ Télécharger la dernière version (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [Dépôt Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Miroir GitHub](https://github.com/zongmanqiu/Pecia) | [Démo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ Télécharger la dernière version (1.0.6) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ **[⬇️ Télécharger la dernière version (1.0.6) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ [Dépôt Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Miroir GitHub](https://github.com/zongmanqiu/Pecia) | [Démo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 Un éditeur de texte léger pour Windows basé sur C++17 + FLTK. Onglets multiples, ouverture rapide de gros fichiers, support multi-encodage et extensions par scripts Lua.
 
 > **Plateforme** : supporte uniquement **Windows x64 (64 bits)**. Aucune version 32 bits n'est fournie, et le support multiplateforme (Linux/Mac/32 bits) n'est plus assuré. Les scripts de build intègrent une vérification 64 bits (voir CMakeLists en haut) ; une configuration 32 bits provoquera une erreur.
+
+## Interface du logiciel
+
+- Aperçu Markdown
+  - ![0.MD预览](0.Makrodnw预览.png)
+- Onglets multiples
+  - ![2.多标签页](1.多标签页.png)
+- Barre d'état minimale
+  - ![2.极简状态](2.极简状态.png)
+- Options
+  - ![3.选项](3.选项.png)
+- Raccourcis clavier
+  - ![4.快捷键](4.快捷键.png)
+- Chat IA
+  - ![5.AI对话](5.AI对话.png)
+- Console Lua
+  - ![6.Lua控制台](6.Lua控制台.gif)
+- Scripts Lua
+  - ![7.Lua脚本](7.Lua脚本.gif)
+
 
 ## Démarrage rapide
 
@@ -203,6 +223,6 @@ test  peut dépendre de n'importe quelle couche, mais ne teste que la logique pu
 
 ## Licence
 
-[GNU AGPL-3.0](../LICENSE).
+[GNU AGPL-3.0](../../LICENSE).
 
-Les licences, descriptions des patches et obligations de distribution des composants tiers (FLTK/Lua/PCRE2/md4c/litehtml/stb et crates Rust) sont décrites dans [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
+Les licences, descriptions des patches et obligations de distribution des composants tiers (FLTK/Lua/PCRE2/md4c/litehtml/stb et crates Rust) sont décrites dans [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md).

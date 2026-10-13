@@ -1,7 +1,7 @@
 # Pecia 项目开发规则
 
 本文件是 Pecia 仓库的工程约定。开发流程与提交前清单另见 `开发指南.md`，
-发行步骤见 `docs/RELEASE_CHECKLIST.md`。
+发行步骤见 `docs/README/RELEASE_CHECKLIST.md`。
 
 ## 1. 目录职责
 
@@ -81,5 +81,5 @@
 ## 7. 提交 / 发布
 
 - 提交前按 `开发指南.md` 第四节清单逐项检查；发版按
-  `docs/RELEASE_CHECKLIST.md` 执行。
+  `docs/README/RELEASE_CHECKLIST.md` 执行。
 - `git commit` 未获明确许可前不得执行。

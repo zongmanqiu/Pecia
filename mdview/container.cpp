@@ -612,14 +612,47 @@ Fl_Image* MyContainer::load_gif_file(const std::string& file, const std::string&
     return nullptr;
 }
 
+// URL 百分号解码：md4c-html 对 src/href 里所有非 ASCII 字节（中文、空格、
+// 反斜杠等）做 %XX 编码（md4c-html.c: NEED_URL_ESC），而磁盘文件名是解码后的
+// 原文 —— 不解码，_wfopen 永远找不到带中文/空格的本地图片。
+// 只在出现合法 %XX（两位十六进制）时解码；孤立 '%'（如 "100%.png"）原样保留。
+static std::string url_decode(const std::string& s)
+{
+    if (s.find('%') == std::string::npos) return s;
+    auto hexval = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == '%' && i + 2 < s.size()) {
+            int hi = hexval(s[i + 1]), lo = hexval(s[i + 2]);
+            if (hi >= 0 && lo >= 0) {
+                out += (char)((hi << 4) | lo);
+                i += 2;
+                continue;
+            }
+        }
+        out += s[i];
+    }
+    return out;
+}
+
 std::string MyContainer::resolve_image_path(const std::string& url, const std::string& base_url) const
 {
-    // 远程 URL 直接返回
+    // 远程 URL 直接返回（浏览器语义：URL 保持编码形态，下载后按原名落盘）
     if (is_remote_url(url)) return url;
 
+    // 本地路径：先做 URL 百分号解码（md4c-html 对 src 里的中文/空格等
+    // 非 ASCII 字节输出 %XX，磁盘文件名是解码后的原文，见上方 url_decode）。
+    std::string u = url_decode(url);
+
     // 绝对路径直接返回
-    if (!url.empty() && url[0] == '/') return url;
-    if (url.size() > 2 && url[1] == ':') return url; // e.g. C:\...
+    if (!u.empty() && u[0] == '/') return u;
+    if (u.size() > 2 && u[1] == ':') return u; // e.g. C:\...
 
     // 相对路径：base_url + url
     if (!base_url.empty()) {
@@ -627,9 +660,9 @@ std::string MyContainer::resolve_image_path(const std::string& url, const std::s
         std::string base = base_url;
         if (base.back() != '/' && base.back() != '\\')
             base = base.substr(0, base.find_last_of("/\\") + 1);
-        return base + url;
+        return base + u;
     }
-    return url;
+    return u;
 }
 
 // 按 URL 类型分派加载缓存文件：SVG 用 resvg 渲染，GIF 走多帧动画，

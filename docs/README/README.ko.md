@@ -1,14 +1,34 @@
-> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — 극소 텍스트 편집기
 
 ---
 
-**[⬇️ 최신 버전 다운로드 (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [Gitee 저장소](https://gitee.com/qiuzongman/pecia) ｜ [GitHub 미러](https://github.com/zongmanqiu/Pecia) | [Bilibili 데모](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ 최신 버전 다운로드 (1.0.6) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ **[⬇️ 최신 버전 다운로드 (1.0.6) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ [Gitee 저장소](https://gitee.com/qiuzongman/pecia) ｜ [GitHub 미러](https://github.com/zongmanqiu/Pecia) | [Bilibili 데모](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 C++17 + FLTK 기반 Windows 경량 텍스트 편집기. 멀티 탭, 대용량 파일 즉시 열기, 다중 인코딩 지원, Lua 스크립트 확장.
 
 > **플랫폼 목표**: **Windows x64(64비트)**만 지원합니다. 32비트 버전은 제공하지 않으며, 크로스 플랫폼(Linux/mac/32비트) 지원도 더 이상 유지하지 않습니다. 빌드 스크립트에 64비트 검증이 내장되어 있습니다(CMakeLists 상단 참조). 32비트로 잘못 설정하면 즉시 오류가 발생합니다.
+
+## 소프트웨어 화면
+
+- Markdown 미리보기
+  - ![0.MD预览](0.Makrodnw预览.png)
+- 멀티 탭
+  - ![2.多标签页](1.多标签页.png)
+- 미니멀 상태 표시줄
+  - ![2.极简状态](2.极简状态.png)
+- 옵션 설정
+  - ![3.选项](3.选项.png)
+- 단축키 설정
+  - ![4.快捷键](4.快捷键.png)
+- AI 채팅
+  - ![5.AI对话](5.AI对话.png)
+- Lua 콘솔
+  - ![6.Lua控制台](6.Lua控制台.gif)
+- Lua 스크립트
+  - ![7.Lua脚本](7.Lua脚本.gif)
+
 
 ## 빠른 시작
 
@@ -215,7 +235,7 @@ test  모든 계층에 의존 가능하나 순수 로직만 테스트(GUI 의존
 
 ## 라이선스
 
-[GNU AGPL-3.0](../LICENSE).
+[GNU AGPL-3.0](../../LICENSE).
 
 서드파티 구성 요소(FLTK/Lua/PCRE2/md4c/litehtml/stb 및 Rust crate)의 라이선스,
-수정(patch) 설명 및 배포 의무는 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)를 참조하세요.
+수정(patch) 설명 및 배포 의무는 [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md)를 참조하세요.

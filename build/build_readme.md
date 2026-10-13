@@ -274,7 +274,7 @@ build/
 - **分发打包**：`pack.bat` 复制 `exe + lang/ + theme/ + script/ + LICENSE +
   THIRD-PARTY-NOTICES.md + licenses/` 到 `release/<版本>/`，并生成 zip。
 - **完整发行步骤**（版本号同步、质量门禁、gitee release、自动更新验证）
-  见 `docs/RELEASE_CHECKLIST.md`。
+  见 `docs/README/RELEASE_CHECKLIST.md`。
 
 ---
 

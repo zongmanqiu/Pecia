@@ -1,14 +1,34 @@
-> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — अत्यंत सरल पाठ संपादक
 
 ---
 
-**[⬇️ नवीनतम संस्करण डाउनलोड करें (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [Gitee रिपॉज़िटरी](https://gitee.com/qiuzongman/pecia) ｜ [GitHub मिरर](https://github.com/zongmanqiu/Pecia) | [Bilibili डेमो](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ नवीनतम संस्करण डाउनलोड करें (1.0.6) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ **[⬇️ नवीनतम संस्करण डाउनलोड करें (1.0.6) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ [Gitee रिपॉज़िटरी](https://gitee.com/qiuzongman/pecia) ｜ [GitHub मिरर](https://github.com/zongmanqiu/Pecia) | [Bilibili डेमो](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 C++17 + FLTK आधारित Windows हल्का पाठ संपादक। मल्टी-टैब, बड़ी फ़ाइलें तुरंत खुलती हैं, बहु-एन्कोडिंग समर्थन, Lua स्क्रिप्ट एक्सटेंशन।
 
 > **प्लेटफ़ॉर्म स्थिति**: केवल **Windows x64 (64-बिट)** समर्थित। 32-बिट संस्करण उपलब्ध नहीं है, और क्रॉस-प्लेटफ़ॉर्म (Linux/Mac/32-बिट) रखरखाव नहीं किया जाता। बिल्ड स्क्रिप्ट में 64-बिट जाँच अंतर्निहित है (CMakeLists के शीर्ष पर देखें), 32-बिट गलती से कॉन्फ़िगर करने पर सीधे त्रुटि आएगी।
+
+## सॉफ़्टवेयर इंटरफ़ेस
+
+- Markdown पूर्वावलोकन
+  - ![0.MD预览](0.Makrodnw预览.png)
+- मल्टी-टैब
+  - ![2.多标签页](1.多标签页.png)
+- न्यूनतम स्थिति पट्टी
+  - ![2.极简状态](2.极简状态.png)
+- विकल्प
+  - ![3.选项](3.选项.png)
+- शॉर्टकट सेटिंग्स
+  - ![4.快捷键](4.快捷键.png)
+- AI चैट
+  - ![5.AI对话](5.AI对话.png)
+- Lua कंसोल
+  - ![6.Lua控制台](6.Lua控制台.gif)
+- Lua स्क्रिप्ट
+  - ![7.Lua脚本](7.Lua脚本.gif)
+
 
 ## त्वरित आरंभ
 
@@ -220,7 +240,7 @@ test  किसी भी परत पर निर्भर हो सकत�
 
 ## लाइसेंस
 
-[GNU AGPL-3.0](../LICENSE)।
+[GNU AGPL-3.0](../../LICENSE)।
 
 तृतीय-पक्ष घटक (FLTK/Lua/PCRE2/md4c/litehtml/stb और Rust crates) के लाइसेंस,
-संशोधन (पैच) विवरण और वितरण दायित्व [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md) में देखें।
+संशोधन (पैच) विवरण और वितरण दायित्व [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md) में देखें।

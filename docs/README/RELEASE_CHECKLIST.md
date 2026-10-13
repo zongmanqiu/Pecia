@@ -12,7 +12,7 @@
 |---|---|---|
 | `main/CMakeLists.txt` 第 2 行 | `project(Pecia VERSION x.y.z ...)` | **唯一权威来源**。`PECIA_VERSION` 宏由此注入（见同文件 `target_compile_definitions`），关于页与更新检查自动跟随 |
 | `main/build/pack.bat` 第 44 行 | `set "VERSION=x.y.z"` | 仅是 CMake 解析失败时的**回退值**，必须与上面同步 |
-| `main/README.md` + `main/docs/README.<lang>.md` ×15 | 下载链接与版本表述：`releases/download/<ver>/Pecia_x64_<ver>.zip` | 16 份文件**必须同步**（根与 docs 内各 1 处下载行） |
+| `main/README.md` + `main/docs/README/README.<lang>.md` ×15 | 下载链接与版本表述：`releases/download/<ver>/Pecia_x64_<ver>.zip`（Gitee + GitHub 各一条） | 16 份文件**必须同步**（根与 docs/README 内各 2 处下载行） |
 | `main/example/ex1.markdown/ex1.md` | 版本表 `Pecia \| x.y.z` | 示例文档中的版本引用 |
 | `main/HISTORY.md` | 在文件**顶部**追加新版本小节（日期 + 新增/修复/变更） | **增量原则：只追加，旧内容一律保持原样**，不修改不删除 |
 

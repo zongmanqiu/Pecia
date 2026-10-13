@@ -1,14 +1,34 @@
-> **🌐 Languages**: [中文](../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 # Pecia — Editor Teks yang Sangat Sederhana
 
 ---
 
-**[⬇️ Unduh Versi Terbaru (1.0.5)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.5/Pecia_x64_1.0.5.zip)** ｜ [Repo Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Mirror GitHub](https://github.com/zongmanqiu/Pecia) | [Demo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ Unduh Versi Terbaru (1.0.6) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ **[⬇️ Unduh Versi Terbaru (1.0.6) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.0.6/Pecia_x64_1.0.6.zip)** ｜ [Repo Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Mirror GitHub](https://github.com/zongmanqiu/Pecia) | [Demo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 Editor teks ringan untuk Windows berbasis C++17 + FLTK. Mendukung multi-tab, membuka file besar secara instan, multi-encoding, dan ekstensi skrip Lua.
 
 > **Dukungan Platform**: Hanya mendukung **Windows x64 (64-bit)**. Tidak menyediakan versi 32-bit, dan tidak lagi memelihara lintas platform (Linux/Mac/32-bit). Script build sudah memiliki pengecekan 64-bit bawaan (lihat bagian atas CMakeLists), jika salah mengatur 32-bit akan langsung error.
+
+## Antarmuka Perangkat Lunak
+
+- Pratinjau Markdown
+  - ![0.MD预览](0.Makrodnw预览.png)
+- Multi-tab
+  - ![2.多标签页](1.多标签页.png)
+- Bilah status minimal
+  - ![2.极简状态](2.极简状态.png)
+- Opsi
+  - ![3.选项](3.选项.png)
+- Pengaturan pintasan
+  - ![4.快捷键](4.快捷键.png)
+- Obrolan AI
+  - ![5.AI对话](5.AI对话.png)
+- Konsol Lua
+  - ![6.Lua控制台](6.Lua控制台.gif)
+- Skrip Lua
+  - ![7.Lua脚本](7.Lua脚本.gif)
+
 
 ## Memulai Cepat
 
@@ -220,7 +240,7 @@ test  bisa bergantung pada lapisan mana pun, tetapi hanya menguji logika murni (
 
 ## Lisensi
 
-[GNU AGPL-3.0](../LICENSE)。
+[GNU AGPL-3.0](../../LICENSE)。
 
 Lisensi komponen pihak ketiga (FLTK/Lua/PCRE2/md4c/litehtml/stb dan crate Rust),
-deskripsi modifikasi (patch), dan kewajiban distribusi terdapat di [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)。
+deskripsi modifikasi (patch), dan kewajiban distribusi terdapat di [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md)。

@@ -48,19 +48,28 @@ inline void styleToolScrollbar(Fl_Scrollbar *sb, uchar type,
 
 // Thumb geometry for a custom-drawn scrollbar.
 //
-// ★ It MUST match Fl_Slider::handle()'s hit test exactly, otherwise what is
-//   drawn and what can be grabbed are two different rectangles and the user
-//   sees "the thumb won't reach the bottom".
+// ★ It MUST match the hit test exactly, otherwise what is drawn and what can
+//   be grabbed are two different rectangles (seen as "must press under the
+//   slider to drag it" when the thumb is in the upper half).
 //
-// Authoritative FLTK formulas (Fl_Slider.cxx:256-259 and :130-140):
+// Authoritative FLTK formulas (Fl_Slider.cxx:130-140 draw / :256-259 handle):
 //     S  = int(slider_size * L + 0.5)      thumb length (L = track length)
 //     T  = (horizontal ? H : W)/2 + 1       minimum thumb length
 //     if (S < T) S = T;
 //     xx = int(val * (L - S) + 0.5)         thumb origin
-// Fl_Scrollbar::handle() uses that same S to decide whether a press landed on
-// the thumb (Fl_Scrollbar.cxx:89-99). A press inside keeps `offcenter`, so
-// dragging to the bottom clamps to L-S and reaches maximum; a press outside
-// gets `offcenter` clamped to S, and then the bottom is short by (S-1) px.
+//
+// ★ PATCH interplay: upstream Fl_Scrollbar carves an arrow-sized strip
+//   (crossSize px per end) off the track for hit-test AND drawing when
+//   trackLen >= 3*crossSize. That desynchronized draw from hit by crossSize
+//   pixels (the reported off-by-10px grab offset). Pecia patches
+//   Fl_Scrollbar.cxx (patches/fltk-1.4.5/) to remove the arrow zones
+//   entirely -- custom scrollbars paint the full rect with no arrows -- so
+//   the full-track formulas below are again authoritative for BOTH sides.
+//   If you ever revert the FLTK patch, this function must carve the same
+//   arrow strips.
+//
+// A press inside keeps `offcenter`, so dragging to the bottom clamps to
+// L-S and reaches maximum; a press outside gets `offcenter` clamped to S.
 //
 // History: this used `max(int(L*slider_size), 20)`. That 20px floor made the
 // drawn thumb LARGER than FLTK's hit area (which shrinks to T=6px for long
