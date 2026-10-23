@@ -150,7 +150,7 @@ FindReplace::FindReplace(int x, int y, int w, int h)
                                 20, FIELD_H, "X");
     m_btnClose->labelsize(11);
     m_btnClose->callback(cbClose, this);
-    m_btnClose->tooltip("Close find bar (Esc)");
+    m_btnClose->tooltip(I18n::get("find.close"));
 
     // Buttons sized to their label text + padding; checkboxes sized to
     // checkbox glyph (~14px) + label text + padding. All left-aligned.

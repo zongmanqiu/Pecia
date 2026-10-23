@@ -14,6 +14,7 @@
 #include "test_assert.h"
 #include "mdview/image_export.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -255,6 +256,52 @@ static void test_non_remote_sources_untouched()
     fs::remove_all(g_build);
 }
 
+// Persistent preview fetch cache: a completed download is published into
+// <exe>/temp/remote-cache and materialized into the asset dir under the normal
+// readable name. A fresh entry can be reused without another download; an
+// expired entry must not be served.
+static void test_remote_byte_cache()
+{
+    const std::string url = "https://md-export-test.invalid/byte-cache.png";
+    make_build_dir();
+
+    const fs::path src = g_build / "download.tmp";
+    { std::ofstream f(src, std::ios::binary); f << "CACHE-BYTES"; }
+
+    const fs::path cache = fs::path(remote_image_cache_file(url));
+    const fs::path dest = g_build / remote_image_file_name(url);
+    std::error_code ec;
+    fs::remove(cache, ec);
+    fs::remove(dest, ec);
+
+    CHECK(!cache.empty());
+    CHECK(commit_remote_image_cache(url, src.string(), dest.string()));
+    CHECK(fs::exists(dest));
+    CHECK(fs::file_size(dest) == 11);
+    CHECK(!fs::exists(src));       // commit consumes the downloaded file
+    CHECK(fs::exists(cache));
+
+    const fs::path dest2 = g_build / "byte-cache-second.png";
+    fs::remove(dest2, ec);
+    CHECK(copy_remote_image_from_cache(url, dest2.string(),
+                                       kRemoteImageCacheTtlSeconds));
+    CHECK(fs::exists(dest2));
+    CHECK(fs::file_size(dest2) == 11);
+
+    // Two hours old with a 60 s TTL: must be treated as absent.
+    fs::last_write_time(cache, fs::file_time_type::clock::now() - std::chrono::hours(2), ec);
+    const fs::path dest3 = g_build / "byte-cache-expired.png";
+    fs::remove(dest3, ec);
+    CHECK(!copy_remote_image_from_cache(url, dest3.string(), 60));
+    CHECK(!fs::exists(dest3));
+
+    fs::remove(dest, ec);
+    fs::remove(dest2, ec);
+    fs::remove(dest3, ec);
+    fs::remove(cache, ec);
+    fs::remove_all(g_build);
+}
+
 // The export dialog reports how many remote src survived localization, so the
 // user learns about missing pictures instead of opening a page with holes.
 // Counter semantics must match what localize_remote_images actually left
@@ -292,6 +339,7 @@ int main()
     test_unknown_extension_keeps_url();
     test_repeated_image_rewritten();
     test_non_remote_sources_untouched();
+    test_remote_byte_cache();
     test_count_remote_image_srcs();
     int fails = test::failCount();
     std::fprintf(stderr, "%d checks, %d failures\n", test::checkCount(), fails);

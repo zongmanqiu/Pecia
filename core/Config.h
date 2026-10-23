@@ -122,6 +122,26 @@ Config();
     bool getAlwaysOnTop() const;
     void setAlwaysOnTop(bool on);
 
+    // Rounded window corners (all app windows; DWM on Win11 with the theme
+    // border colour, region + hard-drawn border on Win10/8).
+    bool getRoundedCorners() const;
+    void setRoundedCorners(bool on);
+
+    // View > Window Shadow - the soft outer gradient drawn by a layered
+    // companion window (see ui/WindowShadow.h). One switch for every Pecia
+    // window; default on. Independent of the corner setting: it follows the
+    // corner radius, but square windows get the glow too.
+    bool getWindowShadow() const;
+    void setWindowShadow(bool on);
+
+    // 左侧视图面板（文件树 / 大纲）开关，跨会话记住。
+    bool getSidePanel() const;
+    void setSidePanel(bool on);
+
+    // 左侧视图面板宽度（px），拖动分隔条后写入。0 = 未设置（按窗口比例取默认）。
+    int  getSidePanelWidth() const;
+    void setSidePanelWidth(int px);
+
     // Long line marker: column at which a vertical guide line is drawn.
     // 0 (default) = off; >0 = draw at that column.
     int  getLongLineMarker() const;

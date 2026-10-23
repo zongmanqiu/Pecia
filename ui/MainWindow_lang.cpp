@@ -12,6 +12,7 @@
 #include "ui/Layout.h"
 #include "ui/GoTo.h"
 #include "ui/FindReplace.h"
+#include "ui/SidePanel.h"
 #include <FL/Fl_Menu_Item.H>
 #include <FL/Fl_Menu_Bar.H>
 #include <FL/fl_draw.H>
@@ -57,6 +58,13 @@ void MainWindow::s_applyLangDeferred(void *data) {
     // immediately - without this, only the radio check mark moves and
     // the labels stay in the previous language.
     self->applyLanguageToMenu();
+    // The dynamic View > Theme submenu (FL_SUBMENU_POINTER) is invisible to
+    // applyLanguageToMenu(); its labels come from each theme file's name.<lang>.
+    self->refreshThemeMenuLabels();
+    // The side panel's synthetic rows ("no file open" / "empty folder" /
+    // "no headings") are rebuilt with the new I18n table; the tab labels are
+    // drawn live, but row labels were cached until the next rescan.
+    if (self->m_sidePanel) self->m_sidePanel->refreshLanguage();
     self->updateStatusBar();
     // Refresh the find/replace bar labels as well.
     if (self->m_findBar) self->m_findBar->refreshLabels();

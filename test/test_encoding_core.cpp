@@ -6,8 +6,11 @@
 #include "test_assert.h"
 #include "core/EncodingCore.h"
 
+#include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // isValidUtf8
@@ -99,13 +102,37 @@ static void test_detect_plain_utf8() {
 }
 
 static void test_detect_ansi_fallback() {
-    // 0xCE 0xC4 0xBC 0xFE is genuine GBK ("文...") - the new detector
-    // now identifies it as GBK instead of falling back to ANSI.
+    // Non-UTF-8, non-BOM bytes fall back to the system ANSI codepage, just
+    // like Notepad. (GBK bytes are still decoded correctly on Chinese
+    // Windows because ANSI == CP936 there; they are not a separate format.)
     const unsigned char gbk[] = {0xCE, 0xC4, 0xBC, 0xFE};
-    CHECK(detectEncoding(gbk, 4) == Encoding::GBK);
-    // A single high byte cannot be classified - falls back to ANSI.
+    CHECK(detectEncoding(gbk, 4) == Encoding::ANSI);
     const unsigned char lone[] = {0xA1};
     CHECK(detectEncoding(lone, 1) == Encoding::ANSI);
+}
+
+// GB18030 is identified only by its 4-byte sequences (0x81-0xFE, 0x30-0x39,
+// 0x81-0xFE, 0x30-0x39); 2-byte-only content is indistinguishable from ANSI
+// and is handled by the system codepage on Chinese Windows, like Notepad.
+static void test_detect_gb18030_4byte() {
+    const unsigned char seq[] = {0x81, 0x30, 0x81, 0x30};   // U+0080
+    Encoding expected = isEncodingAvailable(Encoding::GB18030)
+                            ? Encoding::GB18030 : Encoding::ANSI;
+    CHECK(detectEncoding(seq, 4) == expected);
+}
+
+static void test_available_encodings() {
+    std::vector<Encoding> list = availableEncodings();
+    // Base five are always present.
+    CHECK(list.size() >= 5);
+    CHECK(list[0] == Encoding::ANSI);
+    CHECK(std::find(list.begin(), list.end(), Encoding::UTF8) != list.end());
+    CHECK(std::find(list.begin(), list.end(), Encoding::UTF8_BOM) != list.end());
+    CHECK(std::find(list.begin(), list.end(), Encoding::UTF16_LE) != list.end());
+    CHECK(std::find(list.begin(), list.end(), Encoding::UTF16_BE) != list.end());
+    // GB18030 appears exactly when the code page probe says it is usable.
+    bool hasGb = std::find(list.begin(), list.end(), Encoding::GB18030) != list.end();
+    CHECK_EQ((int)hasGb, (int)isEncodingAvailable(Encoding::GB18030));
 }
 
 // A valid UTF-8 file whose sample buffer cuts a multi-byte character in
@@ -123,71 +150,38 @@ static void test_detect_truncated_utf8_prefix() {
     const unsigned char cut2[] = {'a', 0xE6, 0xA8};
     CHECK(detectEncoding(cut2, 3) == Encoding::UTF8);
     // A genuinely invalid sequence (bad continuation byte) must not be
-    // accepted as UTF-8. 0x41 is not a continuation byte; the bytes fall
-    // through to the code-page classifier (GBK accepts E6 41).
+    // accepted as UTF-8; it falls through to ANSI.
     const unsigned char bad[] = {'a', 0xE6, 0x41};
-    CHECK(detectEncoding(bad, 3) != Encoding::UTF8);
+    CHECK(detectEncoding(bad, 3) == Encoding::ANSI);
 }
 
 // ---------------------------------------------------------------------------
-// BIG5 / Shift-JIS / EUC-KR detection and conversion
+// GB18030 conversion (only when the code page is available)
 // ---------------------------------------------------------------------------
-
-static void test_detect_big5() {
-    // "中文" in BIG5 (CP950): A4 A4 A4 E5
-    const unsigned char big5[] = {0xA4, 0xA4, 0xA4, 0xE5};
-    Encoding e = detectEncoding(big5, 4);
-    CHECK(e == Encoding::BIG5);
-}
-
-static void test_detect_shift_jis() {
-    // "こんにちは" in Shift-JIS (CP932)
-    const unsigned char sjis[] = {0x82, 0xB1, 0x82, 0xF1, 0x82, 0xC9, 0x82, 0xBF, 0x82, 0xCD};
-    Encoding e = detectEncoding(sjis, 10);
-    CHECK(e == Encoding::SHIFT_JIS);
-}
-
-static void test_detect_euc_kr() {
-    // "안녕하세요" in EUC-KR (CP949)
-    const unsigned char euckr[] = {0xBE, 0xC8, 0xB3, 0xE7, 0xC7, 0xCF, 0xBC, 0xBC, 0xBF, 0xE4};
-    Encoding e = detectEncoding(euckr, 10);
-    CHECK(e == Encoding::EUC_KR);
-}
 
 #if defined(_WIN32)
 
-static void test_codepage_roundtrip() {
-    // BIG5 "中文" -> UTF-8 -> back to BIG5
-    const unsigned char big5[] = {0xA4, 0xA4, 0xA4, 0xE5};
-    char *utf8 = nullptr; int uLen = 0;
-    CHECK(codepageToUtf8(950, (const char *)big5, 4, &utf8, &uLen));
-    CHECK_EQ(uLen, 6);   // 中文 is 6 UTF-8 bytes
-    CHECK(memcmp(utf8, "\xE4\xB8\xAD\xE6\x96\x87", 6) == 0);
+static void test_gb18030_roundtrip() {
+    if (!isEncodingAvailable(Encoding::GB18030)) return;
+    // "中文" UTF-8 -> GB18030 -> UTF-8. The 2-byte GB18030 part is
+    // GBK-compatible, so the bytes are D6 D0 CE C4.
+    const char *utf8 = "\xE4\xB8\xAD\xE6\x96\x87";
+    char *gb = nullptr; int gLen = 0; bool lossy = false;
+    if (!utf8ToCodepage(54936, utf8, 6, &gb, &gLen, &lossy)) {
+        CHECK(false);
+        return;
+    }
+    CHECK(!lossy);
+    CHECK_EQ(gLen, 4);
     char *back = nullptr; int bLen = 0;
-    CHECK(utf8ToCodepage(950, utf8, uLen, &back, &bLen));
-    CHECK_EQ(bLen, 4);
-    CHECK(memcmp(back, big5, 4) == 0);
-    delete[] utf8;
-    delete[] back;
-
-    // Shift-JIS "こんにちは" round trip
-    const unsigned char sjis[] = {0x82, 0xB1, 0x82, 0xF1, 0x82, 0xC9, 0x82, 0xBF, 0x82, 0xCD};
-    CHECK(codepageToUtf8(932, (const char *)sjis, 10, &utf8, &uLen));
-    CHECK_EQ(uLen, 15);   // 5 kana * 3 bytes
-    CHECK(utf8ToCodepage(932, utf8, uLen, &back, &bLen));
-    CHECK_EQ(bLen, 10);
-    CHECK(memcmp(back, sjis, 10) == 0);
-    delete[] utf8;
-    delete[] back;
-
-    // EUC-KR "안녕하세요" round trip
-    const unsigned char euckr[] = {0xBE, 0xC8, 0xB3, 0xE7, 0xC7, 0xCF, 0xBC, 0xBC, 0xBF, 0xE4};
-    CHECK(codepageToUtf8(949, (const char *)euckr, 10, &utf8, &uLen));
-    CHECK_EQ(uLen, 15);   // 5 hangul * 3 bytes
-    CHECK(utf8ToCodepage(949, utf8, uLen, &back, &bLen));
-    CHECK_EQ(bLen, 10);
-    CHECK(memcmp(back, euckr, 10) == 0);
-    delete[] utf8;
+    if (!codepageToUtf8(54936, gb, gLen, &back, &bLen)) {
+        CHECK(false);
+        delete[] gb;
+        return;
+    }
+    CHECK_EQ(bLen, 6);
+    CHECK(memcmp(back, utf8, 6) == 0);
+    delete[] gb;
     delete[] back;
 }
 
@@ -340,6 +334,33 @@ static void test_expand_tabs_none() {
 }
 
 // ---------------------------------------------------------------------------
+// Hidden path (run with PECIA_FORCE_NO_GB18030=1)
+// ---------------------------------------------------------------------------
+// When the code page is not usable, GB18030 must disappear from the choices
+// entirely - not greyed out, not an empty slot - and a 4-byte GB18030
+// sequence must fall back to ANSI. This suite is the only place that can
+// see that path on a machine where CP54936 does work, so it is a separate
+// ctest entry (same binary, different environment) rather than a branch
+// inside run_all().
+static void run_hidden_gb18030() {
+    CHECK(!isEncodingAvailable(Encoding::GB18030));
+
+    std::vector<Encoding> list = availableEncodings();
+    CHECK_EQ((int)list.size(), 5);
+    CHECK(std::find(list.begin(), list.end(), Encoding::GB18030) == list.end());
+    // The five base encodings keep Notepad's order.
+    CHECK(list[0] == Encoding::ANSI);
+    CHECK(list[1] == Encoding::UTF8);
+    CHECK(list[2] == Encoding::UTF8_BOM);
+    CHECK(list[3] == Encoding::UTF16_LE);
+    CHECK(list[4] == Encoding::UTF16_BE);
+
+    // Without the code page the 4-byte signature is not evidence of GB18030.
+    const unsigned char seq[] = { 0x81, 0x30, 0x81, 0x30 };
+    CHECK(detectEncoding(seq, 4) == Encoding::ANSI);
+}
+
+// ---------------------------------------------------------------------------
 // Codepage conversions (Windows: UTF-8 <-> wide <-> GBK round trips)
 // ---------------------------------------------------------------------------
 
@@ -361,29 +382,6 @@ static void test_wide_roundtrip() {
     CHECK_EQ(backLen, 3);
     CHECK(memcmp(back, cn, 3) == 0);
     delete[] w;
-    delete[] back;
-}
-
-static void test_gbk_roundtrip() {
-    // GBK bytes for "中文" (CP936): D6 D0 CE C4. The exact byte values
-    // depend on the system's CP936 tables, so we assert round-trip
-    // consistency plus a shape check (6 UTF-8 bytes) rather than exact
-    // bytes - a locale where CP936 maps differently would otherwise
-    // produce a brittle failure.
-    const char *gbk = "\xD6\xD0\xCE\xC4";
-    char *utf8 = nullptr;
-    int uLen = 0;
-    CHECK(gbkToUtf8(gbk, 4, &utf8, &uLen));
-    CHECK(utf8 != nullptr);
-    CHECK_EQ(uLen, 6);   // 中文 is 6 UTF-8 bytes
-
-    // Reverse: UTF-8 -> GBK must reproduce the input exactly.
-    char *back = nullptr;
-    int bLen = 0;
-    CHECK(utf8ToGbk(utf8, uLen, &back, &bLen));
-    CHECK_EQ(bLen, 4);
-    CHECK(memcmp(back, gbk, 4) == 0);
-    delete[] utf8;
     delete[] back;
 }
 
@@ -409,10 +407,9 @@ static void run_all() {
     test_detect_utf16_no_bom();
     test_detect_plain_utf8();
     test_detect_ansi_fallback();
+    test_detect_gb18030_4byte();
+    test_available_encodings();
     test_detect_truncated_utf8_prefix();
-    test_detect_big5();
-    test_detect_shift_jis();
-    test_detect_euc_kr();
     test_eol_lf_to_crlf();
     test_eol_crlf_to_lf();
     test_eol_already_normalized();
@@ -430,14 +427,18 @@ static void run_all() {
     test_expand_tabs_none();
 #if defined(_WIN32)
     test_wide_roundtrip();
-    test_gbk_roundtrip();
+    test_gb18030_roundtrip();
     test_conversion_empty();
-    test_codepage_roundtrip();
 #endif
 }
 
 int main() {
-    run_all();
+    const char *forceHidden = std::getenv("PECIA_FORCE_NO_GB18030");
+    if (forceHidden && forceHidden[0] == '1') {
+        run_hidden_gb18030();
+    } else {
+        run_all();
+    }
     int fails = test::failCount();
     std::fprintf(stderr, "%d checks, %d failures\n",
                  test::checkCount(), fails);

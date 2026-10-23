@@ -19,6 +19,7 @@
 
 #include <FL/fl_draw.H>
 #include <string>
+#include <utility>
 #include <vector>
 
 class Config;
@@ -44,9 +45,24 @@ struct ThemeColors {
     Fl_Color highlight2   = fl_rgb_color(150, 255, 200);  // selection/pressed/menu check
     Fl_Color highlight3   = fl_rgb_color(255, 100, 100);  // search hit/link/close hover/conflict
 
-    // Theme display name (from theme file: name = Light, name.zh-CN = 亮色).
+    // Theme display name from the theme file: `name` is the English fallback,
+    // `name.<lang>` adds a translation for any language code in lang/ (e.g.
+    // name.zh-CN, name.ja, name.pt-BR). Keeping translations in the theme
+    // file means a user-supplied theme stays translatable without touching
+    // the program's language packs.
     std::string displayName;      // fallback English name
-    std::string displayNameZh;    // Chinese translation
+    std::vector<std::pair<std::string, std::string>> nameTranslations;
+
+    // Best display name for `lang` (exact code match), else the English
+    // fallback, else empty (caller substitutes the file stem).
+    std::string localizedName(const char *lang) const {
+        if (lang && *lang) {
+            for (const auto &kv : nameTranslations) {
+                if (kv.first == lang && !kv.second.empty()) return kv.second;
+            }
+        }
+        return displayName;
+    }
 
     // Derived colors (not theme keys; computed on demand).
     // Selection text: pick contrast against the selection background.

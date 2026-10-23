@@ -329,6 +329,19 @@ namespace litehtml
 		pixel_t		sub_shift = 0;		// The baseline shift for subscripts.
 		pixel_t		super_shift = 0;	// The baseline shift for superscripts.
 
+		bool operator==(const font_metrics& val) const
+		{
+			return	font_size	== val.font_size &&
+					height		== val.height &&
+					ascent		== val.ascent &&
+					descent		== val.descent &&
+					x_height	== val.x_height &&
+					ch_width	== val.ch_width &&
+					draw_spaces	== val.draw_spaces &&
+					sub_shift	== val.sub_shift &&
+					super_shift	== val.super_shift;
+		}
+
 		pixel_t base_line() const	{ return descent; }
 	};
 

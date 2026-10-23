@@ -21,195 +21,77 @@
 #include <algorithm>
 #include <climits>
 
+// MainWindow member, defined here because Editor is also linked into the
+// match-highlight test without the rest of MainWindow_view.cpp. It copies
+// every LIVE View item before Font into `out`, so the editor's right-click
+// menu stays in sync with MenuTable automatically.
+int MainWindow::buildViewContextMenu(Fl_Menu_Item *out, int cap) const {
+    if (!out || cap < 3) return 0;
+
+    Fl_Menu_Item *view = nullptr;
+    for (const MenuKeyEntry &e : m_menuKeys) {
+        if (e.key && strcmp(e.key, "menu.view") == 0) {
+            view = e.item;
+            break;
+        }
+    }
+    if (!view && m_menu) view = (Fl_Menu_Item *)m_menu->find_item("View");
+    if (!view) return 0;
+
+    int n = 0;
+    out[n++] = {view->text, 0, nullptr, nullptr, FL_SUBMENU};
+
+    // Everything from Font onwards is intentionally not copied. Match the
+    // translated label (and the original English one, in case the helper is
+    // called before applyLanguageToMenu).
+    const char *fontLabel = I18n::get("menu.view.font");
+    const Fl_Menu_Item *font = nullptr;
+    for (const Fl_Menu_Item *it = view + 1; it->text; ++it) {
+        if ((fontLabel && *fontLabel && strcmp(it->text, fontLabel) == 0) ||
+            strcmp(it->text, "Font") == 0) {
+            font = it;
+            break;
+        }
+    }
+
+    for (const Fl_Menu_Item *it = view + 1; it->text && it != font; ++it) {
+        if (it->flags & FL_MENU_INVISIBLE) continue;
+        if (it->flags & FL_SUBMENU) continue;   // headers would need children
+        if (n >= cap - 2) break;
+        out[n] = *it;
+        if (out[n].callback_) out[n].user_data((void *)this);
+        ++n;
+    }
+    if (n <= 1) return 0;   // no items before Font -> no empty submenu
+
+    // Word Wrap's divider separates it from Font in the main menu; there is
+    // nothing after it in this submenu, so don't leave a trailing line.
+    if (out[n - 1].flags & FL_MENU_DIVIDER)
+        out[n - 1].flags &= ~FL_MENU_DIVIDER;
+    out[n++] = {nullptr};   // end of View submenu
+    return n;
+}
+
 #if defined(_WIN32)
 #include <windows.h>
 #include <shellapi.h>  // ShellExecuteW
-#include <imm.h>       // ImmGetContext / ImmGetCompositionStringW
-#include <FL/platform.H>  // fl_xid
-#include <vector>
 #endif
 
-// ---- FontUtils implementation -------------------------------------------
-
-namespace FontUtils {
-
-int strCaseCmp(const char *a, const char *b) {
-    while (*a && *b) {
-        char ca = *a;
-        char cb = *b;
-        if (ca >= 'A' && ca <= 'Z') ca += 'a' - 'A';
-        if (cb >= 'A' && cb <= 'Z') cb += 'a' - 'A';
-        if (ca != cb) return ca - cb;
-        ++a; ++b;
-    }
-    return *a - *b;
-}
-
-Fl_Font findFontByName(const char *name) {
-    if (!name || !name[0]) return -1;
-    int num = Fl::set_fonts();
-    for (int i = 0; i < num; ++i) {
-        int attr = 0;
-        const char *fn = Fl::get_font_name(i, &attr);
-        if (fn && strCaseCmp(fn, name) == 0) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-Fl_Font fontNameToId(const char *name) {
-    Fl_Font id = findFontByName(name);
-    if (id >= 0) return id;
-    if (!name || !name[0]) return FL_COURIER;
-    // Common fallback mapping
-    if (strCaseCmp(name, "Courier New") == 0 || strCaseCmp(name, "Courier") == 0)
-        return FL_COURIER;
-    if (strCaseCmp(name, "Helvetica") == 0)
-        return FL_HELVETICA;
-    if (strCaseCmp(name, "Times") == 0 || strCaseCmp(name, "Times New Roman") == 0)
-        return FL_TIMES;
-    return FL_COURIER;
-}
-
-// 主要文字系统各一个代表字体（其余文字由 Windows 字体回退/链接机制兜底）：
-//   拉丁（英西法德葡意等数十种语言共用）+ 西里尔（俄语等）+ 希腊 → Consolas
-//   中文 → SimHei（黑体）/ NSimSun（宋体）
-//   日文 → MS Gothic（等宽）
-//   韩文 → Gulim（等宽）
-//   阿拉伯/希伯来等 → Segoe UI
-//   天城文系（印地/孟加拉等）→ Nirmala UI
-//   泰文 → Leelawadee UI
-//   全能（中英文 + → + ⏎ 等符号同一字体覆盖）→ Noto Sans SC（需系统已安装）
-const char *FONT_LIST[] = {
-    "Consolas",
-    "SimHei",
-    "NSimSun",
-    "MS Gothic",
-    "Gulim",
-    "Segoe UI",
-    "Nirmala UI",
-    "Leelawadee UI",
-    "Noto Sans SC",
-    nullptr
-};
-const int FONT_COUNT = (int)(sizeof(FONT_LIST) / sizeof(FONT_LIST[0])) - 1;
-
-} // namespace FontUtils
-
-#if defined(_WIN32)
-// ---- Windows IME in-place composition -----------------------------------
-
-// FLTK does not expose WM_IME_* messages, so we subclass the top window's
-// window procedure and route composition messages to the focused Editor.
-// When we consume WM_IME_COMPOSITION (return 1), the IME treats the editor
-// as doing in-place rendering and hides its floating composition window
-// (which is what draws the second caret at the text cursor).
-
-static std::string utf16ToUtf8(const wchar_t *s) {
-    std::string out;
-    if (!s || !*s) return out;
-    int n = WideCharToMultiByte(CP_UTF8, 0, s, -1, nullptr, 0, nullptr, nullptr);
-    if (n <= 1) return out;
-    out.resize(n - 1);
-    WideCharToMultiByte(CP_UTF8, 0, s, -1, &out[0], n, nullptr, nullptr);
-    return out;
-}
-
-// Convert a UTF-16 code-unit offset (as returned by GCS_CURSORPOS) into
-// a UTF-8 byte offset into the same string.
-static int utf16OffsetToUtf8Offset(const wchar_t *s, int utf16Units) {
-    int units = 0, bytes = 0;
-    for (const wchar_t *p = s; *p && units < utf16Units; ++p) {
-        int u = ((*p & 0xFC00) == 0xD800 && (p[1] & 0xFC00) == 0xDC00) ? 2 : 1;
-        if (units + u > utf16Units) break;
-        unsigned int cp = (u == 2)
-            ? (0x10000 + ((*p - 0xD800) << 10) + (p[1] - 0xDC00))
-            : (unsigned int)*p;
-        bytes += (cp < 0x80) ? 1 : (cp < 0x800) ? 2 : (cp < 0x10000) ? 3 : 4;
-        units += u;
-        if (u == 2) ++p;
-    }
-    return bytes;
-}
-
-struct ImeWindowHook {
-    HWND hwnd;
-    WNDPROC orig;
-};
-static std::vector<ImeWindowHook> g_imeHooks;
-
-static LRESULT CALLBACK imeWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (msg == WM_IME_SETCONTEXT) {
-        // Hide the IME's default composition window: we render the
-        // composition string ourselves inside the editor (see draw()).
-        // Clearing ISC_SHOWUICOMPOSITIONWINDOW keeps candidate lists working.
-        Editor *ed = dynamic_cast<Editor *>(Fl::focus());
-        if (ed && ed->window() && fl_xid(ed->window()) == hwnd)
-            lParam &= ~ISC_SHOWUICOMPOSITIONWINDOW;
-        for (auto &h : g_imeHooks) {
-            if (h.hwnd == hwnd) return CallWindowProcW(h.orig, hwnd, msg, wParam, lParam);
-        }
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
-    }
-    if (msg == WM_IME_STARTCOMPOSITION || msg == WM_IME_COMPOSITION || msg == WM_IME_ENDCOMPOSITION) {
-        Editor *ed = dynamic_cast<Editor *>(Fl::focus());
-        if (ed && ed->window() && fl_xid(ed->window()) == hwnd) {
-            if (msg == WM_IME_STARTCOMPOSITION) {
-                ed->imeCompositionStart();
-                return 0;
-            }
-            if (msg == WM_IME_ENDCOMPOSITION) {
-                ed->imeCompositionEnd();
-                return 0;
-            }
-            // WM_IME_COMPOSITION
-            HIMC himc = ImmGetContext(hwnd);
-            bool handled = false;
-            if (himc) {
-                if (lParam & GCS_COMPSTR) {
-                    LONG n = ImmGetCompositionStringW(himc, GCS_COMPSTR, nullptr, 0);
-                    if (n > 0) {
-                        std::wstring w(n / 2, L'\0');
-                        ImmGetCompositionStringW(himc, GCS_COMPSTR, &w[0], n);
-                        LONG cp = 0;
-                        if (lParam & GCS_CURSORPOS)
-                            ImmGetCompositionStringW(himc, GCS_CURSORPOS, &cp, sizeof(cp));
-                        ed->imeCompositionUpdate(w.c_str(), (int)cp);
-                        handled = true;
-                    }
-                }
-                if (lParam & GCS_RESULTSTR) {
-                    LONG n = ImmGetCompositionStringW(himc, GCS_RESULTSTR, nullptr, 0);
-                    if (n > 0) {
-                        std::wstring w(n / 2, L'\0');
-                        ImmGetCompositionStringW(himc, GCS_RESULTSTR, &w[0], n);
-                        ed->imeCompositionCommit(w.c_str());
-                        handled = true;
-                    }
-                }
-                ImmReleaseContext(hwnd, himc);
-            }
-            return handled ? 1 : 0;
-        }
-    }
-    for (auto &h : g_imeHooks) {
-        if (h.hwnd == hwnd) return CallWindowProcW(h.orig, hwnd, msg, wParam, lParam);
-    }
-    return DefWindowProcW(hwnd, msg, wParam, lParam);
-}
-
-static void ensureImeHook(HWND hwnd) {
-    if (!hwnd) return;
-    for (auto &h : g_imeHooks) if (h.hwnd == hwnd) return;
-    ImeWindowHook h;
-    h.hwnd = hwnd;
-    h.orig = (WNDPROC)GetWindowLongPtrW(hwnd, GWLP_WNDPROC);
-    g_imeHooks.push_back(h);
-    SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)&imeWindowProc);
-}
+// 说明：这里原来有一份硬编码的 FONT_LIST（9 个"各文字系统代表字体"），
+// 供 View > Font 的 radio 子菜单使用。实测它是错的 —— 其中 SimHei / NSimSun /
+// Gulim 在很多机器上根本没装，Noto Sans SC 装了也会被 FLTK 的无参枚举漏掉，
+// 选中即静默回退到 Courier。现在字体改为枚举系统已装
+// （FontUtils::systemFontNames()），由 View > Font 打开的字体对话框呈现，
+// 这份列表已删除。FontUtils 的实现也挪到了 editor/FontUtils.cpp
+// （ui/FontDialog 也要用，不能拖整个编辑器进 smoke test）。
 
 // ---- IME composition handling -------------------------------------------
+//
+// The Windows hook and the UTF-16 -> UTF-8 conversion live in
+// ui/ImeInPlace.cpp (shared with every other text widget: dialogs, find/replace,
+// AI chat and the Lua tool window). This side owns only the editor-specific
+// storage: the composition string is not inserted into the buffer until commit,
+// and the caret is parked at the composition cursor while composing.
 
 void Editor::imeCompositionStart() {
     if (!buffer()) return;
@@ -226,14 +108,17 @@ void Editor::imeCompositionStart() {
     m_compCursorBytes = 0;
 }
 
-bool Editor::imeCompositionUpdate(const wchar_t *comp, int cursorUtf16) {
-    if (!buffer()) return false;
-    if (m_doc && m_doc->isReadOnly()) return false;
+void Editor::imeCompositionUpdate(const char *utf8, int cursorBytes) {
+    if (!buffer()) return;
+    if (m_doc && m_doc->isReadOnly()) return;
     if (!m_compActive) imeCompositionStart();
-    if (!m_compActive) return false;
+    if (!m_compActive) return;
 
-    m_compText = utf16ToUtf8(comp);
-    m_compCursorBytes = utf16OffsetToUtf8Offset(comp, cursorUtf16);
+    m_compText = utf8 ? utf8 : "";
+    if (cursorBytes < 0) cursorBytes = 0;
+    if (cursorBytes > (int)m_compText.size())
+        cursorBytes = (int)m_compText.size();
+    m_compCursorBytes = cursorBytes;
 
     // Park the caret at the composition cursor (clamped to the buffer end
     // when composing at the very end of the document).
@@ -243,17 +128,16 @@ bool Editor::imeCompositionUpdate(const wchar_t *comp, int cursorUtf16) {
     show_insert_position();
     notifyCursorMoved();
     redraw();
-    return true;
 }
 
-bool Editor::imeCompositionCommit(const wchar_t *result) {
-    if (!buffer()) return false;
-    if (m_doc && m_doc->isReadOnly()) return false;
+void Editor::imeCompositionCommit(const char *utf8) {
+    if (!buffer()) return;
+    if (m_doc && m_doc->isReadOnly()) return;
     if (!m_compActive) {
         m_compStart = insert_position();
         m_compEnd = m_compStart;
     }
-    std::string s = utf16ToUtf8(result);
+    std::string s = utf8 ? utf8 : "";
     int start = m_compStart, end = m_compEnd;
     if (start < 0) start = insert_position();
     if (end < start) end = start;
@@ -269,7 +153,6 @@ bool Editor::imeCompositionCommit(const wchar_t *result) {
     notifyCursorMoved();
     imeCompositionEnd();
     redraw();
-    return true;
 }
 
 void Editor::imeCompositionEnd() {
@@ -281,8 +164,6 @@ void Editor::imeCompositionEnd() {
     m_compEnd = -1;
     redraw();
 }
-
-#endif // _WIN32
 
 
 // ---- Editor implementation -----------------------------------------------
@@ -299,9 +180,13 @@ Editor::Editor(int X, int Y, int W, int H, SettingsProvider *settings)
       m_inShiftTab(false) {
     // 10px scrollbar width
     scrollbar_size(10);
-    // Thick I-beam cursor (3px wide vertical bar with top/bottom caps)
-    // so the caret is more visible than the default 1px NORMAL_CURSOR.
-    cursor_style(Fl_Text_Display::HEAVY_CURSOR);
+    // Caret: FLTK's own SIMPLE_CURSOR - two 1px vertical lines (X and X+1),
+    // no top/bottom caps. 2px wide like the hand-drawn caret used before,
+    // but drawn by FLTK itself so nothing has to be erased: the old
+    // "wipe a band then paint our own" approach is what produced stray
+    // 1px leftovers (visible as a double cursor) whenever the erase
+    // geometry didn't match FLTK's cursor footprint exactly.
+    cursor_style(Fl_Text_Display::SIMPLE_CURSOR);
     linenumber_fgcolor(textColor());    // match textPrimary
     m_styleTable[0] = Fl_Text_Display::Style_Table_Entry();
     m_styleTable[1] = Fl_Text_Display::Style_Table_Entry();
@@ -315,6 +200,8 @@ Editor::Editor(int X, int Y, int W, int H, SettingsProvider *settings)
 }
 
 Editor::~Editor() {
+    // Unregister the shared IME hook before the widget goes away.
+    ImeInPlace::release(this);
     if (m_styleBuf) {
         highlight_data(nullptr, nullptr, 0, 'A', 0, 0);
         delete m_styleBuf;
@@ -335,21 +222,21 @@ Editor::~Editor() {
 void Editor::drawCustomScrollbar(Fl_Scrollbar *sb, bool horizontal) {
     if (!sb || !sb->visible_r()) return;
 
+    // 两个轴都用控件自身的矩形（窗口绝对坐标）。水平条早先被硬编码成
+    // sx=0 / sw=w()-vscroll_w —— 那只在"编辑器贴着窗口左缘"时成立，见
+    // draw() 里 resize 处的注释。
     int sx = sb->x();
     int sy = sb->y();
     int sw = sb->w();
     int sh = sb->h();
-
-    // For horizontal scrollbar, use full widget width
-    if (horizontal) {
-        sx = 0;
-        int vscroll_w = (mVScrollBar && mVScrollBar->visible()) ? mVScrollBar->w() : 0;
-        sw = w() - vscroll_w;
-    }
+    if (sw <= 0 || sh <= 0) return;
 
     Fl_Color trackColor, thumbColor;
     if (m_theme) scrollbarColors(m_theme->colors(), trackColor, thumbColor);
     else { trackColor = fl_rgb_color(240, 240, 240); thumbColor = fl_rgb_color(180, 180, 180); }
+
+    // 只在编辑器自己的矩形里画：轨道/滑块绝不会溢到左侧面板或预览区
+    fl_push_clip(x(), y(), w(), h());
 
     // Track
     fl_color(trackColor);
@@ -367,6 +254,8 @@ void Editor::drawCustomScrollbar(Fl_Scrollbar *sb, bool horizontal) {
         fl_rectf(thumb_pos, sy, thumb_len, sh);
     else
         fl_rectf(sx, thumb_pos, sw, thumb_len);
+
+    fl_pop_clip();
 }
 
 // ---- Current-line highlight ----------------------------------------------
@@ -1010,7 +899,33 @@ void Editor::drawLongLineMarker() {
     if (m_longLineMarker <= 0) return;
 
     fl_font(textfont(), textsize());
-    int charW = (int)fl_width('M');
+
+    // 列位置按"当前字体的每字符平均宽"推算，不能一律用 'M'：
+    //   等宽字体 —— 'M' 的宽度就是精确列宽，用它最准；
+    //   比例字体（Noto Sans SC 这类）—— 'M' 比平均字符宽得多，用它推列会把
+    //   标记往右偏（列号越大偏得越多），必须换成采样串的平均宽。
+    // 结果按 (字体, 字号) 缓存：只有字体或字号变了才重算，避免每帧去 GDI 建字体。
+    static Fl_Font s_markerFont = (Fl_Font)-1;
+    static int     s_markerSize = 0;
+    static int     s_markerCharW = 0;
+
+    if (s_markerFont != textfont() || s_markerSize != textsize() || s_markerCharW <= 0) {
+        int charW = (int)fl_width('M');
+        int attr = 0;
+        const char *face = Fl::get_font_name(textfont(), &attr);
+        if (face && !FontUtils::isMonospace(face)) {
+            static const char kSample[] =
+                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                "0123456789 .,;:'\"()[]-";
+            int avg = (int)(fl_width(kSample) / (double)(sizeof(kSample) - 1) + 0.5);
+            if (avg > 0) charW = avg;
+        }
+        s_markerFont  = textfont();
+        s_markerSize  = textsize();
+        s_markerCharW = charW > 0 ? charW : 1;
+    }
+    int charW = s_markerCharW;
+
     int lineX = text_area.x
                 + m_longLineMarker * charW
                 - mHorizOffset;
@@ -1020,6 +935,42 @@ void Editor::drawLongLineMarker() {
     fl_color(m_theme ? m_theme->colors().background2 : fl_rgb_color(220, 220, 220));
     fl_yxline(lineX, text_area.y,
               text_area.y + text_area.h - 1);
+}
+
+// ---- Line-number gutter separator ----------------------------------------
+
+// 行号区已经改成与编辑区同底色（background1），整条色带没了，边界全靠这条
+// 1px 竖虚线。画在行号区最右一列（text_area.x 的前一列），纵向只覆盖文本区
+// —— 不越过底部横向滚动条，跟长行标记同一纵向区间。
+//
+// 线色取 text2（次要/提示文字色，#8C8C8C / #737373）。三档实测：
+//   background3 #F0F0F0 —— 太淡，几乎看不见（用户否掉）；
+//   text1       #000000 —— 和正文同色，虚线读起来像"裁切线"，比行号数字还抢眼；
+//   text2       #8C8C8C —— 清晰可辨又不抢正文，且天然跟随明暗主题。
+// 定位是"参考线"不是"边框"，所以保留 3 亮 3 暗的虚线（实测占空比 50%）。
+// 想更重/更轻只改 fl_color 那一行的取色键。
+//
+// 为什么不用 fl_line_style(FL_DASH)：实测 fl_yxline 走 GDI 的
+// MoveToEx/LineTo，fl_line_style 建的虚线笔在这条路径上不生效
+// （显式 dash 数组也一样），画出来仍是实线，只能手工分段。
+//
+// 想换回实线：把下面的 for 循环换成一行
+//     fl_yxline(sx, text_area.y, text_area.y + text_area.h - 1);
+//
+// 必须是 Editor::draw() 里自绘：FLTK 的 Fl_Text_Display::draw_line_numbers()
+// 里倒是有一行分隔线的代码，但它是被注释掉的，而且 FLTK 那版写死成
+// x()+mLineNumWidth-1（忽略 box 缩进与左侧滚动条偏移），开着左侧面板时会错位。
+void Editor::drawLineNumberSeparator() {
+    if (linenumber_width() <= 0) return;      // 行号关闭时行号区宽度为 0
+    int sx = text_area.x - 1;                  // 行号区最右一列像素
+    if (sx < x()) return;
+    fl_color(m_theme ? m_theme->colors().text2 : fl_rgb_color(140, 140, 140));
+    int y1 = text_area.y + text_area.h - 1;
+    for (int y = text_area.y; y <= y1; y += 6) {   // 3 亮 + 3 暗
+        int yEnd = y + 2;
+        if (yEnd > y1) yEnd = y1;
+        fl_yxline(sx, y, yEnd);
+    }
 }
 
 // ---- Visual display helpers ----------------------------------------------
@@ -1077,6 +1028,13 @@ void Editor::syncStyleFont() {
 void Editor::setFontFace(const char *name) {
     Fl_Font fid = FontUtils::fontNameToId(name);
     textfont(fid);
+    // 行号字体必须跟着正文一起改：FLTK 构造函数里写死
+    // `linenumber_font_ = FL_HELVETICA`（Windows 上落到 Arial），而 Pecia 从
+    // 没设置过它，只设了 linenumber_size —— 于是"行号是 Arial、正文是
+    // Consolas"，字号一样但字形明显不是一回事。
+    // 顺带把字号也拉齐（setFontFace 可能在 textsize 之前/之后被调用）。
+    linenumber_font(fid);
+    linenumber_size(textsize());
     syncStyleFont();
 }
 
@@ -1096,15 +1054,14 @@ float Editor::verticalScrollRatio() const {
 
 int Editor::handle(int event) {
 #if defined(_WIN32)
-    // Install the IME window-proc hook once the window exists (the HWND is
-    // created before the editor can receive focus or keyboard input).
-    if (event == FL_FOCUS || event == FL_KEYBOARD) {
-        Fl_Window *win = window();
-        if (win) ensureImeHook(fl_xid(win));
-    }
+    // Register with the shared IME hook (same implementation as every dialog
+    // input and tool-window editor). The window exists before the editor can
+    // receive focus, so attach() can install the hook here.
+    if (event == FL_FOCUS || event == FL_KEYBOARD)
+        ImeInPlace::attach(this);
     // Drop any in-progress composition when focus leaves the editor
     // (the IME may not always send WM_IME_ENDCOMPOSITION on focus change).
-    if (event == FL_UNFOCUS) imeCompositionEnd();
+    if (event == FL_UNFOCUS) ImeInPlace::detach(this);
 #endif
 
     // Hover over a URL: switch its style to the hover colour. While
@@ -1137,7 +1094,7 @@ int Editor::handle(int event) {
                 // Hidden items (Find/Replace/etc.) must NOT appear in the array —
                 // FLTK's menuwindow allocates itemheight per array slot even for
                 // FL_MENU_INVISIBLE items, causing empty lines.
-                static Fl_Menu_Item popup[64];
+                static Fl_Menu_Item popup[128];
                 int n = 0;
                 // Whitelist: classic edit items + Search Selection (no shortcut)
                 auto is_visible_edit = [](const Fl_Menu_Item &it) -> bool {
@@ -1156,30 +1113,11 @@ int Editor::handle(int event) {
                 // Add divider on last item (instead of empty divider item
                 // which FLTK renders as a full-height empty row)
                 if (n > 0) popup[n-1].flags |= FL_MENU_DIVIDER;
-                // View submenu header (FL_SUBMENU = inline submenu follows)
-                popup[n++] = {I18n::get("menu.view"), 0, nullptr, nullptr, FL_SUBMENU};
-                // View toggle items — same callbacks as g_menu
-                popup[n++] = {I18n::get("menu.view.menubar"),     0, MainWindow::cbToggleMenuBar,       win, FL_MENU_TOGGLE};
-                popup[n++] = {I18n::get("menu.view.scriptbar"),   0, MainWindow::cbToggleScriptBar,     win, FL_MENU_TOGGLE};
-                popup[n++] = {I18n::get("menu.view.statusbar"),   0, MainWindow::cbToggleStatusbar,     win, FL_MENU_TOGGLE};
-                popup[n++] = {I18n::get("menu.view.linenumbers"), 0, MainWindow::cbToggleLineNumbers,   win, FL_MENU_TOGGLE};
-                popup[n++] = {I18n::get("menu.view.highlightline"),0, MainWindow::cbToggleHighlightLine, win, FL_MENU_TOGGLE};
-                popup[n++] = {I18n::get("menu.view.showwhitespace"),0,MainWindow::cbToggleShowWhitespace, win, FL_MENU_TOGGLE};
-                popup[n++] = {I18n::get("menu.view.wrap"),        0, MainWindow::cbToggleWrap,          win, FL_MENU_TOGGLE};
-                popup[n++] = {nullptr};  // end of View submenu
+                // View submenu: built from the LIVE View menu (all items
+                // before Font), so a new toggle only needs a MenuTable entry.
+                n += win->buildViewContextMenu(
+                    popup + n, (int)(sizeof(popup) / sizeof(popup[0])) - n);
                 popup[n++] = {nullptr};  // end of popup
-                // Sync toggle checkmarks with current config state
-                for (Fl_Menu_Item *it = popup; it->text; it++) {
-                    bool on = false;
-                    if      (it->callback_ == (Fl_Callback *)MainWindow::cbToggleMenuBar)       on = win->m_cfg->getShowMenuBar();
-                    else if (it->callback_ == (Fl_Callback *)MainWindow::cbToggleScriptBar)     on = win->m_cfg->getShowToolbar();
-                    else if (it->callback_ == (Fl_Callback *)MainWindow::cbToggleStatusbar)     on = win->m_cfg->getShowStatusbar();
-                    else if (it->callback_ == (Fl_Callback *)MainWindow::cbToggleLineNumbers)   on = win->m_cfg->getLineNumbers();
-                    else if (it->callback_ == (Fl_Callback *)MainWindow::cbToggleHighlightLine) on = win->m_cfg->getHighlightCurrentLine();
-                    else if (it->callback_ == (Fl_Callback *)MainWindow::cbToggleShowWhitespace)on = win->m_cfg->getShowWhitespace();
-                    else if (it->callback_ == (Fl_Callback *)MainWindow::cbToggleWrap)          on = win->m_cfg->getWrap();
-                    if (on) it->flags |= FL_MENU_VALUE; else it->flags &= ~FL_MENU_VALUE;
-                }
                 // Set popup checkbox fill color (theme highlight2)
                 g_popupCheckColor = win->m_theme.colors().highlight2;
                 const Fl_Menu_Item *hit = popup->popup(
@@ -1351,7 +1289,18 @@ int Editor::handle(int event) {
 // ---- Draw overrides ------------------------------------------------------
 
 void Editor::draw() {
+    // IME 组合期间临时关掉 FLTK 自己的光标：缓冲区里还没有组合串，
+    // position_to_xy(insert_position()) 算出来的是组合起点而不是串内插入点，
+    // 让它画就会和下面自绘的组合光标同时出现（双光标）。常规情况一律交给
+    // FLTK 画（cursor_style = SIMPLE_CURSOR：2px、无端帽）。
+    const int savedCursorOn = mCursorOn;
+    if (m_compActive) mCursorOn = 0;
     Fl_Text_Editor::draw();
+    mCursorOn = savedCursorOn;
+
+    // 行号区右缘的 1px 分隔线。必须画在下面的 fl_push_clip(text_area...)
+    // 之前——那条 clip 把左侧行号区排除在外，线会被裁掉。
+    drawLineNumberSeparator();
 
     // Overlay clipping: FLTK clips the text itself to text_area, but pops
     // that clip before returning. Every overlay we paint on top (current
@@ -1401,63 +1350,37 @@ void Editor::draw() {
         }
     }
 
-    // Cursor: a plain 3px vertical bar with no caps. FLTK's default
-    // cursor has top/bottom caps; wipe it and draw ours on top.
-    // While an IME composition is active the caret position is parked at
-    // the composition cursor for candidate-window anchoring; we must NOT
-    // draw it here (the composition overlay below draws its own caret
-    // inside the composition string, which is where the user expects it).
-    {
-        int curX, curY;
-        if (mCursorOn && Fl::focus() == this && !m_compActive &&
-            position_to_xy(insert_position(), &curX, &curY)) {
-            fl_font(textfont(), textsize());
-            int barH = mMaxsize;
-            fl_color(bgColor());
-            fl_rectf(curX - 2, curY, 5, barH);
-            fl_color(cursor_color());
-            fl_rectf(curX - 1, curY, 3, barH);
-        }
-    }
+    // 光标不再自绘。
+    //
+    // 历史：早先这里先用底色擦掉 5px 宽的整条带、再画一条 3px 自己的光标条，
+    // 结果把光标左右各 1px 的字符也抹了（"光标遮挡文字"），而且 FLTK 原生光标
+    // （HEAVY_CURSOR = 3px 竖线 + 上下 5px 端帽）本来就得靠这段擦除盖掉 ——
+    // 只要 FLTK 换了光标样式、或者缩放/DPI 让几何对不上，就会漏出一条残影，
+    // 表现就是"双光标"。
+    // 现在改成**完全交给 FLTK**：构造函数里 cursor_style(SIMPLE_CURSOR)，
+    // FLTK 自己画 2px、无端帽，不需要任何擦除逻辑（擦除正是所有残影的来源）。
+    // 闪烁由 MainWindow 的定时器调 show_cursor() 驱动，show_cursor 走
+    // redisplay_range() → damage(FL_DAMAGE_SCROLL)，正好落在 FLTK 画光标的
+    // damage 条件里，所以开/关都能正常重绘。
+    // 唯一的例外是 IME 组合期间（见下面）：那时缓冲区里还没有组合串，
+    // FLTK 按缓冲区算出的位置不在真正的插入点上，必须由我们自己画。
 
 #if defined(_WIN32)
-    // In-place IME composition overlay: draw the composition string at
-    // m_compStart with an underline and a thin caret at the composition
-    // cursor (GCS_CURSORPOS). The IME's own composition window is hidden
-    // via WM_IME_SETCONTEXT in imeWindowProc() - previously it was left
-    // visible and painted the text plus a second (thick) caret next to
-    // ours, which is exactly the "|我很好|" double-caret symptom.
-    if (m_compActive && buffer() && !m_compText.empty() &&
-        m_compStart >= 0 && m_compStart <= buffer()->length()) {
+    // In-place IME composition overlay. The IME's own composition window is
+    // hidden by the shared window hook (ui/ImeInPlace.cpp), so the string and
+    // its caret are painted here - by the same drawComposition() used by every
+    // dialog input and tool-window editor.
+    if (m_compActive && !m_compText.empty() && m_compStart >= 0 && buffer()) {
         int cx, cy;
         if (position_to_xy(m_compStart, &cx, &cy)) {
             fl_font(textfont(), textsize());
-            int lineH = fl_height();
-            int baseY = cy + lineH - fl_descent();
-            // Wipe FLTK's own heavy cursor (drawn at the parked insert
-            // position, visually inside the composition area).
-            int fx, fy;
-            if (position_to_xy(insert_position(), &fx, &fy)) {
-                fl_color(bgColor());
-                fl_rectf(fx - 2, fy, 5, mMaxsize > 0 ? mMaxsize : lineH);
-            }
-            fl_push_clip(text_area.x, y(), text_area.w, h());
-            fl_color(m_theme ? m_theme->colors().text1 : FL_FOREGROUND_COLOR);
-            fl_draw(m_compText.c_str(), cx, baseY);
-            // Composition caret: identical to the normal caret - same
-            // colour, 3px wide, full height, and it blinks with the
-            // normal mCursorOn timer (no underline; the old thin 2px
-            // non-blinking caret looked like a different widget).
-            if (mCursorOn && Fl::focus() == this &&
-                m_compCursorBytes >= 0 &&
-                m_compCursorBytes <= (int)m_compText.size()) {
-                std::string before = m_compText.substr(0, m_compCursorBytes);
-                int cw = (int)fl_width(before.c_str());
-                int barH = mMaxsize > 0 ? mMaxsize : lineH;
-                fl_color(cursor_color());
-                fl_rectf(cx + (int)cw - 1, cy, 3, barH);
-            }
-            fl_pop_clip();
+            const int lineH = fl_height();
+            const bool caretVisible = mCursorOn && Fl::focus() == this;
+            ImeInPlace::drawComposition(
+                m_compText.c_str(), m_compCursorBytes, cx, cy, lineH,
+                m_theme ? m_theme->colors().text1 : FL_FOREGROUND_COLOR,
+                cursor_color(), caretVisible, textfont(), textsize(), window(),
+                text_area.x, y(), text_area.w, h());
         }
     }
 #endif
@@ -1467,14 +1390,44 @@ void Editor::draw() {
     // 覆盖层：长行标记
     drawLongLineMarker();
 
+    // ★ 光标重画（必须留在所有覆盖层之后）。
+    //
+    // FLTK 的光标是在 Fl_Text_Editor::draw() 内部画的，而本函数后面还要画
+    // 「当前行底色延伸到右缘」那块 rect —— 它从**行尾**铺到窗口右缘。光标停在
+    // 行尾（打字时的常态）时，正好被这块底色整个盖住，表现就是"看不到光标"。
+    // 实测：点行尾后 10 帧累计差分为空（行尾 x=376 附近 0 列变化），而光标停在
+    // 行中时 x=244/245 两列正常闪烁 —— 说明不是不画，是被盖住了。
+    //
+    // 这里**不自己画几何**，直接复用 FLTK 的 draw_cursor()：位置取自
+    // position_to_xy()，宽度/形状/端帽完全由 cursor_style(SIMPLE_CURSOR) 决定，
+    // 与 FLTK 原生那一次绘制逐像素一致，所以不存在"两套几何对不上"的残影
+    // （双光标的根因是擦除和绘制几何不一致，这里既没擦除也没另画一套）。
+    if (!m_compActive && mCursorOn && buffer() && Fl::focus() == this) {
+        int selStart = 0, selEnd = 0;
+        const bool hasSel = buffer()->selection_position(&selStart, &selEnd);
+        const int cur = insert_position();
+        // 与 FLTK 自身的条件一致：光标落在选区内时它本来就不画。
+        if (!hasSel || cur < selStart || cur > selEnd) {
+            int curX = 0, curY = 0;
+            if (position_to_xy(cur, &curX, &curY)) draw_cursor(curX, curY);
+        }
+    }
+
     fl_pop_clip();
 
-    // Reposition horizontal scrollbar to span full widget width
+    // Reposition horizontal scrollbar to span the editor's full width.
+    //
+    // ★ 坐标是**窗口绝对坐标**（Fl_Widget::x() 就是窗口坐标，见 FL/Fl_Widget.H
+    //   "the x position relative to the window"）。这里曾经写死 resize(0, ...)：
+    //   编辑器还在窗口最左时看不出问题，加了左侧面板之后整条水平滚动条被搬到
+    //   窗口左缘（横跨侧栏），编辑器右下角则露出 FLTK 默认绘制的深色槽
+    //   （FL_DARK3 #959595），滑块也跟着偏了一个面板宽度 —— 点击位置和画出来的
+    //   滑块对不上。改成 x() 后与竖直滚动条（本来就用绝对坐标）对齐。
     if (mHScrollBar && mHScrollBar->visible()) {
         int vscroll_w = (mVScrollBar && mVScrollBar->visible()) ? mVScrollBar->w() : 0;
         int newW = w() - vscroll_w;
-        if (mHScrollBar->x() != 0 || mHScrollBar->w() != newW) {
-            mHScrollBar->resize(0, mHScrollBar->y(), newW, mHScrollBar->h());
+        if (mHScrollBar->x() != x() || mHScrollBar->w() != newW) {
+            mHScrollBar->resize(x(), mHScrollBar->y(), newW, mHScrollBar->h());
             mHScrollBar->damage(FL_DAMAGE_ALL);
             draw_child(*mHScrollBar);
         }

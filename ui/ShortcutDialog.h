@@ -94,7 +94,7 @@ private:
     std::vector<RowWidget *> m_widgets;
     RowWidget       *m_recording = nullptr;
     class SettingsScroll *m_scroll = nullptr;   // the rows' scroll container
-    class Fl_Input  *m_filterInput = nullptr;
+    class SearchInput *m_filterInput = nullptr;   // 共享搜索框(ui/ThemeWidgets.h)
     Fl_Box          *m_hintLabel = nullptr;
     Fl_Box          *m_bottomSpacer = nullptr;
     Fl_Box          *m_topSpacer = nullptr;

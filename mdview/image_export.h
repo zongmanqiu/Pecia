@@ -17,6 +17,37 @@ RemoteFetchFn default_remote_fetch();
 // 返回空串表示这个 URL 推不出可靠的文件名（调用方应保持原样，别猜）。
 std::string remote_image_file_name(const std::string& url);
 
+// ---------------------------------------------------------------------------
+// Persistent remote-image byte cache (preview fetch layer only)
+//
+// This cache is NOT the asset directory. The preview still materializes a
+// normally-named file into its own asset dir (remote_image_file_name(url))
+// before litehtml/browser/export see it. The cache only decides where the
+// bytes come from, so every downstream contract (readable names, one copy in
+// the asset dir, self-contained export) stays exactly as before.
+//
+// Files live in <exe>/temp/remote-cache/ as remote_<hash><ext>. They are
+// deliberately not "pecia_img_*.img": the existing export gate asserts that
+// the old intermediate cache never comes back. Directory mtime is touched on
+// every hit so the existing 7-day temp cleanup keeps an actively used cache
+// and removes an abandoned one -- no second cleanup timer is introduced.
+// ---------------------------------------------------------------------------
+constexpr int kRemoteImageCacheTtlSeconds = 60 * 60;   // 1 hour
+
+std::string remote_image_cache_dir();
+std::string remote_image_cache_file(const std::string& url);
+void ensure_remote_image_cache_dir();
+
+// Cache -> dest. Only a non-empty file younger than ttl_seconds is used.
+// Hardlink first (same volume, no duplicate bytes), copy otherwise.
+bool copy_remote_image_from_cache(const std::string& url, const std::string& dest,
+                                  int ttl_seconds);
+
+// Commit a completed download at `src` into the cache, then materialize it to
+// `dest`. Always tries to produce `dest`; cache failures are non-fatal.
+bool commit_remote_image_cache(const std::string& url, const std::string& src,
+                               const std::string& dest);
+
 // 把 html 里的远程 <img src> 改写为 build_dir 内的本地相对文件。
 // fetch == nullptr：只复用 build_dir 里已有的文件，绝不触网 —— 用于渲染
 // 路径（预览必须快，容器正在后台下载那些图）。

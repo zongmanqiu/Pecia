@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "ui/BandColourSource.h"
+
 class Theme;
 
 // TitleBar
@@ -16,7 +18,8 @@ class Theme;
 //
 //   Communication with the parent MainWindow is purely through setters
 //   (for data) and callbacks (for actions). No direct MainWindow dependency.
-class TitleBar : public Fl_Widget {
+class TitleBar : public Fl_Widget,
+                 public windowChrome::BandColourSource {
 public:
     // Tab information needed for rendering
     struct TabInfo {
@@ -95,6 +98,21 @@ private:
 
     // Draw a single caption button at the given position.
     void drawButton(int bx, int by, int bw, int bh, Btn btn);
+
+    // Background colour of a caption button in its current state. Shared by
+    // drawButton() and bandColourAt() so the corner AA stroke blends against
+    // exactly the colour the button paints (close-button hover is red).
+    Fl_Color buttonColour(Btn btn) const;
+
+public:
+    // windowChrome::BandColourSource: the title bar paints its caption
+    // buttons by hand, so the frame's anti-aliased corner stroke cannot see
+    // their hover colour through box()/color(). Report it here, otherwise the
+    // top-right arc keeps blending against the grey title bar and leaves a
+    // grey fringe over the red close button (measured 2026-10-22).
+    bool bandColourAt(int x, int y, unsigned int *colour) const FL_OVERRIDE;
+
+private:
 
     // Button state tracking
     int  m_btnW[BTN_COUNT];       // width of each caption button

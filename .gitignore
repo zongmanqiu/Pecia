@@ -10,7 +10,9 @@
 # ---------------------------------------------------------------------------
 
 # CTest artifacts generated under main/build/ (the build scripts themselves
-# are source; only what CTest outputs is disposable).
+# are source; only what CTest outputs is disposable). ctest normally runs from
+# <root>/temp/cmake_build (see build/_common.bat BUILD_DIR), so this is a
+# safety net for anyone who runs ctest inside main/build/ by hand.
 build/Testing/
 
 # Generic run-time debris in case anything is generated inside main/.
@@ -35,7 +37,9 @@ build/Testing/
 # not represented here.
 
 # Generated performance-test fixtures under example/ (produced on demand by the
-# *mb.bat scripts in example/ex2.LargeFile/). These are multi-hundred-MB / GB
-# files and must NOT be committed. The .bat scripts themselves stay tracked.
+# scripts in example/ex2.LargeFile/ and example/ex3.LargeMarkdown/). These are
+# multi-hundred-MB / GB files and must NOT be committed. The generator scripts
+# stay tracked (usage is documented in docs/STRESS_TEST_PLAN.md).
 example/ex2.LargeFile/*mb.txt
-example/*/_block_tmp.txt
+example/ex3.LargeMarkdown/*kb.md
+example/ex3.LargeMarkdown/*mb.md

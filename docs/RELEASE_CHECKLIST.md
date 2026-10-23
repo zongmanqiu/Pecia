@@ -1,8 +1,8 @@
 # Pecia 发行流程清单（RELEASE_CHECKLIST.md）
 
 > 每次发布新版本（如 1.0.0 → 1.0.1）时**按顺序逐项执行**。
-> 本文档归并了散落在 `build/build_readme.md` 第六节、`build/pack.bat`、
-> `core/Updater.cpp` 中的发行相关要求。
+> 本文档归并了散落在 `build/build_readme.md` 第六节、`core/Updater.cpp`
+> 中的发行相关要求。
 
 ---
 
@@ -11,7 +11,6 @@
 | 位置 | 改什么 | 说明 |
 |---|---|---|
 | `main/CMakeLists.txt` 第 2 行 | `project(Pecia VERSION x.y.z ...)` | **唯一权威来源**。`PECIA_VERSION` 宏由此注入（见同文件 `target_compile_definitions`），关于页与更新检查自动跟随 |
-| `main/build/pack.bat` 第 44 行 | `set "VERSION=x.y.z"` | 仅是 CMake 解析失败时的**回退值**，必须与上面同步 |
 | `main/README.md` + `main/docs/README/README.<lang>.md` ×15 | 下载链接与版本表述：`releases/download/<ver>/Pecia_x64_<ver>.zip`（Gitee + GitHub 各一条） | 16 份文件**必须同步**（根与 docs/README 内各 2 处下载行） |
 | `main/example/ex1.markdown/ex1.md` | 版本表 `Pecia \| x.y.z` | 示例文档中的版本引用 |
 | `main/HISTORY.md` | 在文件**顶部**追加新版本小节（日期 + 新增/修复/变更） | **增量原则：只追加，旧内容一律保持原样**，不修改不删除 |
@@ -27,20 +26,25 @@
 ## 二、发行前质量门禁（全部通过才可发行）
 
 1. **全量构建**：双击 `build/full.bat`（或 `5_build_pecia.bat`）；
-2. **20 个 ctest 全绿**（构建链内置，红灯即中止）；
-3. **文档门禁**：`build/test_docs.exe` 输出 `31 checks, 0 failures`
+2. **26 个 ctest 全绿**（构建链内置，红灯即中止）；
+3. **文档门禁**：`build/test_docs.exe` 输出 `33 checks, 0 failures`
    （改过任何文档/API/目录后必跑）；
-4. **零 C 警告**（`/W4` 级别，构建日志无 `warning C`）；
-5. **文件属性校验**：`build/Pecia.exe`、`PeciaLua.exe`、`PeciaAIChat.exe`
+4. **零 C 警告**（`/W4 /WX` 级别，构建日志无 `warning C`）；
+5. **压力测试**：按 `docs/STRESS_TEST_PLAN.md` 跑完 A–H 用例并填写记录表，
+   重点确认大文档（`example/ex3.LargeMarkdown/` 3 档）与多标签场景；
+6. **文件属性校验**：`build/Pecia.exe`、`PeciaLua.exe`、`PeciaAIChat.exe`
    右键 → 属性 → 详细信息，`文件版本 / 产品版本` 均等于 `CMakeLists.txt`
    的版本号（由 `build/version_info.rc.in` 自动生成，三份 exe 应一致）。
 
-## 三、打包
+## 三、打包（手动）
 
-- 运行 `main/build/pack.bat` → 产出 `release/<版本>/` 与
+本仓库**不提供打包脚本**，打包由发布者手动完成：
+
+- 把项目根 `build/` 里的产物复制到 `release/<版本>/`，再压成
   **`Pecia_x64_<版本>.zip`**；
-- zip 内容：`exe 三件套 + lang/ + theme/ + script/ + LICENSE +
-  THIRD-PARTY-NOTICES.md + licenses/`；
+- zip 内容：`exe 三件套（Pecia / PeciaLua / PeciaAIChat）+ lang/ + theme/ +
+  script/ + LICENSE + THIRD-PARTY-NOTICES.md + licenses/`。
+  `build/` 里还有 `test_*.exe`，那是构建门禁产物，**不要放进发布包**；
 - ⚠️ **zip 文件名不可改**：`Updater.cpp` 用 tag 拼出确定性下载地址
   `releases/download/<tag>/Pecia_x64_<tag>.zip`，名字对不上自动更新就 404。
 

@@ -120,13 +120,20 @@ void MainWindow::cbOpen(Fl_Widget * /*w*/, void *data) {
                                    IID_IFileOpenDialog, (void**)&pfd);
     if (FAILED(hr) || !pfd) return;
 
+    // Filter labels follow the UI language; the patterns stay language-neutral.
+    const std::wstring wAll    = widen(I18n::get("filedlg.all"));
+    const std::wstring wText   = widen(I18n::get("filedlg.text"));
+    const std::wstring wMd     = widen(I18n::get("filedlg.markdown"));
+    const std::wstring wLog    = widen(I18n::get("filedlg.log"));
+    const std::wstring wConfig = widen(I18n::get("filedlg.config"));
+    const std::wstring wData   = widen(I18n::get("filedlg.data"));
     COMDLG_FILTERSPEC fileTypes[] = {
-        { L"所有文件 (*)",               L"*.*" },
-        { L"文本文件 (*.txt)",           L"*.txt" },
-        { L"Markdown (*.md)",             L"*.md" },
-        { L"日志文件 (*.log)",            L"*.log" },
-        { L"配置和脚本 (*.ini; *.cfg; *.bat)", L"*.ini;*.cfg;*.bat;*.ps1" },
-        { L"数据文件 (*.csv; *.json; *.xml)",  L"*.csv;*.json;*.xml" },
+        { wAll.c_str(),               L"*.*" },
+        { wText.c_str(),              L"*.txt" },
+        { wMd.c_str(),                L"*.md" },
+        { wLog.c_str(),               L"*.log" },
+        { wConfig.c_str(),            L"*.ini;*.cfg;*.bat;*.ps1" },
+        { wData.c_str(),              L"*.csv;*.json;*.xml" },
     };
     pfd->SetFileTypes(ARRAYSIZE(fileTypes), fileTypes);
     pfd->SetFileTypeIndex(1);   // 默认：所有文件 (*)

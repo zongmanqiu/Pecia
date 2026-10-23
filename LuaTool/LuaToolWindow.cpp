@@ -39,6 +39,17 @@ namespace {
 const int BTN_H = gBtnH;   // unified button height
 const int BAR_H = gBarH;   // unified bar height: button row
 const int BTN_GAP = 10;
+
+// UTF-8 (I18n strings) -> UTF-16 (Win32 dialog APIs).
+static std::wstring widen(const std::string &utf8) {
+    if (utf8.empty()) return std::wstring();
+    int n = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
+    if (n <= 0) return std::wstring();
+    std::wstring w(n, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, &w[0], n);
+    while (!w.empty() && w.back() == L'\0') w.pop_back();
+    return w;
+}
 } // namespace
 
 std::atomic<LuaToolWindow *> LuaToolWindow::s_active = nullptr;
@@ -215,6 +226,11 @@ void LuaToolWindow::retheme() {
         m_scriptEdit->textcolor(tc.text1);
         m_scriptEdit->selection_color(tc.highlight2);
         m_scriptEdit->cursor_color(tc.text1);
+        // 正文颜色由行高亮样式表决定(FLTK 绘制时样式表优先于 textcolor),
+        // 只改 widget 颜色不重建样式表 = 脚本区残留旧主题色(重启才正常的
+        // 根因)。syncHighlightBuffer 用新 textcolor()/color() 重捕捉整表——
+        // 与主窗口切主题时 Editor::reapplyHighlightData 完全同型。
+        m_scriptEdit->syncHighlightBuffer();
     }
     if (m_outDisp) {
         m_outDisp->color(tc.background1);
@@ -523,7 +539,8 @@ void LuaToolWindow::doSaveAs() {
         }
     }
     pfd->SetFileName(defName.c_str());
-    COMDLG_FILTERSPEC filter = { L"Lua Script (*.lua)", L"*.lua" };
+    const std::wstring wFilter = widen(I18n::get("filedlg.lua"));
+    COMDLG_FILTERSPEC filter = { wFilter.c_str(), L"*.lua" };
     pfd->SetFileTypes(1, &filter);
     pfd->SetDefaultExtension(L"lua");
 

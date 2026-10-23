@@ -33,6 +33,8 @@
 // patched FLTK 的 Fl_Menu 需要这个符号；产品里由 core/Theme.cpp 定义，
 // 本测试不链 Theme.cpp，故自带一份（与 test/test_stubs.cpp 同理）。
 Fl_Color g_popupCheckColor = 0;
+// 同上：Fl_Menu 分隔线扁平化补丁引用 g_borderColour。
+Fl_Color g_borderColour = 0;
 
 // ★ Fl_Scrollbar declares `int value(int p)` (Fl_Scrollbar.H:71), which **hides**
 //   the inherited `Fl_Valuator::value(double)`. So `sb.value(some_double)`

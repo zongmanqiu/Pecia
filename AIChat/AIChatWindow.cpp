@@ -211,6 +211,9 @@ void AIChatWindow::retheme() {
         m_inputEdit->textcolor(tc.text1);
         m_inputEdit->selection_color(tc.highlight2);
         m_inputEdit->cursor_color(tc.text1);
+        // 与 LuaToolWindow::retheme 同因:正文颜色由行高亮样式表决定,
+        // 改色后必须重建样式表,否则输入区残留旧主题色。
+        m_inputEdit->syncHighlightBuffer();
     }
     if (m_attachSel) {
         m_attachSel->labelcolor(tc.text1);

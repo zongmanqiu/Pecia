@@ -2,6 +2,7 @@
 // See EncodingCore.h. No UI, no file I/O.
 #include "core/EncodingCore.h"
 
+#include <stdlib.h>   // getenv (test-only switch)
 #include <string.h>   // memcpy, memmove
 
 #if defined(_WIN32)
@@ -69,6 +70,84 @@ bool isValidUtf8(const unsigned char *data, int len) {
     return true;
 }
 
+// Test-only switch: PECIA_FORCE_NO_GB18030=1 makes the probe report
+// "unavailable" so the hidden-item path (GB18030 must not appear anywhere in
+// the save-as list) can be exercised on a machine that does have CP54936.
+// This is a runtime environment variable, not a build variant, so there is
+// still exactly one binary; production behaviour is untouched when it is unset.
+static bool forceNoGb18030() {
+    const char *v = getenv("PECIA_FORCE_NO_GB18030");
+    return v != nullptr && v[0] == '1';
+}
+
+// Probe GB18030 once. IsValidCodePage can return TRUE for a valid but
+// unavailable page; an actual 4-byte decode is the definitive test.
+static bool probeGb18030() {
+#if defined(_WIN32)
+    if (forceNoGb18030()) return false;
+    if (!IsValidCodePage(54936)) return false;
+    const char probe[] = "\x81\x30\x81\x30"; // U+0080
+    wchar_t w[2] = {};
+    return MultiByteToWideChar(54936, MB_ERR_INVALID_CHARS, probe, 4, w, 2) > 0;
+#else
+    return false;
+#endif
+}
+
+bool isEncodingAvailable(Encoding e) {
+    switch (e) {
+    case Encoding::UTF8:
+    case Encoding::UTF8_BOM:
+    case Encoding::UTF16_LE:
+    case Encoding::UTF16_BE:
+    case Encoding::ANSI:
+        return true;
+    case Encoding::GB18030: {
+        static const bool available = probeGb18030();
+        return available;
+    }
+    }
+    return false;
+}
+
+std::vector<Encoding> availableEncodings() {
+    std::vector<Encoding> out = {
+        Encoding::ANSI,
+        Encoding::UTF8,
+        Encoding::UTF8_BOM,
+        Encoding::UTF16_LE,
+        Encoding::UTF16_BE,
+    };
+    if (isEncodingAvailable(Encoding::GB18030)) out.push_back(Encoding::GB18030);
+    return out;
+}
+
+const char *encodingDisplayName(Encoding e) {
+    switch (e) {
+    case Encoding::UTF8:      return "UTF-8";
+    case Encoding::UTF8_BOM:  return "UTF-8 with BOM";
+    case Encoding::UTF16_LE:  return "UTF-16 LE";
+    case Encoding::UTF16_BE:  return "UTF-16 BE";
+    case Encoding::ANSI:      return "ANSI";
+    case Encoding::GB18030:   return "GB18030";
+    }
+    return "Unknown";
+}
+
+// A GB18030 4-byte sequence is 0x81-0xFE, 0x30-0x39, 0x81-0xFE, 0x30-0x39.
+// The second/fourth bytes are not valid GBK trail bytes, so a match cannot
+// be a coincidental GBK pair. Used only when the code page is available.
+static bool hasGb18030FourByteSequence(const unsigned char *data, int len) {
+    for (int i = 0; i + 3 < len; ++i) {
+        if (data[i] >= 0x81 && data[i] <= 0xFE &&
+            data[i + 1] >= 0x30 && data[i + 1] <= 0x39 &&
+            data[i + 2] >= 0x81 && data[i + 2] <= 0xFE &&
+            data[i + 3] >= 0x30 && data[i + 3] <= 0x39)
+            return true;
+    }
+    return false;
+}
+
 Encoding detectEncoding(const unsigned char *data, int len) {
     if (len >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF)
         return Encoding::UTF8_BOM;
@@ -76,8 +155,8 @@ Encoding detectEncoding(const unsigned char *data, int len) {
         return Encoding::UTF16_LE;
     if (len >= 2 && data[0] == 0xFE && data[1] == 0xFF)
         return Encoding::UTF16_BE;
-    // Heuristic: if the file has lots of NUL bytes in even positions, it's
-    // probably UTF-16 without a BOM. We check the first 256 bytes.
+    // UTF-16 LE without BOM (kept: NUL bytes are valid UTF-8, so without
+    // this check such a file would load as UTF-8 with embedded NULs).
     if (len >= 64) {
         int nullCount = 0;
         int checkLen = len < 256 ? len : 256;
@@ -86,109 +165,17 @@ Encoding detectEncoding(const unsigned char *data, int len) {
         }
         if (nullCount > checkLen / 4) return Encoding::UTF16_LE;
     }
-    // If the entire sample is well-formed UTF-8, treat it as UTF-8.
-    // This catches the common case of a modern Chinese .txt file that
-    // was saved as UTF-8 without a BOM. Only fall back to legacy code
-    // pages when the bytes are not valid UTF-8.
     if (isValidUtf8(data, len)) return Encoding::UTF8;
-
-    // The sample is not UTF-8/UTF-16: it is a legacy single/double-byte
-    // code page. The byte ranges of GBK/BIG5/Shift-JIS/EUC-KR overlap so
-    // heavily that "can these bytes decode" cannot tell them apart.
-    // Instead, decode each byte pair under every candidate and look at
-    // WHERE the resulting character falls in Unicode: the same bytes
-    // decode to different scripts under different code pages.
-    //   - hiragana/katakana   -> Shift-JIS
-    //   - hangul syllables    -> EUC-KR
-    //   - otherwise: the code page that decodes the most CJK ideographs
-    //     with the fewest failures wins (GBK vs BIG5 distinction).
-#if defined(_WIN32)
-    struct Candidate { int cp; Encoding enc; };
-    static const Candidate cands[] = {
-        {936, Encoding::GBK},
-        {950, Encoding::BIG5},
-        {932, Encoding::SHIFT_JIS},
-        {949, Encoding::EUC_KR},
-    };
-
-    struct Score {
-        int cjk = 0, hira = 0, kata = 0, hangul = 0, bad = 0;
-    } scores[4];
-    for (int ci = 0; ci < 4; ++ci) {
-        Score &s = scores[ci];
-        int pos = 0;
-        while (pos < len) {
-            unsigned char b = data[pos];
-            if (b < 0x80) { ++pos; continue; }
-            if (pos + 1 >= len) break;   // truncated pair at sample end
-            wchar_t w;
-            int n = MultiByteToWideChar(cands[ci].cp, MB_ERR_INVALID_CHARS,
-                                        (const char *)data + pos, 2, &w, 1);
-            if (n <= 0) { ++s.bad; ++pos; continue; }
-            pos += 2;
-            if      (w >= 0x4E00 && w <= 0x9FFF) ++s.cjk;      // CJK ideographs
-            else if (w >= 0x3040 && w <= 0x309F) ++s.hira;     // hiragana
-            else if (w >= 0x30A0 && w <= 0x30FF) ++s.kata;     // katakana
-            else if (w >= 0xAC00 && w <= 0xD7AF) ++s.hangul;   // hangul
-        }
-    }
-
-    // Script signal: only Shift-JIS (932) produces genuine hiragana/
-    // katakana; the other code pages may decode stray bytes into kana
-    // ranges by accident, so gate the signal on the 932 candidate only.
-    if (scores[2].hira + scores[2].kata > 0 &&
-        scores[2].cjk + scores[2].hira + scores[2].kata >= 3)
-        return cands[2].enc;   // Shift-JIS (932)
-
-    // EUC-KR check: hangul syllables in EUC-KR live at lead bytes
-    // 0xB0-0xC8 with trail 0xA1-0xFE. BIG5/GBK text can decode to
-    // hangul under CP949 by accident, but genuine EUC-KR has a
-    // distinctive concentration in this range.
-    {
-        int hangulLead = 0, total = 0;
-        int pos = 0;
-        while (pos + 1 < len) {
-            unsigned char b = data[pos];
-            if (b < 0x80) { ++pos; continue; }
-            ++total;
-            if (b >= 0xB0 && b <= 0xC8 && data[pos + 1] >= 0xA1 &&
-                data[pos + 1] <= 0xFE)
-                ++hangulLead;
-            pos += 2;
-        }
-        if (total > 0 && hangulLead * 10 >= total * 7)
-            return Encoding::EUC_KR;
-    }
-
-    // BIG5 vs GBK: compare how many CJK ideographs each code page
-    // decodes. The correct page yields the most ideographs with the
-    // fewest failures.
-    int best = 0;
-    for (int ci = 1; ci < 4; ++ci) {
-        const Score &a = scores[best];
-        const Score &b = scores[ci];
-        int va = a.cjk - a.bad * 2;
-        int vb = b.cjk - b.bad * 2;
-        if (vb > va) best = ci;
-    }
-    // Tie-break toward GBK on the Chinese Windows locale.
-    if (best > 0 && scores[best].cjk == scores[0].cjk &&
-        scores[best].bad == scores[0].bad)
-        best = 0;
-    if (scores[best].cjk > 0) return cands[best].enc;
-    return Encoding::ANSI;   // nothing decodes as CJK - system codepage
-#else
-    return Encoding::ANSI;
-#endif
+    if (isEncodingAvailable(Encoding::GB18030) &&
+        hasGb18030FourByteSequence(data, len))
+        return Encoding::GB18030;
+    return Encoding::ANSI;   // system codepage, like Notepad
 }
 
 int encodingToCodePage(Encoding e) {
     switch (e) {
-    case Encoding::GBK:       return 936;
-    case Encoding::BIG5:      return 950;
-    case Encoding::SHIFT_JIS: return 932;
-    case Encoding::EUC_KR:    return 949;
-    default:                  return 0;   // Unicode-based encodings
+    case Encoding::GB18030: return 54936;
+    default:                return 0;   // UTF-8/16 and ANSI (CP_ACP at call site)
     }
 }
 
@@ -353,15 +340,10 @@ bool wideToUtf8(const wchar_t *w, int len, char **out, int *outLen) {
     return true;
 }
 
-bool gbkToUtf8(const char *gbk, int len, char **out, int *outLen) {
-    return codepageToUtf8(936, gbk, len, out, outLen);
-}
-
-bool utf8ToGbk(const char *utf8, int len, char **out, int *outLen) {
-    return utf8ToCodepage(936, utf8, len, out, outLen);
-}
-
 bool codepageToUtf8(int cp, const char *src, int len, char **out, int *outLen) {
+    if (!out || !outLen) return false;
+    *out = nullptr; *outLen = 0;
+    if (!src || len <= 0) return true;
     // Code page -> Wide -> UTF-8
     int wl = MultiByteToWideChar(cp, 0, src, len, nullptr, 0);
     if (wl <= 0) return false;
@@ -373,16 +355,62 @@ bool codepageToUtf8(int cp, const char *src, int len, char **out, int *outLen) {
     return ok;
 }
 
-bool utf8ToCodepage(int cp, const char *utf8, int len, char **out, int *outLen) {
+bool utf8ToCodepage(int cp, const char *utf8, int len, char **out, int *outLen,
+                    bool *lossy) {
+    if (!out || !outLen) return false;
+    *out = nullptr; *outLen = 0;
+    if (lossy) *lossy = false;
     wchar_t *w = nullptr; int wlen = 0;
     if (!utf8ToWide(utf8, len, &w, &wlen)) return false;
-    int gl = WideCharToMultiByte(cp, 0, w, wlen, nullptr, 0, nullptr, nullptr);
+    if (wlen <= 0) {
+        delete[] w;
+        *out = new char[1];
+        (*out)[0] = 0;
+        return true;
+    }
+
+    // GB18030 (54936) rejects WC_NO_BEST_FIT_CHARS with ERROR_INVALID_FLAGS
+    // on Windows; every other code page used by Pecia accepts it. The flag
+    // prevents best-fit substitutions, and lpUsedDefaultChar tells us when
+    // a character could not be represented at all.
+    // GB18030 (54936) rejects both WC_NO_BEST_FIT_CHARS and the
+    // lpDefaultChar/lpUsedDefaultChar parameters (ERROR_INVALID_PARAMETER).
+    // It can represent all Unicode, so no lossy detection is needed there.
+    if (cp == 54936) {
+        SetLastError(0);
+        int gl = WideCharToMultiByte(cp, 0, w, wlen, nullptr, 0, nullptr, nullptr);
+        if (gl <= 0) { delete[] w; return false; }
+        char *g = new char[gl + 1];
+        SetLastError(0);
+        int gl2 = WideCharToMultiByte(cp, 0, w, wlen, g, gl, nullptr, nullptr);
+        delete[] w;
+        if (gl2 <= 0) { delete[] g; return false; }
+        g[gl2] = 0;
+        *out = g; *outLen = gl2;
+        return true;
+    }
+
+    DWORD flags = WC_NO_BEST_FIT_CHARS;
+    char defaultChar = '?';
+    BOOL used = FALSE;
+    SetLastError(0);
+    int gl = WideCharToMultiByte(cp, flags, w, wlen, nullptr, 0, nullptr, nullptr);
+    if (gl <= 0 && GetLastError() == ERROR_INVALID_FLAGS) {
+        flags = 0;
+        SetLastError(0);
+        gl = WideCharToMultiByte(cp, flags, w, wlen, nullptr, 0, nullptr, nullptr);
+    }
     if (gl <= 0) { delete[] w; return false; }
     char *g = new char[gl + 1];
-    WideCharToMultiByte(cp, 0, w, wlen, g, gl, nullptr, nullptr);
-    g[gl] = 0;
+    used = FALSE;
+    SetLastError(0);
+    int gl2 = WideCharToMultiByte(cp, flags, w, wlen, g, gl,
+                                  &defaultChar, &used);
     delete[] w;
-    *out = g; *outLen = gl;
+    if (gl2 <= 0) { delete[] g; return false; }
+    g[gl2] = 0;
+    if (lossy) *lossy = (used != FALSE);
+    *out = g; *outLen = gl2;
     return true;
 }
 
@@ -390,8 +418,6 @@ bool utf8ToCodepage(int cp, const char *utf8, int len, char **out, int *outLen) 
 // Linux/macOS stubs - to be implemented with iconv later
 bool utf8ToWide(const char *, int, wchar_t **, int *) { return false; }
 bool wideToUtf8(const wchar_t *, int, char **, int *) { return false; }
-bool gbkToUtf8(const char *, int, char **, int *) { return false; }
-bool utf8ToGbk(const char *, int, char **, int *) { return false; }
 bool codepageToUtf8(int, const char *, int, char **, int *) { return false; }
-bool utf8ToCodepage(int, const char *, int, char **, int *) { return false; }
+bool utf8ToCodepage(int, const char *, int, char **, int *, bool *) { return false; }
 #endif

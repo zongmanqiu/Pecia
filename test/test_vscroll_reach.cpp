@@ -43,6 +43,8 @@
 
 // patched FLTK 的 Fl_Menu 需要这个符号（与 test_vscroll_geom.cpp 同理）
 Fl_Color g_popupCheckColor = 0;
+// 同上：Fl_Menu 分隔线扁平化补丁引用 g_borderColour。
+Fl_Color g_borderColour = 0;
 
 // 暴露 FLTK 的 protected 计数器，并提供"拖到底"的动作。
 class Probe : public Fl_Text_Display {

@@ -141,6 +141,8 @@ static const char *configKeyDesc(const char *key) {
     if (strcmp(key,"multi_tab")==0) return "是否启用多标签页 (1=是 0=否)";
     if (strcmp(key,"preview_auto_refresh")==0) return "Markdown 预览自动刷新间隔（毫秒，0=关闭）";
     if (strcmp(key,"preview_scroll_sync")==0) return "预览与编辑滚动是否同步 (1=是 0=否)";
+    if (strcmp(key,"rounded_corners")==0) return "窗口圆角 (1=圆角 0=直角; Win8/10/11 通用)";
+    if (strcmp(key,"window_shadow")==0)  return "窗口外发光/阴影 (1=开启 0=关闭; 所有 Pecia 窗口)";
     if (strcmp(key,"scheme")==0) return "FLTK 界面风格 (gtk+)";
     if (strcmp(key,"search_engine_url")==0) return "搜索引擎 URL 模板（%s 为选中内容）";
     if (strcmp(key,"show_statusbar")==0) return "是否显示状态栏 (1=是 0=否)";
@@ -413,6 +415,9 @@ void Config::initFromDisk() {
     needSave |= validateKey("show_statusbar",1,          0,  1);
     needSave |= validateKey("multi_tab",     0,          0,  1);
     needSave |= validateKey("always_on_top", 0,          0,  1);
+    needSave |= validateKey("rounded_corners", 0,        0,  1);
+    // Default on: the glow is part of the window look, not an extra.
+    needSave |= validateKey("window_shadow",   1,        0,  1);
     needSave |= validateKey("long_line_marker", 0,       0,  999);
     needSave |= validateKey("highlight_current_line", 1, 0, 1);
     needSave |= validateKey("show_whitespace", 1,        0,  1);
@@ -565,7 +570,8 @@ void Config::setWindowMax(bool on) {
 namespace {
 int fontNameToFlId(const char *name) {
     if (!name || !name[0]) return FL_COURIER;
-    int num = Fl::set_fonts();
+    // "*" = 全部字符集（无参版本只收录 ANSI，会漏掉中文/日文字体）。
+    int num = Fl::set_fonts("*");
     for (int i = 0; i < num; ++i) {
         int attr = 0;
         const char *fn = Fl::get_font_name(i, &attr);
@@ -587,6 +593,15 @@ int fontNameToFlId(const char *name) {
     if (_stricmp(name, "Helvetica") == 0) return FL_HELVETICA;
     if (_stricmp(name, "Times") == 0 || _stricmp(name, "Times New Roman") == 0)
         return FL_TIMES;
+    // 名字在系统里找不到 → 回退默认字体 Consolas，而不是 Courier。
+    // 理由同 FontUtils::fontNameToId：Courier 是"能用但没人会主动选"的字体，
+    // 静默落到它上面会把配置错误藏起来（本机 editor_font=Gulim 时编辑器一直
+    // 按 Courier 渲染，用户完全无感知）。
+    for (int i = 0; i < num; ++i) {
+        int attr = 0;
+        const char *fn = Fl::get_font_name((Fl_Font)i, &attr);
+        if (fn && attr == 0 && _stricmp(fn, "Consolas") == 0) return i;
+    }
     return FL_COURIER;
 }
 } // namespace
@@ -707,12 +722,47 @@ void Config::setAutoPreviewMd(bool on) {
     writeInt("auto_preview_md", on ? 1 : 0);
 }
 
+bool Config::getSidePanel() const {
+    return readInt("side_panel", 0) != 0;
+}
+
+void Config::setSidePanel(bool on) {
+    writeInt("side_panel", on ? 1 : 0);
+}
+
+int Config::getSidePanelWidth() const {
+    int v = readInt("side_panel_width", 0);
+    if (v < 0) v = 0;   // sanitize
+    return v;
+}
+
+void Config::setSidePanelWidth(int px) {
+    if (px < 0) px = 0;
+    writeInt("side_panel_width", px);
+}
+
 bool Config::getAlwaysOnTop() const {
     return readInt("always_on_top", 0) != 0;
 }
 
 void Config::setAlwaysOnTop(bool on) {
     writeInt("always_on_top", on ? 1 : 0);
+}
+
+bool Config::getRoundedCorners() const {
+    return readInt("rounded_corners", 0) != 0;
+}
+
+void Config::setRoundedCorners(bool on) {
+    writeInt("rounded_corners", on ? 1 : 0);
+}
+
+bool Config::getWindowShadow() const {
+    return readInt("window_shadow", 1) != 0;
+}
+
+void Config::setWindowShadow(bool on) {
+    writeInt("window_shadow", on ? 1 : 0);
 }
 
 int Config::getLongLineMarker() const {

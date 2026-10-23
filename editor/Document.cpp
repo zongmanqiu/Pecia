@@ -27,6 +27,41 @@
 // Read at most this many bytes when detecting the encoding
 static const int DETECT_BUF = 8192;
 
+// Localized text for a Win32 error code (GetLastError()). The CRT errno is
+// NOT set by Win32 API failures such as MoveFileExW, so strerrorLocalized()
+// would report a stale or unrelated error - use this for those paths.
+// FormatMessageW + WideCharToMultiByte(CP_UTF8): the system message text is
+// UTF-16 in the local language, and Pecia's internal strings are UTF-8 -
+// feeding the ANSI (FormatMessageA) text straight in produced mojibake.
+static std::string win32ErrorText()
+{
+#if defined(_WIN32)
+    wchar_t *buf = nullptr;
+    const DWORD n = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER |
+                                   FORMAT_MESSAGE_FROM_SYSTEM |
+                                   FORMAT_MESSAGE_IGNORE_INSERTS,
+                                   nullptr, GetLastError(),
+                                   MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                                   (LPWSTR)&buf, 0, nullptr);
+    std::string s;
+    if (n > 0 && buf) {
+        const int need = WideCharToMultiByte(CP_UTF8, 0, buf, (int)n,
+                                             nullptr, 0, nullptr, nullptr);
+        if (need > 0) {
+            s.resize((size_t)need);
+            WideCharToMultiByte(CP_UTF8, 0, buf, (int)n, &s[0], need,
+                                nullptr, nullptr);
+        }
+    }
+    if (buf) LocalFree(buf);
+    while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
+    if (s.empty()) s = I18n::get("error.unknown");
+    return s;
+#else
+    return std::string();
+#endif
+}
+
 Document::Document()
     : m_buffer(new Fl_Text_Buffer())
     , m_encoding(Encoding::UTF8)
@@ -95,7 +130,34 @@ void Document::markClean() {
 }
 
 void Document::setEncoding(Encoding e) {
-    m_encoding = e;
+    if (isEncodingAvailable(e)) m_encoding = e;
+}
+
+// True when every character in the buffer can be written in `enc` without
+// loss. ANSI/GB18030 go through the same conversion used by saveFile(), so
+// the check cannot disagree with the actual write.
+bool Document::canEncode(Encoding enc) const {
+    if (!isEncodingAvailable(enc)) return false;
+    char *text = m_buffer->text();
+    int len = text ? (int)strlen(text) : 0;
+    bool ok = true;
+    if (enc == Encoding::UTF8) {
+        ok = isValidUtf8((const unsigned char *)text, len);
+    } else if (enc == Encoding::UTF8_BOM) {
+        ok = isValidUtf8((const unsigned char *)text, len);
+    } else if (enc == Encoding::UTF16_LE || enc == Encoding::UTF16_BE) {
+        wchar_t *w = nullptr; int wlen = 0;
+        ok = utf8ToWide(text, len, &w, &wlen);
+        delete[] w;
+    } else {
+        int cp = encodingToCodePage(enc);
+        if (cp == 0) cp = CP_ACP;
+        char *out = nullptr; int outLen = 0; bool lossy = false;
+        ok = utf8ToCodepage(cp, text, len, &out, &outLen, &lossy) && !lossy;
+        delete[] out;
+    }
+    free(text);
+    return ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,18 +193,7 @@ void Document::detectEOL(const char *text, int len) {
 }
 
 const char *Document::encodingName() const {
-    switch (m_encoding) {
-    case Encoding::UTF8:      return "UTF-8";
-    case Encoding::UTF8_BOM:  return "UTF-8 (BOM)";
-    case Encoding::UTF16_LE:  return "UTF-16 LE";
-    case Encoding::UTF16_BE:  return "UTF-16 BE";
-    case Encoding::GBK:       return "GBK";
-    case Encoding::ANSI:      return "ANSI";
-    case Encoding::BIG5:      return "BIG5";
-    case Encoding::SHIFT_JIS: return "Shift-JIS";
-    case Encoding::EUC_KR:    return "EUC-KR";
-    }
-    return "Unknown";
+    return encodingDisplayName(m_encoding);
 }
 
 // ---------------------------------------------------------------------------
@@ -215,16 +266,37 @@ bool Document::loadWithEncoding(const char *path, Encoding enc) {
             b->message(I18n::get("error.title"), _msg, I18n::get("dlg.ok"));
         return false;
     }
-    fseek(fp, 0, SEEK_END);
-    long sz = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-    if (sz < 0) { fclose(fp); return false; }
+    // 64-bit file size. A plain long is 32-bit on Windows, so ftell()
+    // overflows to a negative value for files at/over 2 GB - the old
+    // code then took the "sz < 0" branch and returned SILENTLY, so
+    // opening a 2 GB+ file did nothing at all: no error, no prompt,
+    // and the "too large" branch below was unreachable.
+#if defined(_WIN32)
+    _fseeki64(fp, 0, SEEK_END);
+    long long sz = _ftelli64(fp);
+    _fseeki64(fp, 0, SEEK_SET);
+#else
+    fseeko(fp, 0, SEEK_END);
+    long long sz = ftello(fp);
+    fseeko(fp, 0, SEEK_SET);
+#endif
+    if (sz < 0) {
+        // Rare: the size could not be determined at all. Report it
+        // instead of failing quietly.
+        char _msg[512];
+        snprintf(_msg, sizeof(_msg), I18n::get("error.open_failed"), path,
+                 I18n::strerrorLocalized(errno));
+        if (UiBridge *b = uiBridge())
+            b->message(I18n::get("error.title"), _msg, I18n::get("dlg.ok"));
+        fclose(fp);
+        return false;
+    }
 
     // Technical ceiling: Fl_Text_Buffer addresses text with 32-bit int
     // positions; anything at/over 2 GB would overflow and corrupt. Files
-    // below this are allowed (opening a multi-GB file may be slow or run
-    // out of RAM - that is the user's choice).
-    const long MAX_FILE_SIZE = 2147483647L;   // 2 GB - 1 (int position limit)
+    // below this are allowed (opening a multi-hundred-MB file may be slow
+    // or run out of RAM - that is the user's choice, warned about below).
+    const long long MAX_FILE_SIZE = 2147483647LL;   // 2 GB - 1 (int position limit)
     if (sz >= MAX_FILE_SIZE) {
         double gb = sz / (1024.0 * 1024.0 * 1024.0);
         char _msg[512];
@@ -293,7 +365,8 @@ bool Document::loadWithEncoding(const char *path, Encoding enc) {
     // file (that would silently drop content and mark the doc clean).
     if (rd != (size_t)sz) {
         if (UiBridge *b = uiBridge())
-            b->message("Error", "Failed to read file (unexpected end / I/O error)", "OK");
+            b->message(I18n::get("error.title"), I18n::get("error.read_failed"),
+                       I18n::get("dlg.ok"));
         delete[] raw;
         return false;
     }
@@ -347,24 +420,25 @@ bool Document::loadWithEncoding(const char *path, Encoding enc) {
         break;
     }
 
-    case Encoding::GBK:
     case Encoding::ANSI:
-    case Encoding::BIG5:
-    case Encoding::SHIFT_JIS:
-    case Encoding::EUC_KR: {
-        // Legacy code pages (ANSI on Chinese Windows = CP936/GBK; the
-        // others are their explicit code pages). Decode to UTF-8 via the
-        // Windows API - the authoritative decoder.
+    case Encoding::GB18030: {
+        // ANSI = system codepage (CP_ACP; GBK on Chinese Windows), exactly
+        // like Notepad. GB18030 uses CP54936 when the runtime probe says it
+        // is available.
         int cp = encodingToCodePage(enc);
-        if (cp == 0) cp = CP_ACP;   // ANSI fallback: system codepage
+        if (cp == 0) cp = CP_ACP;
         if (codepageToUtf8(cp, raw, (int)rd, &utf8, &utf8Len)) {
             m_buffer->text(utf8);
             detectEOL(utf8, utf8Len);
             delete[] utf8;
         } else {
-            // Fallback: load as raw bytes
-            m_buffer->text(raw);
-            detectEOL(raw, (int)rd);
+            // Do not feed raw bytes into the UTF-8 text buffer: that would
+            // garble the document silently. Report the decode failure.
+            if (UiBridge *b = uiBridge())
+                b->message(I18n::get("error.title"), I18n::get("error.decode_failed"),
+                           I18n::get("dlg.ok"));
+            delete[] raw;
+            return false;
         }
         delete[] raw;
         break;
@@ -510,20 +584,29 @@ bool Document::saveWithEncoding(const char *path, Encoding enc) {
         break;
     }
 
-    case Encoding::GBK:
     case Encoding::ANSI:
-    case Encoding::BIG5:
-    case Encoding::SHIFT_JIS:
-    case Encoding::EUC_KR: {
+    case Encoding::GB18030: {
         int cp = encodingToCodePage(enc);
         if (cp == 0) cp = CP_ACP;
         char *out = nullptr; int outLen = 0;
-        if (utf8ToCodepage(cp, writeData, writeLen, &out, &outLen)) {
-            ok = writeAll(out, (size_t)outLen);
+        bool lossy = false;
+        if (utf8ToCodepage(cp, writeData, writeLen, &out, &outLen, &lossy)) {
+            if (lossy) {
+                // Safety net: the UI should have offered "Save as UTF-8"
+                // before we got here. Never write '?' substitutions.
+                ok = false;
+                if (UiBridge *b = uiBridge())
+                    b->message(I18n::get("error.title"), I18n::get("error.lossy_save"),
+                               I18n::get("dlg.ok"));
+            } else {
+                ok = writeAll(out, (size_t)outLen);
+            }
             delete[] out;
         } else {
-            // Fallback: write as UTF-8
-            ok = writeAll(writeData, (size_t)writeLen);
+            ok = false;
+            if (UiBridge *b = uiBridge())
+                b->message(I18n::get("error.title"), I18n::get("error.encode_failed"),
+                           I18n::get("dlg.ok"));
         }
         break;
     }
@@ -549,7 +632,22 @@ bool Document::saveWithEncoding(const char *path, Encoding enc) {
             while (!tw.empty() && tw.back() == L'\0') tw.pop_back();
             renamed = MoveFileExW(tw.c_str(), pw.c_str(),
                                   MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-            if (!renamed) DeleteFileW(tw.c_str());
+            if (!renamed) {
+                DeleteFileW(tw.c_str());
+                // The atomic replace failed - most commonly the target
+                // carries the read-only attribute (ERROR_ACCESS_DENIED),
+                // or the file is locked by another process. The temp file
+                // is gone and the original is untouched, so no data is
+                // lost, but returning false SILENTLY makes a failed save
+                // look like a successful one: the document stays dirty and
+                // the user never learns why. Report it, exactly like the
+                // temp-file failure above.
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), I18n::get("error.save_failed"),
+                         path, win32ErrorText().c_str());
+                if (UiBridge *b = uiBridge())
+                    b->message(I18n::get("error.title"), _msg, I18n::get("dlg.ok"));
+            }
         }
         ok = renamed;
 #else

@@ -11,6 +11,7 @@
 #include "ui/GoTo.h"
 #include "ui/TitleBar.h"
 #include "ui/WindowFrame.h"
+#include "ui/WindowShadow.h"
 #include "ui/DropTarget.h"
 #include "core/Config.h"
 #include "core/Theme.h"
@@ -104,7 +105,9 @@ int MainWindow::handle(int event) {
         int dy = Fl::event_dy();
         // 鼠标在预览区：普通滚轮滚动预览；Ctrl+滚轮在预览区不缩放（预览无缩放功能）
         if (m_previewActive) {
-            int divX = (int)(w() * m_previewRatio);
+            // 内容区可能被左侧面板挤窄：分界点 = 侧栏宽 + 内容区内编辑区宽
+            const int cl = contentLeft();
+            const int divX = cl + (int)((w() - cl) * m_previewRatio);
             if (Fl::event_x() >= divX) {
                 if (!ctrl) scrollPreview(dy * 40);
                 return 1;
@@ -221,17 +224,22 @@ void MainWindow::minimizeWindow() {
 // so all mouse events go to the client area.  To get external resize
 // detection (outside the visible content, not inside), we:
 //   1. Add WS_THICKFRAME to the window style.
-//   2. Handle WM_NCCALCSIZE to create a 6px non-client border on
-//      left / right / bottom (NOT top - the title bar handles that).
-//   3. Handle WM_NCPAINT to paint the non-client border invisible
-//      (background color) and draw the 1px gray outer border.
-//   4. Handle WM_NCHITTEST to return HTLEFT / HTRIGHT / HTBOTTOM for
-//      points in the non-client border.
-// Windows then handles the resize cursor and drag automatically.
+//   2. Handle WM_NCCALCSIZE to reserve ONE non-client pixel on left / right /
+//      bottom (NOT top - the title bar starts on window row 0). That single
+//      row/column is where the 1px border lives: it belongs to the window, so
+//      no FLTK child can ever paint over it and no band has to be sampled.
+//   3. Handle WM_NCPAINT to stroke that border (ui/WindowFrame.cpp).
+//   4. Handle WM_NCHITTEST to return HTLEFT / HTRIGHT / HTBOTTOM / HTTOP for
+//      points within RESIZE_ZONE px of an edge - most of that zone is CLIENT
+//      area (see WindowFrame.h: NC_PAD); Windows then handles the resize
+//      cursor and drag automatically.
 // --------------------------------------------------------------------------
 
 #if defined(_WIN32)
-static const int NC_PAD = 6;  // non-client resize border width (px)
+// Single source of truth for both numbers: WindowFrame::NC_PAD is the
+// client inset (now 1px - the strip is just the border) and RESIZE_ZONE
+// is how far inside the window edge a point still counts as a grip.
+static const int NC_PAD = WindowFrame::NC_PAD;
 
 // Minimum client area matching size_range(200,100) set in the ctor.
 // Enforced via WM_GETMINMAXINFO ptMinTrackSize (FLTK's own handler is
@@ -239,13 +247,41 @@ static const int NC_PAD = 6;  // non-client resize border width (px)
 static const int kMinClientW = 200;
 static const int kMinClientH = 100;
 
+// The band's colour sampling now lives in windowChrome::bandColourAt
+// (ui/WindowFrame.cpp) so the main window and the tool windows share one
+// implementation - hand-drawn widgets (Editor, SidePanel) report their own
+// colours through windowChrome::BandColourSource. The painter is
+// windowChrome::paintNonClientFrame, called from WM_NCPAINT below.
+
+// Fingerprint of everything the band's colours depend on: every widget's
+// geometry, visibility and colour. Cheap enough (a few dozen nodes) to run on
+// every draw, which is how the band stays in sync - Windows never re-sends
+// WM_NCPAINT when only the client area changes.
+static unsigned long long bandSignature(Fl_Widget *w, int depth) {
+    unsigned long long h = 1469598103934665603ull;   // FNV-1a
+    auto mix = [&h](unsigned long long v) { h ^= v; h *= 1099511628211ull; };
+    mix((unsigned long long)w->x());
+    mix((unsigned long long)w->y());
+    mix((unsigned long long)w->w());
+    mix((unsigned long long)w->h());
+    mix(w->visible() ? 1ull : 0ull);
+    if (auto *ed = dynamic_cast<Editor *>(w)) mix((unsigned long long)ed->bgColor());
+    else mix((unsigned long long)w->color());
+    if (depth > 0) {
+        if (auto *g = dynamic_cast<Fl_Group *>(w))
+            for (int i = 0; i < g->children(); ++i)
+                mix(bandSignature(g->child(i), depth - 1));
+    }
+    return h;
+}
+
 static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
                                               WPARAM wp, LPARAM lp) {
     switch (msg) {
     // --- Detect maximize/restore from system (Win+Up, system menu, etc.)
     case WM_SIZE: {
         // Let FLTK handle WM_SIZE first (it updates x/y/w/h).
-        LRESULT ret = nativeSubclass::forward(hwnd, msg, wp, lp);
+        LRESULT ret = nativeSubclass::forward(hwnd, mainWindowSubclassProc, msg, wp, lp);
         // Sync our m_maximized flag with the actual Windows state.
         Fl_Window *win = fl_find(hwnd);
         MainWindow *self = dynamic_cast<MainWindow*>(win);
@@ -262,6 +298,27 @@ static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
         }
         return ret;
     }
+
+    // --- Keep the outer-gradient shadow window glued to the window.
+    // WM_WINDOWPOSCHANGED covers moves, resizes, show/hide, minimize/restore
+    // and Z-order changes in one place.
+    case WM_WINDOWPOSCHANGED:
+    case WM_SHOWWINDOW: {
+        LRESULT ret = nativeSubclass::forward(hwnd, mainWindowSubclassProc, msg, wp, lp);
+        windowShadow::sync(fl_find(hwnd));
+        return ret;
+    }
+
+    // --- Tear down the outer glow.
+    // Must go through the native handle: fl_find(hwnd) already returns null
+    // this late (FLTK drops the window from its table), and a Fl_Window-based
+    // detach would return early and leave the glow floating on screen after
+    // the window has closed.
+    case WM_DESTROY:
+    case WM_NCDESTROY:
+        windowShadow::detachHwnd(reinterpret_cast<void *>(hwnd));
+        nativeSubclass::detachAll(hwnd);
+        break;
 
     // --- Constrain maximized size to work area (excludes taskbar)
     // WM_GETMINMAXINFO is the standard Windows mechanism for this.
@@ -286,7 +343,7 @@ static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
         return 0;
     }
 
-    // --- Define the non-client border: 6px on left/right/bottom, 0 on top
+    // --- Define the non-client border: 1px on left/right/bottom, 0 on top
     // Always apply NC_PAD (including when maximized) so that FLTK's
     // AdjustWindowRectEx()计算的外部尺寸始终正确 —— 如果最大化时
     // return 0，FLTK 会额外加上 NC 边框导致窗口超出工作区。
@@ -304,50 +361,36 @@ static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
 
     // --- Paint the non-client border invisible + 1px gray outer edge
     case WM_NCPAINT: {
-        HDC hdc = GetWindowDC(hwnd);
-        if (hdc) {
-            RECT rcWin;
-            GetWindowRect(hwnd, &rcWin);
-            int ww = rcWin.right  - rcWin.left;
-            int wh = rcWin.bottom - rcWin.top;
-
-            // Read colors live from the theme so they update on theme switch.
-            COLORREF fillClr = RGB(235, 235, 235);  // fallback
-            COLORREF borderClr = RGB(180, 180, 180); // fallback
-            Fl_Window *win = fl_find(hwnd);
-            MainWindow *self = dynamic_cast<MainWindow*>(win);
-            if (self) {
-                uchar r, g, b;
-                Fl::get_color(self->color(), r, g, b);
-                fillClr = RGB(r, g, b);
-                Fl::get_color(self->m_theme.colors().text1, r, g, b);
-                borderClr = RGB(r, g, b);
-            }
-
-            // Fill non-client border with window background color
-            if (!IsZoomed(hwnd)) {
-                HBRUSH brush = CreateSolidBrush(fillClr);
-                RECT rcL = {0, 0, NC_PAD, wh};
-                FillRect(hdc, &rcL, brush);
-                RECT rcR = {ww - NC_PAD, 0, ww, wh};
-                FillRect(hdc, &rcR, brush);
-                RECT rcB = {NC_PAD, wh - NC_PAD, ww - NC_PAD, wh};
-                FillRect(hdc, &rcB, brush);
-                DeleteObject(brush);
-            }
-
-            // Draw 1px gray border at window's outer edge
-            HPEN pen = CreatePen(PS_SOLID, 1, borderClr);
-            HPEN oldPen = (HPEN)SelectObject(hdc, pen);
-            HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
-            Rectangle(hdc, 0, 0, ww, wh);
-            SelectObject(hdc, oldPen);
-            SelectObject(hdc, oldBrush);
-            DeleteObject(pen);
-
-            ReleaseDC(hwnd, hdc);
-        }
+        // ONE painter for every window (ui/WindowFrame.cpp). The non-client
+        // area is the 1px border itself, so all it needs is the colour -
+        // square or hard-drawn rounded, same code on Win8/10 and Win11.
+        // Colours are read live from the theme, so a theme switch only needs a
+        // repaint (refreshFrameBand); nothing is cached inside DWM.
+        Fl_Window *win = fl_find(hwnd);
+        MainWindow *self = dynamic_cast<MainWindow *>(win);
+        unsigned int border = (unsigned int)FL_BLACK;
+        if (self) border = (unsigned int)self->m_theme.colors().text1;
+        windowChrome::paintNonClientFrame(win, border);
         return 0;
+    }
+
+    // --- Repaint the border AFTER the client area.
+    // The 1px ring is not (only) in the non-client area: the top run sits on
+    // client row 0 and the arcs reach `radius` px inside the client rect, so
+    // any client paint goes straight over them. WM_NCPAINT is only sent for
+    // frame/size changes and Fl_Window::draw() only runs when the WINDOW is
+    // damaged - neither happens when a caption button repaints on hover, or
+    // when FLTK blits its whole offscreen buffer after a theme switch. That is
+    // the "corner turns into a staircase until restart" report (2026-10-22).
+    // Forwarding first means FLTK has flushed (its WM_PAINT is where the
+    // double-buffer blit happens), so these pixels stay on top.
+    case WM_PAINT: {
+        LRESULT ret = nativeSubclass::forward(hwnd, mainWindowSubclassProc, msg, wp, lp);
+        Fl_Window *win = fl_find(hwnd);
+        if (auto *self = dynamic_cast<MainWindow *>(win))
+            windowChrome::paintNonClientFrame(
+                win, (unsigned int)self->m_theme.colors().text1);
+        return ret;
     }
 
     // --- Prevent non-client visual changes on activate/deactivate
@@ -365,15 +408,25 @@ static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
         // Outside the window rect - let default handle it
         if (pt.x < rc.left || pt.x >= rc.right ||
             pt.y < rc.top  || pt.y >= rc.bottom)
-            return nativeSubclass::forward(hwnd, msg, wp, lp);
+            return nativeSubclass::forward(hwnd, mainWindowSubclassProc, msg, wp, lp);
 
         if (IsZoomed(hwnd))
             return HTCLIENT;  // no resize when maximized
 
-        bool onTop    = pt.y <  rc.top    + NC_PAD;
-        bool onLeft   = pt.x <  rc.left   + NC_PAD;
-        bool onRight  = pt.x >= rc.right  - NC_PAD;
-        bool onBottom = pt.y >= rc.bottom - NC_PAD;
+        // The grip is RESIZE_ZONE px inside the window edge (the 1px band is
+        // part of it). A scrollbar that touches the edge keeps its clicks -
+        // otherwise the outer 5px of a 10px scrollbar would resize the window
+        // instead of dragging the thumb - so there the grip shrinks back to
+        // the 1px band.
+        const int grip = windowChrome::pointOverScrollbar(
+                             fl_find(hwnd), pt.x - rc.left, pt.y - rc.top)
+                         ? WindowFrame::NC_PAD
+                         : WindowFrame::RESIZE_ZONE;
+
+        bool onTop    = pt.y <  rc.top    + grip;
+        bool onLeft   = pt.x <  rc.left   + grip;
+        bool onRight  = pt.x >= rc.right  - grip;
+        bool onBottom = pt.y >= rc.bottom - grip;
 
         // Corners first (order matters: top corners before top edge)
         if (onTop    && onLeft)   return HTTOPLEFT;
@@ -390,7 +443,7 @@ static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
         return HTCLIENT;
     }
     }
-    return nativeSubclass::forward(hwnd, msg, wp, lp);
+    return nativeSubclass::forward(hwnd, mainWindowSubclassProc, msg, wp, lp);
 }
 #endif
 
@@ -426,25 +479,6 @@ void MainWindow::fixTaskbarCb(void *data) {
         SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
                      SWP_NOACTIVATE | SWP_FRAMECHANGED);
-
-        // Force right-angle corners (Windows 11 defaults to rounded).
-        DWORD cornerPref = 1; // DWMWCP_DONOTROUND
-        DWORD borderColor = 0x007F7F7F; // fallback grey
-        {
-            uchar r, g, b;
-            Fl::get_color(self->m_theme.colors().text1, r, g, b);
-            borderColor = RGB(r, g, b);   // COLORREF is BGR
-        }
-        HMODULE hDwm = LoadLibraryW(L"dwmapi.dll");
-        if (hDwm) {
-            typedef HRESULT (WINAPI *DwmSWA)(HWND, DWORD, LPCVOID, DWORD);
-            auto fn = (DwmSWA)GetProcAddress(hDwm, "DwmSetWindowAttribute");
-            if (fn) {
-                fn(hwnd, 33, &cornerPref, sizeof(cornerPref));
-                fn(hwnd, 34, &borderColor, sizeof(borderColor));
-            }
-            FreeLibrary(hDwm);
-        }
 
         // Explicitly bring the window to the foreground and activate
         // it. border(0) + WS_EX_TOOLWINDOW caused ShowWindow to use
@@ -528,6 +562,29 @@ void MainWindow::fixTaskbarCb(void *data) {
             self->m_hasRestoreGeom = false;
             self->syncTitleBar();
         }
+
+        // Rounded / right-angle corners + theme border colour. Do this after
+        // WS_THICKFRAME and the startup geometry are final (DWM needs the
+        // final frame; Win10's region needs the final size).
+        windowChrome::setRoundedCornersEnabled(self->m_cfg->getRoundedCorners());
+        windowChrome::applyRoundedCorners(self, self->m_cfg->getRoundedCorners(),
+                                          self->m_theme.colors().text1);
+
+        // Hand the NC area to us before anything is painted into it: DWM
+        // discards WM_NCPAINT while it owns the band, which is what made the
+        // outer border vanish "sometimes". Independent of the glow switch.
+        windowChrome::takeOverFrame(self);
+        // Outer gradient last: it needs the final frame geometry and the
+        // final corner state to line the ramp up with the border line.
+        windowShadow::attach(self);
+        // Same first-frame guarantee as DialogBase::show(): ShowWindow already
+        // put the window on screen and everything above ran after that. Force
+        // frame + border + corner arcs to be painted synchronously so the
+        // first DWM composite never shows a bare undecorated frame.
+        // (Reuses this function's `hwnd`; re-declaring it here shadowed the
+        // outer one and tripped /W4 C4456.)
+        RedrawWindow(hwnd, nullptr, nullptr,
+                     RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW);
     }
 #endif
     (void)self;
@@ -541,7 +598,81 @@ void MainWindow::fixTaskbarCb(void *data) {
 // backgrounds; we just outline the outermost pixels.
 void MainWindow::draw() {
     Fl_Double_Window::draw();
-    // 1px outer border is now drawn in WM_NCPAINT (non-client area)
+    // 1px outer border is drawn in WM_NCPAINT (non-client area) - except the
+    // TOP line, which this repaints. See the comment below.
+    //
+    // The outer 1px border is a non-client thing: WM_NCCALCSIZE insets 1px on
+    // left/right/bottom, so those three lines sit in the NC strip and only
+    // WM_NCPAINT touches them. The top has NO inset, so its 1px line lands on
+    // client row 0 - and every client repaint wipes it, while Windows only
+    // re-sends WM_NCPAINT on move/size/frame changes.
+    // Measured (2026-10-22, temp/diag_border.py): moving the mouse off the
+    // title bar (which redraws the caption buttons) erased the whole top line;
+    // it came back only after dragging the window.
+    // Repainting it here, after all children, keeps it present; FLTK's clip on
+    // a partial damage trims it to the region being redrawn.
+    // Top 1px border. The top edge has NO non-client inset (an inset there
+    // would shift the title bar), so this line lands on client row 0 and every
+    // client repaint wipes it while Windows only re-sends WM_NCPAINT on move /
+    // size / frame changes. Repaint it here, after all children - measured
+    // 2026-10-22: moving the mouse off the title bar erased the whole top line
+    // until the window was dragged.
+    // Corners are hard-drawn since 2026-10-22, so the rounded case must draw
+    // the straight part itself and leave only the two arcs to the NC painter;
+    // previously this was skipped entirely and relied on DWM.
+    {
+        fl_color(m_theme.colors().text1);
+        if (windowChrome::roundedCornersActive(this)) {
+            const int rad = windowChrome::roundedCornerRadiusPx(this);
+            // The arc lives in WINDOW coordinates (drawn by the NC painter),
+            // but fl_rectf works in CLIENT coordinates, and the client origin
+            // is inset by NC_PAD on the left (no inset at the top). Using
+            // `rad` raw started the line NC_PAD late on the left and ran NC_PAD
+            // too far on the right - a bare NC_PAD-wide gap at every
+            // top corner (measured 2026-10-22, temp/hc_main_rounded1_full.png).
+            const int x0 = rad - NC_PAD;
+            const int len = w() - 2 * (rad - NC_PAD);
+            if (len > 0) fl_rectf(x0, 0, len, 1);
+        } else {
+            fl_rectf(0, 0, w(), 1);
+        }
+    }
+#if defined(_WIN32)
+    // The corner arcs are anti-aliased pixel by pixel against whatever is
+    // under them. The NC painter draws the same pixels, but everything it
+    // touches on client row 0 / inside the client rect is erased by the next
+    // FLTK repaint (same reason the top border line above is drawn here), so
+    // the client-side half has to be redrawn from draw() as well. Overlap is
+    // harmless: the colour is computed from the background, not accumulated.
+    if (windowChrome::roundedCornersActive(this)) {
+        static windowChrome::FramePixel pix[1024];
+        const int n = windowChrome::buildCornerStroke(
+            this, (unsigned int)m_theme.colors().text1, NC_PAD, 0,
+            pix, (int)(sizeof(pix) / sizeof(pix[0])));
+        for (int i = 0; i < n; ++i) {
+            fl_color((Fl_Color)pix[i].colour);
+            fl_rectf(pix[i].x, pix[i].y, 1, 1);
+        }
+    }
+#endif
+#if defined(_WIN32)
+    // Keep the non-client border in sync with the client area. Windows
+    // re-sends WM_NCPAINT on frame/size changes but NOT when only the client
+    // repaints, so toggling a bar, opening the preview or switching a tab could
+    // leave the border stale (measured, back when the strip was filled with
+    // sampled colours: band segments
+    // that no longer lined up with anything, one of them bare FLTK grey).
+    // Re-invalidate whenever the layout or any widget colour changes.
+    if (HWND hwnd = fl_xid(this)) {
+        static unsigned long long s_bandSig = 0;
+        const unsigned long long sig = bandSignature(this, 3);
+        if (sig != s_bandSig) {
+            s_bandSig = sig;
+            RedrawWindow(hwnd, nullptr, nullptr,
+                         RDW_FRAME | RDW_INVALIDATE | RDW_NOCHILDREN);
+        }
+    }
+#endif
 }
 
 // Override resize so that when the window size changes (edge drag,
@@ -551,6 +682,9 @@ void MainWindow::draw() {
 void MainWindow::resize(int X, int Y, int W, int H) {
     Fl_Double_Window::resize(X, Y, W, H);
     layoutTabs();
+    // Win10 region fallback must be rebuilt for the new size; also keeps the
+    // maximized/restored corner state in sync.
+    windowChrome::refreshRoundedCorners(this);
 }
 
 // Record the geometry to apply once the custom frame is ready (fixTaskbarCb).
@@ -598,6 +732,8 @@ void MainWindow::toggleMaximize() {
         ShowWindow(hwnd, SW_MAXIMIZE);
     }
     syncTitleBar();
+    // Maximized windows are square; restore re-applies the user setting.
+    windowChrome::refreshRoundedCorners(this);
 }
 
 // Apply the round/right-angle corner preference via DWM API.

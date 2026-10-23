@@ -7,5 +7,6 @@ void MainWindow::cbToggleLineNumbers(Fl_Widget *, void *) {}
 void MainWindow::cbToggleStatusbar(Fl_Widget *, void *) {}
 void MainWindow::cbToggleMenuBar(Fl_Widget *, void *) {}
 void MainWindow::cbToggleScriptBar(Fl_Widget *, void *) {}
+void MainWindow::cbToggleSidePanel(Fl_Widget *, void *) {}
 void MainWindow::cbToggleHighlightLine(Fl_Widget *, void *) {}
 void MainWindow::cbToggleShowWhitespace(Fl_Widget *, void *) {}

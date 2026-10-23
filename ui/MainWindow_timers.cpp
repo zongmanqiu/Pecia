@@ -104,6 +104,9 @@ void MainWindow::autoSaveCb(void *data) {
         Document *doc = self->m_tabsList[i].doc;
         if (!doc->isDirty()) continue;
         if (!doc->filePath()[0]) continue;   // never auto-save unnamed
+        // A lossy target needs an explicit user choice ("save as UTF-8").
+        // Skip it here instead of popping a modal from the timer callback.
+        if (!doc->canEncode(doc->encoding())) continue;
         doc->saveFile();
         // Silently update UI (no error alert on failure — auto-save
         // should be unobtrusive).

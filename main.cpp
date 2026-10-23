@@ -61,6 +61,19 @@ int main(int /*argc*/, char ** /*argv*/) {
     // Double-buffered visual for flicker-free drawing
     Fl::visual(FL_DOUBLE | FL_RGB);
 
+    // 枚举系统字体 —— 必须传非空参数，且必须在任何字体查询之前调用。
+    //
+    // FLTK 的 Fl::set_fonts() 无参版本只收录 ANSI_CHARSET 的条目（见
+    // .thirdparty/fltk-1.4.5/src/drivers/GDI/Fl_GDI_Graphics_Driver_font.cxx
+    // 的 enumcbw：`if (!p && lpelf->lfCharSet != ANSI_CHARSET) return 1;`），
+    // 所有中文/日文/韩文等字体都会被漏掉；本机实测正体字体 254 → 326 个，
+    // Noto Sans SC 只在 "*" 模式下出现。
+    //
+    // 而且 FLTK 内部只在首次调用时枚举一次（`if (fl_free_font == FL_FREE_FONT)`），
+    // 后面再怎么传参都是取缓存 —— 所以必须在这里抢先，否则被 Config /
+    // Editor 里的无参调用锁死。
+    Fl::set_fonts("*");
+
     // Replace FLTK's stock FL_BORDER_BOX with our themed version so all
     // bordered widgets (inputs, buttons, checkboxes, dropdowns, menus)
     // draw their 1px border using the theme's text1-derived colour

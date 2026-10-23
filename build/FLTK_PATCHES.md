@@ -64,7 +64,7 @@
   撤销/重做时整组一起回放，避免历史被海量细碎事件污染；
 - 暴露 `mUndoGrouping` 供 Pecia 的 buffer 锁定逻辑读取事务状态。
 
-**修改文件：** `src/Fl_Text_Display.cxx`、`FL/Fl_Text_Buffer.H`
+**修改文件：** `src/Fl_Text_Buffer.cxx`、`FL/Fl_Text_Buffer.H`
 
 ## Fl_Text_Display.cxx — 垂直滚动量程封顶 (2026-10-05)
 
@@ -84,3 +84,29 @@
 三方对齐；滑块仍可贴到轨道最底。
 
 **修改文件：** `src/Fl_Scrollbar.cxx`
+
+## Fl_Menu.cxx — 弹出菜单分隔线扁平化（2026-10-22）
+
+`Fl_Menu_Item::draw()` 中，`FL_MENU_DIVIDER` 分隔线由上游的
+`FL_DARK3` + `FL_LIGHT3` 双色立体线改为**一条 1px 纯色扁平线**，颜色取
+`extern Fl_Color g_borderColour`（定义在 Pecia 的 `core/Theme.cpp`，
+= 主题 text1：亮色主题≈纯黑，暗色主题自动浅色，与窗口边框同色系）。
+所有弹层（菜单栏下拉、脚本条、编辑器右键菜单、Fl_Choice 下拉）共用
+同一条绘制路径，因此分隔线全项目自动统一，无需各处单独设置。
+新增全局引用与既有 `g_popupCheckColor` 同模式（FLTK 工具 fluid/
+fltk-options 不链接 Theme.cpp，不引用该符号则不受影响）。
+
+**修改文件：** `src/Fl_Menu.cxx`
+
+## Fl_Menu.cxx — 弹出菜单外发光钩子（2026-10-22）
+
+menuwindow::show() / hide() 调用 Pecia 的 peciaMenuShadowShown/Hidden，
+把 ui/WindowShadow.cpp 的同一套外发光（同一组全局参数：宽度/透明度/
+Gamma 曲线）附着到所有弹出菜单：菜单栏下拉、右键菜单、Fl_Choice 下拉、
+多级子菜单。关闭菜单时先销毁阴影再隐藏原生窗口，避免残留。
+
+Pecia / PeciaLua / PeciaAIChat / 两个 UI 冒烟测试链接 ui/WindowShadow.cpp，
+提供真实实现；其他只链接 ltk.lib 的目标由 /alternatename 落到
+Fl_Menu.cxx 内的空桩，第三方库仍可独立链接。
+
+**修改文件：** src/Fl_Menu.cxx

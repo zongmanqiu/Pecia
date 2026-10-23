@@ -6,8 +6,11 @@
 // whose LTO'd duplicate std symbols make any extra test target noisy).
 #include "image_export.h"
 
+#include "core/PathUtils.h"
+
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cwchar>
 #include <string>
@@ -94,6 +97,63 @@ bool file_has_bytes(const std::string& path)
     GetFileSizeEx(h, &size);
     CloseHandle(h);
     return size.QuadPart > 0;
+}
+
+uint64_t remote_url_hash64(const std::string& s)
+{
+    uint64_t h = 1469598103934665603ULL;   // FNV-1a 64
+    for (unsigned char c : s) {
+        h ^= c;
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
+bool file_is_fresh(const std::string& path, int ttl_seconds)
+{
+    if (ttl_seconds <= 0) return true;
+    WIN32_FILE_ATTRIBUTE_DATA fad;
+    if (!GetFileAttributesExW(widen(path).c_str(), GetFileExInfoStandard, &fad))
+        return false;
+    ULARGE_INTEGER written, now;
+    written.LowPart  = fad.ftLastWriteTime.dwLowDateTime;
+    written.HighPart = fad.ftLastWriteTime.dwHighDateTime;
+    FILETIME nowFt;
+    GetSystemTimeAsFileTime(&nowFt);
+    now.LowPart  = nowFt.dwLowDateTime;
+    now.HighPart = nowFt.dwHighDateTime;
+    if (now.QuadPart < written.QuadPart) return true;   // clock skew: keep it
+    const ULONGLONG age = now.QuadPart - written.QuadPart;
+    return age <= (ULONGLONG)ttl_seconds * 10000000ULL;
+}
+
+// Touch the directory itself (not the cached files: file mtime is the fetch
+// time used by the TTL). This keeps cleanupOldTempDirs() from deleting a
+// cache that is still being used, without adding a second cleanup mechanism.
+void touch_cache_dir_mtime(const std::string& dir)
+{
+    if (dir.empty()) return;
+    HANDLE h = CreateFileW(widen(dir).c_str(), FILE_WRITE_ATTRIBUTES,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS,
+                           nullptr);
+    if (h == INVALID_HANDLE_VALUE) return;
+    FILETIME now;
+    GetSystemTimeAsFileTime(&now);
+    SetFileTime(h, nullptr, nullptr, &now);
+    CloseHandle(h);
+}
+
+// Materialize cache -> dest. Hardlink avoids a second copy of the bytes on
+// NTFS; copy is the safe fallback for other volumes/filesystems.
+bool link_or_copy_file(const std::string& src, const std::string& dest)
+{
+    if (file_has_bytes(dest)) return true;
+    if (CreateHardLinkW(widen(dest).c_str(), widen(src).c_str(), nullptr))
+        return true;
+    if (CopyFileW(widen(src).c_str(), widen(dest).c_str(), FALSE))
+        return true;
+    return file_has_bytes(dest);   // another writer won the race
 }
 
 // One GET attempt over WinHTTP. Returns true only when the response carried a
@@ -330,6 +390,78 @@ std::string remote_image_file_name(const std::string& url)
     char fb[80];
     std::snprintf(fb, sizeof(fb), "image_%08x%s", img_url_hash(url), ext.c_str());
     return fb;
+}
+
+std::string remote_image_cache_dir()
+{
+    static const std::string dir = [] {
+        const std::string base = pathutil::exeDir();
+        if (base.empty()) return std::string();
+        return base + "\\temp\\remote-cache";
+    }();
+    return dir;
+}
+
+std::string remote_image_cache_file(const std::string& url)
+{
+    const std::string ext = url_image_ext(url);
+    const std::string dir = remote_image_cache_dir();
+    if (ext.empty() || dir.empty()) return {};
+    char name[80];
+    std::snprintf(name, sizeof(name), "remote_%016llx%s",
+                  (unsigned long long)remote_url_hash64(url), ext.c_str());
+    return dir + "\\" + name;
+}
+
+void ensure_remote_image_cache_dir()
+{
+    const std::string dir = remote_image_cache_dir();
+    if (dir.empty()) return;
+    const std::string temp = pathutil::exeDir() + "\\temp";
+    CreateDirectoryW(widen(temp).c_str(), nullptr);
+    CreateDirectoryW(widen(dir).c_str(), nullptr);
+}
+
+bool copy_remote_image_from_cache(const std::string& url, const std::string& dest,
+                                  int ttl_seconds)
+{
+    const std::string cache = remote_image_cache_file(url);
+    if (cache.empty() || !file_has_bytes(cache)) return false;
+    if (!file_is_fresh(cache, ttl_seconds)) return false;
+    if (!link_or_copy_file(cache, dest)) return false;
+    touch_cache_dir_mtime(remote_image_cache_dir());
+    return true;
+}
+
+bool commit_remote_image_cache(const std::string& url, const std::string& src,
+                               const std::string& dest)
+{
+    ensure_remote_image_cache_dir();
+    const std::string cache = remote_image_cache_file(url);
+    const std::string dir = remote_image_cache_dir();
+
+    if (!cache.empty() && !dir.empty()) {
+        // Atomic publish: another process may finish the same URL first; the
+        // last writer wins and every reader sees a complete file.
+        if (!MoveFileExW(widen(src).c_str(), widen(cache).c_str(),
+                         MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            if (CopyFileW(widen(src).c_str(), widen(cache).c_str(), FALSE))
+                DeleteFileW(widen(src).c_str());
+        }
+        if (file_has_bytes(cache) && link_or_copy_file(cache, dest)) {
+            touch_cache_dir_mtime(dir);
+            return true;
+        }
+    }
+
+    // Cache unavailable (no extension / hardlink+copy both failed): still
+    // deliver the downloaded bytes to the asset dir.
+    if (file_has_bytes(src)) {
+        const bool ok = CopyFileW(widen(src).c_str(), widen(dest).c_str(), FALSE) != 0;
+        DeleteFileW(widen(src).c_str());
+        if (ok && file_has_bytes(dest)) return true;
+    }
+    return file_has_bytes(dest);
 }
 
 void localize_remote_images(std::string& html, const std::string& build_dir,

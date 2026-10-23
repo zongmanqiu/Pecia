@@ -28,8 +28,14 @@ public:
     void markClean();
     const char *filePath() const { return m_filePath; }
     Encoding encoding() const { return m_encoding; }
-    const char *encodingName() const;     // human-readable ("UTF-8", "UTF-8 (BOM)", "UTF-16 LE", "GBK", ...)
+    const char *encodingName() const;     // human-readable ("UTF-8", "UTF-8 with BOM", ...)
     void setEncoding(Encoding e);         // change encoding for next save
+
+    // True when every character in the buffer can be represented in `enc`
+    // without loss (and the code page is available). The UI must call this
+    // before saving to a legacy/ANSI encoding and offer "Save as UTF-8"
+    // instead of silently writing '?'.
+    bool canEncode(Encoding enc) const;
 
     // Buffer access
     Fl_Text_Buffer *buffer() const { return m_buffer; }

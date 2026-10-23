@@ -3,6 +3,7 @@
 #include "core/Theme.h"
 #include "core/I18n.h"
 #include "core/ShortcutCore.h"
+#include "ui/BlinkInput.h"    // 与主编辑器同周期闪烁的输入框
 #include "ui/ThemeWidgets.h"
 #include "ui/SmokeTest.h"
 #include "core/Config.h"
@@ -453,13 +454,13 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
 
     // --- Long line marker (0 = off, >0 = column) ---
     new Fl_Box(FL_NO_BOX, margin, y, labelW, rowH, I18n::get("settings.longline"));
-    m_longLineInput = new Fl_Int_Input(margin + labelW, y, 80, rowH);
+    m_longLineInput = new BlinkIntInput(margin + labelW, y, 80, rowH);
     m_longLineInput->value("0");
     y += rowH + 6;
 
     // --- Search engine URL template (%s = selection) ---
     new Fl_Box(FL_NO_BOX, margin, y, labelW, rowH, I18n::get("settings.searchurl"));
-    m_searchUrlInput = new Fl_Input(margin + labelW, y, ctrlW, rowH);
+    m_searchUrlInput = new BlinkInput(margin + labelW, y, ctrlW, rowH);
     y += rowH + 6;
 
     // --- Auto indent（编辑行为，属编辑分组）---
@@ -1015,7 +1016,7 @@ struct ExtensionsDialog : DialogBase {
         customLbl->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
         customLbl->labelsize(uiFontSize);
         customLbl->labelcolor(textCol);
-        m_customInput = new Fl_Input(inputX, inputY, inputW, btnH, "");
+        m_customInput = new BlinkInput(inputX, inputY, inputW, btnH, "");
         m_customInput->box(FL_BORDER_BOX);
         m_customInput->color(editorCol);
         m_customInput->textcolor(textCol);

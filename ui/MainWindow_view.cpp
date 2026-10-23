@@ -9,6 +9,7 @@
 #include "editor/Document.h"
 #include "editor/Editor.h"
 #include "ui/FindReplace.h"
+#include "ui/FontDialog.h"
 #include "ui/GoTo.h"
 #include "ui/SettingsDialog.h"
 #include "ui/ConfirmDialog.h"
@@ -18,9 +19,12 @@
 #include "core/I18n.h"
 #include "core/UiBridge.h"
 #include "ui/Layout.h"
+#include "ui/WindowFrame.h"   // windowChrome:: rounded corners
+#include "ui/WindowShadow.h"
 #include <FL/Fl_Text_Editor.H>
 #include <FL/Fl_Text_Buffer.H>
 #include <FL/Fl_Menu_Item.H>
+#include <FL/Fl_Menu_Bar.H>
 #include <FL/fl_ask.H>
 #include <FL/filename.H>
 #include <FL/fl_draw.H>
@@ -141,19 +145,67 @@ void MainWindow::cbToggleShowWhitespace(Fl_Widget * /*w*/, void *data) {
     }
 }
 
-// View > Font - radio submenu, select editor font face.
-void MainWindow::cbSelectFont(Fl_Widget *w, void *data) {
+// View > Rounded Corners - toggle rounded corners on every app window.
+// Win11 uses DWM with the theme border colour; Win10/8 fall back to
+// region + hard-drawn 1px arc.
+void MainWindow::cbToggleRoundedCorners(Fl_Widget * /*w*/, void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
     if (!self) return;
-    Fl_Menu_Item *item = menuClickedItem(w);
-    if (!item || !item->label()) return;
-    // Skip leading spaces in the label (submenu items use 8-space indent)
-    const char *fontName = item->label();
-    while (*fontName == ' ') ++fontName;
-    self->m_cfg->setEditorFont(fontName);
-    for (auto &t : self->m_tabsList) {
-        t.editor->setFontFace(fontName);
+    bool on = !self->m_cfg->getRoundedCorners();
+    self->m_cfg->setRoundedCorners(on);   // syncFromConfig applies to main window
+    windowChrome::setRoundedCornersEnabled(on);
+    if (self->m_roundedCornersItem) {
+        if (on) self->m_roundedCornersItem->set();
+        else    self->m_roundedCornersItem->clear();
     }
+    // Open dialogs in this process + the main window itself.
+    windowChrome::reapplyRoundedCorners(on);
+    // The ramp follows the corner radius, so every glow has to be rebuilt
+    // even though no window geometry changed.
+    windowShadow::syncAll();
+    // Already-running tool processes (PeciaLua / PeciaAIChat).
+    windowChrome::broadcastRoundedCorners(on);
+}
+
+// View > Window Shadow - toggle the outer glow on every app window.
+// One process-wide switch: this window, any open dialog, and the two tool
+// processes (PeciaLua / PeciaAIChat, reached by the broadcast).
+void MainWindow::cbToggleWindowShadow(Fl_Widget * /*w*/, void *data) {
+    MainWindow *self = static_cast<MainWindow *>(data);
+    if (!self) return;
+    const bool on = !self->m_cfg->getWindowShadow();
+    self->m_cfg->setWindowShadow(on);
+    if (self->m_windowShadowItem) {
+        if (on) self->m_windowShadowItem->set();
+        else    self->m_windowShadowItem->clear();
+    }
+    windowShadow::setEnabled(on);
+    // Windows that were shown while the glow was off were still marked as
+    // candidates, so they get it now; the rest lose theirs.
+    windowShadow::applyAll();
+    // Already-running tool processes.
+    windowShadow::broadcastEnabled(on);
+}
+
+// View > Font - opens FontDialog (system font picker).
+void MainWindow::cbSelectFont(Fl_Widget * /*w*/, void *data) {
+    MainWindow *self = static_cast<MainWindow *>(data);
+    if (!self) return;
+    char curFont[64];
+    self->m_cfg->getEditorFont(curFont, sizeof(curFont));
+
+    FontDialog dlg(&self->m_theme, self->m_cfg->getUiFontSize(), curFont);
+    if (!dlg.runModal()) return;               // cancelled
+    const std::string &name = dlg.chosen();
+    if (name.empty() || name == curFont) return;
+
+    self->m_cfg->setEditorFont(name.c_str());
+    for (auto &t : self->m_tabsList) {
+        t.editor->setFontFace(name.c_str());
+    }
+    // 换字体后行号数字宽度变了，行号区宽度要按新字体重算
+    // （updateLinenumberWidth 用 linenumber_font() 量的）。
+    self->updateLinenumberWidth();
     // 预览跟随编辑器字体：字体名写进了注入 CSS，文档内容没变但样式变了，
     // 必须强制重渲染（与 togglePreview 同法）。
     if (self->m_preview && self->m_previewActive) {

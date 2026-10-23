@@ -1,16 +1,20 @@
 #include "container.h"
 #include "preprocess.h"
+#include "core/I18n.h"        // localized render-failure messages
 #include "editor/Editor.h"   // FontUtils::findFontByName（CSS 字体名 → 已安装字体）
 #include "core/PathUtils.h"  // pathutil::exeDir()（便携：缓存写 exe 同级 temp/）
 #include "image_export.h"    // remote_image_file_name（远程图命名，与导出一致）
 
+#include <FL/Fl.H>
 #include <FL/Fl_Image_Surface.H>
 #include <FL/fl_draw.H>
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>      // floorf()：边框像素量化
 #include <cstdio>
+#include <cstdlib>    // getenv：PECIA_PROFILE
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -20,6 +24,84 @@
 // Forward declaration: process-level singleton placeholder used for images
 // that fail to load. Defined later in this file.
 static Fl_Image* unsupportedImage();
+
+// ---------- 阶段耗时诊断 ----------
+// 只在 PECIA_PROFILE=1 时写文件；关闭时不碰磁盘、不取系统时间以外的成本。
+// 输出位置选 exe 同级（与 drafts/ 一致），避免污染 main/。
+static bool mdv_prof_on()
+{
+    static const bool on = [] {
+        const char* v = getenv("PECIA_PROFILE");
+        return v && *v && *v != '0';
+    }();
+    return on;
+}
+
+void mdv_prof_ms(const char* tag, double ms)
+{
+    if (!mdv_prof_on()) return;
+    static FILE* fp = [] {
+        std::string p = pathutil::exeDir() + "/preview_profile.log";
+        return fopen(p.c_str(), "a");
+    }();
+    if (!fp) return;
+    fprintf(fp, "[prof] %-28s %9.1f ms\n", tag, ms);
+    fflush(fp);
+}
+
+void mdv_prof_int(const char* tag, long long value)
+{
+    if (!mdv_prof_on()) return;
+    static FILE* fp = [] {
+        std::string p = pathutil::exeDir() + "/preview_profile.log";
+        return fopen(p.c_str(), "a");
+    }();
+    if (!fp) return;
+    fprintf(fp, "[prof] %-28s %9lld\n", tag, value);
+    fflush(fp);
+}
+
+void mdv_prof_str(const char* tag, const std::string& text)
+{
+    if (!mdv_prof_on()) return;
+    static FILE* fp = [] {
+        std::string p = pathutil::exeDir() + "/preview_profile.log";
+        return fopen(p.c_str(), "a");
+    }();
+    if (!fp) return;
+    fprintf(fp, "[prof] %-20s %s\n", tag, text.c_str());
+    fflush(fp);
+}
+
+// 文本测量统计（PECIA_PROFILE 下才累加）：parse 阶段的耗时几乎全在这里，
+// 只报一个总数无法区分「缓存没命中」和「命中但 lookup 本身慢」。
+static size_t g_tw_calls = 0;
+static size_t g_tw_hits  = 0;
+static double g_tw_miss_ms = 0.0;
+
+void mdv_prof_tw_reset()
+{
+    g_tw_calls = g_tw_hits = 0;
+    g_tw_miss_ms = 0.0;
+}
+
+void mdv_prof_tw_report(const char* phase)
+{
+    if (!mdv_prof_on()) return;
+    char buf[160];
+    snprintf(buf, sizeof(buf), "text_width[%s] calls=%zu hits=%zu miss=%.1fms",
+             phase, g_tw_calls, g_tw_hits, g_tw_miss_ms);
+    mdv_prof_ms(buf, 0.0);
+}
+
+
+// 两个矩形是否相交。用于视口裁剪的「完全不相交就跳过」判断。
+// 边界相接（a.right()==b.x）按不相交处理——面积为零，画了也看不见。
+static inline bool rects_intersect(const litehtml::position& a, const litehtml::position& b)
+{
+    return a.x < b.right() && b.x < a.right() &&
+           a.y < b.bottom() && b.y < a.bottom();
+}
 
 // stb_image：跨平台图片解码（单头文件，零依赖）
 #define STB_IMAGE_IMPLEMENTATION
@@ -156,11 +238,8 @@ void MyContainer::clear_images()
     }
     m_gifs.clear();
 
-    // 清除缩放缓存
-    for (auto& [k, img] : m_scaledImages) {
-        delete img;
-    }
-    m_scaledImages.clear();
+    // 清除缩放缓存（走 clear_scaled 保持 LRU 链与字节计数一致）
+    clear_scaled();
 
     // 清除自定义像素数据（按分配器区分释放方式）
     for (auto& [p, fromStbi] : m_owned_pixels) {
@@ -320,8 +399,32 @@ void MyContainer::delete_font(litehtml::uint_ptr hFont)
 litehtml::pixel_t MyContainer::text_width(const char* text, litehtml::uint_ptr hFont)
 {
     auto* fi = (FontInfo*)hFont;
+    if (!fi || !text || !*text) return litehtml::pixel_t(0);
+
+    // 键用 (文本, face, size) 而不是 FontInfo* —— FontInfo 会在 delete_font
+    // 后释放，地址可能被下一个字体复用（见 text_width_cache.h 的说明）。
+    //
+    // 收益口径注意：这条缓存优化的是**打开文档**，不是重排。实测 166 KB 的 md
+    // 在 parse 阶段调用 text_width 33,839 次（873 ms 里的 732 ms），而去重后
+    // 只有 4,478 个；render / re-render 阶段调用次数为 0。
+    // 加缓存后 parse 873 → 216 ms（4.0x），命中率 86.8%。
+    float w = 0.0f;
+    if (m_textWidthCache.lookup(text, (int)fi->face, fi->size, w))
+    {
+        if (mdv_prof_on()) { ++g_tw_calls; ++g_tw_hits; }
+        return litehtml::pixel_t(w);
+    }
+
+    auto tw0 = std::chrono::steady_clock::now();
     fl_font(fi->face, fi->size);
-    return litehtml::pixel_t((float)fl_width(text));
+    w = (float)fl_width(text);
+    if (mdv_prof_on()) {
+        ++g_tw_calls;
+        g_tw_miss_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - tw0).count();
+    }
+    m_textWidthCache.store(text, (int)fi->face, fi->size, w);
+    return litehtml::pixel_t(w);
 }
 
 void MyContainer::draw_text(litehtml::uint_ptr, const char* text,
@@ -485,6 +588,9 @@ void MyContainer::remote_download_fail_cb(void* data)
     if (self) {
         self->m_images[task->url] = unsupportedImage();
         if (self->m_remote_done_cb) self->m_remote_done_cb();
+        if (self->m_pendingRemoteDownloads > 0) --self->m_pendingRemoteDownloads;
+        if (self->m_pendingRemoteDownloads == 0 && self->m_remote_settled_cb)
+            self->m_remote_settled_cb();
     }
     delete task;
 }
@@ -500,6 +606,11 @@ void MyContainer::remote_download_done_cb(void* data)
         if (img) self->m_images[task->url] = img;
         else self->m_images[task->url] = unsupportedImage();   // 下载成功但解析失败 → 占位
         if (self->m_remote_done_cb) self->m_remote_done_cb();
+        // 放在重绘/重排之后：只有最后一张下载结束才通知，scheduleTrimSoon
+        // 再做 2s 去抖。慢网下不会在图片还在陆续到达时提前把页面踢出工作集。
+        if (self->m_pendingRemoteDownloads > 0) --self->m_pendingRemoteDownloads;
+        if (self->m_pendingRemoteDownloads == 0 && self->m_remote_settled_cb)
+            self->m_remote_settled_cb();
     }
     delete task;
 }
@@ -693,15 +804,14 @@ Fl_Image* MyContainer::load_image_file(const std::string& path)
         // 远程图片：异步下载（后台线程），下载完成回主线程加载并重绘。
         // 同步 URLDownloadToFileW 会阻塞 UI（慢网下可卡死十几秒）。
         //
-        // 下载目标就是【预览产物目录本身】（temp/<文档名>-<PID>/），文件名用
-        // URL 里的原始名字与真实扩展名。原来的做法是下到 temp\*.img 缓存、
-        // 导出时再拷进产物目录 —— 同一张图存两份，缓存名还是
-        // pecia_img_<hash>.img，用户既看不懂也打不开。现在只有一份，且这个
-        // 目录天生就是一份完整自包含的网页资源：浏览器直接打开 index.html
-        // 即可，导出到别处也只是把整个文件夹复制过去。
+        // 下载目标仍然是【预览产物目录本身】（temp/<文档名>-<PID>/），文件名
+        // 用 URL 原始名字与真实扩展名。这个目录同时是浏览器/导出的资源目录，
+        // 所以下游契约（可读名、每张图一份、自包含导出）完全不变。
         //
-        // 命名规则必须走 remote_image_file_name()，与导出时的本地化共用同一
-        // 函数；否则两边算出不同名字，同一张图会出现两份、互相覆盖。
+        // 唯一新增的是【取字节】的来源：先查跨启动的 temp/remote-cache。
+        // 命中时把缓存文件 hardlink/copy 成资产目录里的同名文件，后续仍走
+        // load_cached_image()；未命中才真正下载。缓存只存字节，不改变预览、
+        // 导出、浏览器打开的任何判断。手动刷新（Ctrl+R）会跳过缓存并重新下载。
         //
         // 便携：目录一律在 exe 之下，绝不写 exe 之外（%TEMP% 会污染系统临时
         // 目录，与"便携程序"目标冲突）。拿不到目录则放弃下载。
@@ -715,22 +825,51 @@ Fl_Image* MyContainer::load_image_file(const std::string& path)
         if (!cache_dir.empty() && !local_name.empty()) {
             CreateDirectoryW(widen(cache_dir).c_str(), NULL);
             std::string cache_file = cache_dir + "\\" + local_name;
+            const bool force = m_force_remote_refresh;
 
-            if (GetFileAttributesW(widen(cache_file).c_str()) != INVALID_FILE_ATTRIBUTES) {
-                // 已存在（本次或上次渲染下载过）→ 直接加载。必须走统一分派：
+            if (!force &&
+                GetFileAttributesW(widen(cache_file).c_str()) != INVALID_FILE_ATTRIBUTES) {
+                // 本次运行已下载/物化过 → 直接加载。必须走统一分派：
                 // 这里若只判 GIF，SVG 会被误送进 stb_image 而变成占位图
                 //（首次能显示、之后不能）。
                 img = load_cached_image(cache_file, path);
+            } else if (!force &&
+                       copy_remote_image_from_cache(path, cache_file,
+                                                   kRemoteImageCacheTtlSeconds)) {
+                // 跨启动缓存命中：文件已经物化成资产目录里的正常名字。
+                img = load_cached_image(cache_file, path);
             } else {
-                // 后台下载：任务持 weak_ptr（容器析构后回调为空操作）
+                if (force) DeleteFileW(widen(cache_file).c_str());
+
+                // 后台下载：任务持 weak_ptr（容器析构后回调为空操作）。
+                // 有可信扩展名时先落到 remote-cache 的 staging 文件，成功后
+                // 原子发布并物化；没有扩展名时保持旧行为，直接下到资产目录。
+                ++m_pendingRemoteDownloads;
                 auto wp = shared_from_this();
                 std::thread([wp, path, cache_file]() {
+                    std::string staging = remote_image_cache_file(path);
+                    const bool cached = !staging.empty();
+                    if (cached) {
+                        ensure_remote_image_cache_dir();
+                        staging += ".download-" +
+                                   std::to_string(GetCurrentProcessId()) + "-" +
+                                   std::to_string(GetCurrentThreadId()) + ".tmp";
+                    } else {
+                        staging = cache_file;
+                    }
+                    DeleteFileW(widen(staging).c_str());
+
                     HRESULT hr = URLDownloadToFileW(nullptr, widen(path).c_str(),
-                                                    widen(cache_file).c_str(), 0, nullptr);
+                                                    widen(staging).c_str(), 0, nullptr);
                     if (SUCCEEDED(hr)) {
+                        if (cached) {
+                            commit_remote_image_cache(path, staging, cache_file);
+                            DeleteFileW(widen(staging).c_str());   // best-effort cleanup
+                        }
                         auto task = new RemoteDone{wp, path, cache_file};
                         Fl::awake(remote_download_done_cb, task);
                     } else {
+                        DeleteFileW(widen(staging).c_str());
                         // 下载失败 → 主线程显示占位（不重试，刷新预览可重新触发）
                         auto task = new RemoteFail{wp, path};
                         Fl::awake(remote_download_fail_cb, task);
@@ -832,9 +971,96 @@ void MyContainer::get_image_size(const char* src, const char* baseurl, litehtml:
     }
 }
 
+namespace {
+
+// Fl_Image 的像素占用（字节）。d() 是每像素字节数，RGB/RGBA 图通常为 3 或 4；
+// 返回 0 时按 4 估（宁可多算，让 LRU 保守一点）。
+inline size_t image_bytes(const Fl_Image* img)
+{
+    if (!img || img->w() <= 0 || img->h() <= 0) return 0;
+    int d = img->d() > 0 ? img->d() : 4;
+    return static_cast<size_t>(img->w()) * static_cast<size_t>(img->h()) *
+           static_cast<size_t>(d);
+}
+
+}  // namespace
+
+Fl_Image* MyContainer::find_scaled(const std::string& key)
+{
+    auto it = m_scaledImages.find(key);
+    if (it == m_scaledImages.end()) return nullptr;
+
+    // 命中 → 提到 MRU。std::list::splice 不使迭代器失效，所以索引不必更新。
+    auto iit = m_scaledLruIndex.find(key);
+    if (iit != m_scaledLruIndex.end() && iit->second != std::prev(m_scaledLru.end()))
+        m_scaledLru.splice(m_scaledLru.end(), m_scaledLru, iit->second);
+    return it->second;
+}
+
+void MyContainer::drop_scaled(const std::string& key)
+{
+    auto it = m_scaledImages.find(key);
+    if (it != m_scaledImages.end()) {
+        m_scaledBytes -= image_bytes(it->second);
+        delete it->second;
+        m_scaledImages.erase(it);
+    }
+    auto iit = m_scaledLruIndex.find(key);
+    if (iit != m_scaledLruIndex.end()) {
+        m_scaledLru.erase(iit->second);
+        m_scaledLruIndex.erase(iit);
+    }
+}
+
+void MyContainer::insert_scaled(const std::string& key, Fl_Image* img)
+{
+    // 已存在同 key（GIF 换帧等）→ 先删旧的，避免计数错乱
+    if (m_scaledImages.count(key)) drop_scaled(key);
+
+    const size_t need = image_bytes(img);
+    // 淘汰最久未用的单条，直到能放下。注意是「淘汰一条」而不是「全清」：
+    // 全清会让图片数刚超过上限的文档进入「每帧重建全部」的抖动。
+    while (!m_scaledLru.empty() &&
+           (m_scaledBytes + need > kScaledCacheMaxBytes ||
+            m_scaledLru.size() + 1 > kScaledCacheMaxCount))
+    {
+        drop_scaled(m_scaledLru.front());
+    }
+
+    m_scaledImages[key] = img;
+    m_scaledLru.push_back(key);
+    m_scaledLruIndex[key] = std::prev(m_scaledLru.end());
+    m_scaledBytes += need;
+}
+
+void MyContainer::clear_scaled()
+{
+    for (auto& [k, img] : m_scaledImages) delete img;
+    m_scaledImages.clear();
+    m_scaledLru.clear();
+    m_scaledLruIndex.clear();
+    m_scaledBytes = 0;
+}
+
 void MyContainer::draw_image(litehtml::uint_ptr /*hdc*/, const litehtml::background_layer& layer,
                              const std::string& url, const std::string& base_url)
 {
+    // 视口裁剪：完全落在可见矩形外的图直接跳过 —— 不解码、不缩放、不绘制。
+    //
+    // litehtml 的 draw_children() 只按 is_visible()（display/visibility）过滤，
+    // 不做视口裁剪，整篇文档的每个元素每帧都会走到这里。没有这道门，一篇 100 张
+    // 图的文档滚动时，屏幕外的图也会每帧被复制成 1.65 MB 的缩放副本。
+    //
+    // 只排除「完全不相交」的情况：跨视口边界的图照常绘制，不会缺一块。
+    const litehtml::position& box = layer.border_box;
+    ++m_draw_image_calls;
+    if (m_has_view_clip && box.width > 0 && box.height > 0 &&
+        !rects_intersect(box, m_view_clip))
+    {
+        ++m_draw_image_skipped;
+        return;
+    }
+
     std::string full = resolve_image_path(url, base_url.empty() ? m_base_url : base_url);
     auto it = m_images.find(full);
     Fl_Image* img = nullptr;
@@ -856,7 +1082,6 @@ void MyContainer::draw_image(litehtml::uint_ptr /*hdc*/, const litehtml::backgro
         }
     }
 
-    auto& box = layer.border_box;
     // 布局框与图片源尺寸不同时，按布局框缩放绘制。
     // Fl_Image::draw 的 W/H 参数是裁剪语义（源图大于目标时只画左上角），
     // 因此先 copy 出目标尺寸（BILINEAR 缩放）再 1:1 绘制，结果按目标尺寸缓存。
@@ -864,16 +1089,11 @@ void MyContainer::draw_image(litehtml::uint_ptr /*hdc*/, const litehtml::backgro
     int bw = (int)box.width, bh = (int)box.height;
     if (bw > 0 && bh > 0 && (bw != img->w() || bh != img->h())) {
         std::string key = full + "@" + std::to_string(bw) + "x" + std::to_string(bh);
-        auto sit = m_scaledImages.find(key);
-        if (sit != m_scaledImages.end()) {
-            draw_img = sit->second;
+        if (Fl_Image* cached = find_scaled(key)) {
+            draw_img = cached;
         } else {
-            if (m_scaledImages.size() >= 16) {   // 防无限增长
-                for (auto& [k, si] : m_scaledImages) delete si;
-                m_scaledImages.clear();
-            }
             draw_img = img->copy(bw, bh);
-            m_scaledImages[key] = draw_img;
+            insert_scaled(key, draw_img);
         }
     }
     draw_img->draw((int)box.x, (int)box.y);
@@ -907,17 +1127,15 @@ void MyContainer::gif_timer_cb(void* data)
         if (kit2 != imgs.end()) {
             kit2->second = gif->image;
         }
-        // 帧更新后旧缩放缓存失效（key 前缀 = 路径@）
-        auto& scaled = gif->container->m_scaledImages;
+        // 帧更新后旧缩放缓存失效（key 前缀 = 路径@）。
+        // 必须走 drop_scaled() 而不是直接 erase —— LRU 链与字节计数要同步，
+        // 否则 m_scaledBytes 会虚高，淘汰逻辑提前触发。
         std::string prefix = gif->cache_key + "@";
-        for (auto it = scaled.begin(); it != scaled.end();) {
-            if (it->first.compare(0, prefix.size(), prefix) == 0) {
-                delete it->second;
-                it = scaled.erase(it);
-            } else {
-                ++it;
-            }
+        std::vector<std::string> stale;
+        for (const auto& [k, si] : gif->container->m_scaledImages) {
+            if (k.compare(0, prefix.size(), prefix) == 0) stale.push_back(k);
         }
+        for (const auto& k : stale) gif->container->drop_scaled(k);
     }
 
     // 安排下一帧
@@ -1034,6 +1252,15 @@ void MyContainer::link(const std::shared_ptr<litehtml::document>&, const litehtm
 void MyContainer::on_anchor_click(const char* url, const litehtml::element::ptr&)
 {
     if (!url || !*url) return;
+    if (url[0] == '#' && m_anchor_cb) {
+        // 分块模式：没有单一 document，交给视图在块表里找（见 BlockLayout）。
+        // 全量模式下 m_doc 非空，走下面的元素级精确定位更好，所以这条在前、
+        // 但不 return —— 由下面的分支决定是否还需要做像素级定位。
+        if (!m_doc) {
+            m_anchor_cb(std::string(url + 1));
+            return;
+        }
+    }
     if (url[0] == '#' && m_doc && m_scroll_cb) {
         std::string target = url + 1;
         // 从文档树中查找 id 匹配的元素
@@ -1061,10 +1288,20 @@ void MyContainer::import_css(std::string&, const std::string&, std::string&) {}
 
 void MyContainer::set_clip(const litehtml::position& pos, const litehtml::border_radiuses&)
 {
+    ++m_clip_depth;
     fl_push_clip((int)pos.x, (int)pos.y,
                  (int)pos.width, (int)pos.height);
 }
-void MyContainer::del_clip() { fl_pop_clip(); }
+void MyContainer::del_clip()
+{
+    // 没有配对的 set_clip 时**绝不能** fl_pop_clip()：FLTK 的裁剪栈是全局的，
+    // 多弹一次就会把调用方（ViewWidget::draw 里那层「只画面板可视区」的
+    // push_clip）弹掉，之后的绘制要么画到面板外，要么落进一个错误的裁剪区。
+    // 表现就是分块预览里「整块内容全是空白」。计数与弹栈必须同进同退。
+    if (m_clip_depth <= 0) return;
+    --m_clip_depth;
+    fl_pop_clip();
+}
 
 void MyContainer::get_viewport(litehtml::position& viewport) const
 {
@@ -1109,11 +1346,19 @@ ViewWidget::ViewWidget(int x, int y, int w, int h, MyContainer* container)
     // 避免分割线拖动后旧内容残留在新分配的区域内。
     box(FL_FLAT_BOX);
     color(FL_WHITE);
+    // 分块模式（大文档）下正文里的 #anchor 链接由视图自己在块表里定位。
+    if (m_container) {
+        m_container->set_anchor_callback([this](const std::string& id) {
+            if (scroll_to_anchor(id)) redraw();
+        });
+    }
 }
 
 void ViewWidget::load_and_render(const std::string& html)
 {
     if (!m_container) return;
+    // 取消可能挂起的防抖重排——新文档已加载，旧宽度的重排无意义。
+    cancel_deferred_render();
     // Litehtml parsing and layout allocate per-node DOM structures: a huge
     // document can throw bad_alloc here. The preview no longer has a size
     // limit (see MainWindow.h), so this path is reachable — and an escaping
@@ -1121,13 +1366,42 @@ void ViewWidget::load_and_render(const std::string& html)
     // whole process (with every other tab's unsaved work) down with it.
     // Report it in the panel instead.
     try {
+        // 内容变了 = 换文档：上一个文档的图片解码结果与文本测量结果全部作废。
+        // 内容没变只是重排（拖分隔条 / 字体缩放）时**不能清** —— 清了就得把
+        // 所有图片重新解码、所有文本重新测量一遍，滚动和拖拽会卡一下。
+        if (m_current_html != html) {
+            m_container->clear_images();
+            m_container->clear_text_width_cache();
+        }
         m_current_html = html;
+        mdv_prof_tw_reset();
+
+        // 大文档先试分块。一个 document 的内存是「节点数 × 约 1.3 KB」，1 MB 的
+        // markdown 会到 436 MB；分块后只保视口附近几块（原型实测 38 MB）。
+        // 分块失败（结构异常 / 覆盖度不足）时静默退回全量路径，行为与从前一致。
+        if (html.size() >= kChunkThreshold && render_chunked(html))
+        {
+            m_renderError.clear();
+            redraw();
+            return;
+        }
+
+        // 全量路径：清掉上一次可能存在的分块状态。否则 has_content()/draw()
+        // 会继续按分块分支走，而 content_height() 用的是旧的块表。
+        if (m_blocks && m_blocks->active()) m_blocks->clear();
+
+        auto tp0 = std::chrono::steady_clock::now();
         auto doc = litehtml::document::createFromString(html.c_str(), m_container);
+        auto tp1 = std::chrono::steady_clock::now();
+        mdv_prof_tw_report("parse");
+        mdv_prof_ms("parse(createFromString)", std::chrono::duration<double, std::milli>(tp1 - tp0).count());
         if (!doc) return;
         m_container->set_document(doc);
         m_scroll_y = 0;
         m_scroll_x = 0;
         doc->render(litehtml::pixel_t((float)w()));
+        auto tp2 = std::chrono::steady_clock::now();
+        mdv_prof_ms("layout(render)", std::chrono::duration<double, std::milli>(tp2 - tp1).count());
         m_renderError.clear();
         redraw();
     } catch (const std::bad_alloc &) {
@@ -1135,18 +1409,164 @@ void ViewWidget::load_and_render(const std::string& html)
         if (m_container) m_container->set_document(nullptr);
         m_scroll_y = 0;
         m_scroll_x = 0;
-        set_render_error("Preview failed: out of memory (document too large to lay out).");
+        set_render_error(I18n::get("preview.fail.oom"));
     } catch (...) {
         m_current_html.clear();
         if (m_container) m_container->set_document(nullptr);
         m_scroll_y = 0;
         m_scroll_x = 0;
-        set_render_error("Preview failed while rendering this document.");
+        set_render_error(I18n::get("preview.fail.render"));
     }
+}
+
+bool ViewWidget::render_chunked(const std::string& html)
+{
+    if (!m_container) return false;
+    if (!m_blocks) m_blocks = std::make_unique<pecia::BlockLayout>();
+
+    auto t0 = std::chrono::steady_clock::now();
+    if (!m_blocks->split(html))
+    {
+        mdv_prof_int("chunk(split failed -> full path)", 1);
+        m_blocks->clear();
+        return false;
+    }
+    m_blocks->set_width(w());
+    mdv_prof_ms("chunk(split)", std::chrono::duration<double, std::milli>(
+                                   std::chrono::steady_clock::now() - t0).count());
+    mdv_prof_int("chunk(blocks)", (long long)m_blocks->count());
+    mdv_prof_int("chunk(total px, estimated)", (long long)m_blocks->total_height());
+    mdv_prof_int("chunk(px per Kb x1000)", (long long)(m_blocks->px_per_kb() * 1000.0));
+
+    // 分块模式下没有「当前 document」这个概念：锚点、搜索、选中的定位全部
+    // 由 BlockLayout 负责。把容器的 m_doc 清空，避免任何残留的悬垂引用。
+    m_container->set_document(nullptr);
+    m_scroll_y = 0;
+    m_scroll_x = 0;
+
+    auto t1 = std::chrono::steady_clock::now();
+    ensure_visible_blocks(h());
+    mdv_prof_ms("chunk(first window)", std::chrono::duration<double, std::milli>(
+                                          std::chrono::steady_clock::now() - t1).count());
+    mdv_prof_int("chunk(measured blocks)", (long long)m_blocks->measured_count());
+    mdv_prof_int("chunk(total px, 1st window)", (long long)m_blocks->total_height());
+    return true;
+}
+
+void ViewWidget::ensure_visible_blocks(int content_h)
+{
+    if (!m_blocks || !m_blocks->active() || !m_container) return;
+    int first = m_blocks->block_at(m_scroll_y);
+    int last = m_blocks->block_at(m_scroll_y + content_h);
+    if (first < 0 || last < 0) return;
+    m_blocks->ensure_window(first - pecia::BlockLayout::kPrefetchBlocks,
+                            last + pecia::BlockLayout::kPrefetchBlocks, m_container);
+    // 实例化/释放会刷新实测高度 → 总高变化 → 滚动位置可能已经越界。
+    int max_y = std::max(0, content_height() - h());
+    if (m_scroll_y > max_y) m_scroll_y = max_y;
+}
+
+void ViewWidget::draw_chunked(int content_w, int content_h, const litehtml::position& clip)
+{
+    if (!m_blocks || !m_container) return;
+
+    // 定位 → 实例化 → 重新定位，直到范围稳定。
+    //
+    // 为什么需要这一轮：块高在实测前是估算值（px/KB 系数），估算与真实
+    // 高度可能差 2~3 倍。编辑一个大文档后所有块都退回估算，block_at()
+    // 定位到的块，其真实起点可能在视口下方几千像素处 —— 那里什么都没有，
+    // 面板就是一片白（实测 5 MB 文档改一个字后空白 14 秒，打点显示目标块
+    // 起点比视口低 3713 px，而视口只有 504 px 高）。
+    //
+    // 实例化一轮会把这些块测出来，系数随之校准、offset 修正，再定位就准了。
+    // 三轮足够：每轮都会用实测值修正系数，偏差单调收敛。
+    int first = -1, last = -1;
+    for (int pass = 0; pass < 3; ++pass)
+    {
+        const int f = m_blocks->block_at(m_scroll_y);
+        const int l = m_blocks->block_at(m_scroll_y + content_h);
+        if (f < 0 || l < 0) return;
+        if (pass > 0 && f == first && l == last) break;   // 范围稳定了
+        first = f;
+        last = l;
+        const int lo = std::max(0, f - pecia::BlockLayout::kPrefetchBlocks);
+        const int hi = std::min((int)m_blocks->count() - 1, l + pecia::BlockLayout::kPrefetchBlocks);
+        m_blocks->ensure_window(lo, hi, m_container);
+    }
+    if (first < 0 || last < 0) return;
+
+    // 先确保窗口（会实例化本屏 + 前后各一块），再逐块绘制。
+    const int lo = std::max(0, first - pecia::BlockLayout::kPrefetchBlocks);
+    const int hi = std::min((int)m_blocks->count() - 1, last + pecia::BlockLayout::kPrefetchBlocks);
+    m_blocks->ensure_window(lo, hi, m_container);
+
+    // 图片的视口裁剪同样按屏幕矩形生效；逐块设置一次即可。
+    m_container->set_view_clip(clip);
+    for (int i = first; i <= last; ++i)
+    {
+        const pecia::BlockLayout::Block& b = m_blocks->block((size_t)i);
+        if (!b.doc) continue;
+        // litehtml 的 draw(hdc, x, y, clip) 把「该块文档的原点」放到屏幕 (x, y)：
+        // 每块有自己的坐标原点，所以 y 要减去滚动量再加上块自身的累计偏移。
+        float top = (float)(y() - m_scroll_y + m_blocks->offset_of((size_t)i));
+        // 每块自己 push 一层裁剪，而不是只靠 draw() 外层那一层。
+        // 为什么必须这样（实测，不是保险起见）：litehtml 的绘制路径会把调用方
+        // 的裁剪区弹掉一层 —— 只依赖外层 push 时，块内容全部画不出来（面板上
+        // 只有空白），而每块自建裁剪就完全正常。按块裁剪同时也切掉了相邻块
+        // 之间的越界绘制。
+        int btop = (int)top;
+        int bh = m_blocks->height_of((size_t)i);
+        int cy0 = std::max(y(), btop);
+        int cy1 = std::min(y() + content_h, btop + bh);
+        fl_push_clip(x(), cy0, content_w, std::max(0, cy1 - cy0));
+        b.doc->draw((litehtml::uint_ptr)0, (float)(x() - m_scroll_x), top, &clip);
+        fl_pop_clip();
+        if (m_container->clip_depth() != 0)
+        {
+            // set_clip 没配对 del_clip：FLTK 的裁剪栈已经歪了，继续画下去会把
+            // 后面所有块都裁进错误区域。这里把多出来的层弹掉再继续。
+            for (int guard = 0; guard < 8 && m_container->clip_depth() > 0; ++guard)
+                m_container->del_clip();
+        }
+    }
+    m_container->clear_view_clip();
+}
+
+bool ViewWidget::scroll_to_anchor(const std::string& id)
+{
+    if (!m_blocks || !m_blocks->active() || id.empty()) return false;
+    // 块级定位：先扫块 HTML 找出 id 落在哪一块（避免为全文实例化 document），
+    // 再只实例化那一块并做**块内精确偏移**。
+    // 只跳到块首是不够的：一块 12 KB 内容实测约 2600–3100 px（≈3 屏），标题若
+    // 在块尾部，块首的视口里根本看不到目标 —— 那等于跳错地方。
+    const std::string dq = "id=\"" + id + "\"";
+    const std::string sq = "id='" + id + "'";
+    const auto tp0 = std::chrono::steady_clock::now();
+    for (size_t i = 0; i < m_blocks->count(); ++i)
+    {
+        const std::string& h = m_blocks->block(i).html;
+        if (h.find(dq) == std::string::npos && h.find(sq) == std::string::npos) continue;
+        const auto tp1 = std::chrono::steady_clock::now();
+        mdv_prof_ms("anchor(scan blocks)", std::chrono::duration<double, std::milli>(tp1 - tp0).count());
+
+        // 实例化这一块：几何会随实测高度刷新，所以偏移必须在 ensure_window
+        // 之后取，否则用的是估算值。
+        m_blocks->ensure_window((int)i, (int)i, m_container);
+        int y = m_blocks->anchor_y(i, id);
+        if (y < 0) y = m_blocks->offset_of(i);   // 查不到元素就退回块首
+        scroll_to(y);
+        const auto tp2 = std::chrono::steady_clock::now();
+        mdv_prof_ms("anchor(layout+find)", std::chrono::duration<double, std::milli>(tp2 - tp1).count());
+        mdv_prof_ms("anchor(total)", std::chrono::duration<double, std::milli>(tp2 - tp0).count());
+        return true;
+    }
+    return false;
 }
 
 void ViewWidget::clear()
 {
+    cancel_deferred_render();
+    if (m_blocks) m_blocks->clear();
     m_current_html.clear();
     if (m_container) m_container->set_document(nullptr);
     m_scroll_y = 0;
@@ -1156,17 +1576,21 @@ void ViewWidget::clear()
 
 bool ViewWidget::has_content() const
 {
+    if (m_blocks && m_blocks->active()) return true;
     return m_container && m_container->document() != nullptr;
 }
 
 int ViewWidget::content_height() const
 {
+    if (m_blocks && m_blocks->active()) return m_blocks->total_height();
     if (!m_container || !m_container->document()) return 0;
     return (int)m_container->document()->height();
 }
 
 int ViewWidget::content_width() const
 {
+    // 分块时每块都按视口宽度排版，没有水平滚动（与 wrap 模式一致）。
+    if (m_blocks && m_blocks->active()) return w();
     if (!m_container || !m_container->document()) return 0;
     return (int)m_container->document()->width();
 }
@@ -1193,7 +1617,7 @@ void ViewWidget::draw()
 
     if (has_content())
     {
-        auto doc = m_container->document();
+        const bool chunked = m_blocks && m_blocks->active();
 
         // 是否需要垂直 / 水平滚动条
         const int sb_w = 10;   // 垂直滚动条宽度
@@ -1216,10 +1640,27 @@ void ViewWidget::draw()
         clip.height = litehtml::pixel_t((float)content_h);
 
         fl_push_clip(x(), y(), content_w, content_h);
-        doc->draw((litehtml::uint_ptr)0,
-                  (float)(x() - m_scroll_x),
-                  (float)(y() - m_scroll_y),
-                  &clip);
+        auto dp0 = std::chrono::steady_clock::now();
+        if (chunked)
+        {
+            // 分块：只画可见块（前后各预取一块已由 draw_chunked 实例化）。
+            draw_chunked(content_w, content_h, clip);
+        }
+        else
+        {
+            auto doc = m_container->document();
+            // 把这个可见矩形交给容器：draw_image() 用它做视口裁剪，跳过屏幕外的图。
+            // litehtml 自己不做这一步（draw_children 只按 display/visibility 过滤），
+            // 没有它整篇文档的图每帧都会被绘制/缩放一遍。
+            m_container->set_view_clip(clip);
+            doc->draw((litehtml::uint_ptr)0,
+                      (float)(x() - m_scroll_x),
+                      (float)(y() - m_scroll_y),
+                      &clip);
+            m_container->clear_view_clip();
+        }
+        auto dp1 = std::chrono::steady_clock::now();
+        mdv_prof_ms("draw(doc->draw)", std::chrono::duration<double, std::milli>(dp1 - dp0).count());
         fl_pop_clip();
 
         // 垂直滚动条
@@ -1293,9 +1734,26 @@ void ViewWidget::resize(int X, int Y, int W, int H)
 
     // 自动换行模式：视图宽度变化时让文档按新宽度重新排版，
     // 文字到边界就换行，不会出现水平滚动条。
-    if (m_wrap && m_container->document() && W != old_w) {
-        m_container->document()->render(litehtml::pixel_t((float)W));
-        m_scroll_x = 0;   // 重排后水平滚动重置
+    // 大文档 re-render 约 50ms，拖动分隔条时连续触发会阻塞 UI 线程。
+    // 防抖：延迟 120ms 后重排，拖动期间只做裁剪 + redraw（用旧布局绘制）。
+    // 分块模式：宽度变化要重排每一块（每块都按视口宽布局），但只在防抖后做
+    // 一次 —— 拖分隔条时每帧重排 3 块就已经是几十毫秒。
+    if (m_blocks && m_blocks->active()) {
+        if (W != old_w) {
+            m_pending_render_width = W;
+            if (!m_debounce_active) {
+                Fl::add_timeout(0.12, debounce_timer_cb, this);
+                m_debounce_active = true;
+            }
+        }
+        m_scroll_x = 0;
+    } else if (m_wrap && m_container->document() && W != old_w) {
+        m_pending_render_width = W;
+        if (!m_debounce_active) {
+            Fl::add_timeout(0.12, debounce_timer_cb, this);
+            m_debounce_active = true;
+        }
+        m_scroll_x = 0;   // 重排后水平滚动重置（立即生效，避免越界）
     } else {
         // 固定宽度模式：文档不重排，仅裁剪滚动位置避免越界
         int max_x = std::max(0, content_width() - W);
@@ -1308,6 +1766,60 @@ void ViewWidget::resize(int X, int Y, int W, int H)
     // 只重绘自身（不再整窗 damage：手动布局下每次分隔条拖动会
     // 触发全窗口重绘导致菜单栏闪烁；自身新旧区域由 FLTK 处理）
     redraw();
+}
+
+void ViewWidget::debounce_timer_cb(void* data)
+{
+    auto* self = static_cast<ViewWidget*>(data);
+    self->m_debounce_active = false;
+    self->do_deferred_render();
+}
+
+void ViewWidget::do_deferred_render()
+{
+    if (m_pending_render_width < 0 || !m_container)
+    {
+        m_pending_render_width = -1;
+        return;
+    }
+    if (m_blocks && m_blocks->active())
+    {
+        // 重排前后总高会变（行数变了），按比例保住阅读位置，否则拖一下分隔条
+        // 就会把用户弹回文档顶部。
+        int W = m_pending_render_width;
+        m_pending_render_width = -1;
+        int oldTotal = m_blocks->total_height();
+        float ratio = oldTotal > 0 ? (float)m_scroll_y / (float)oldTotal : 0.0f;
+        m_blocks->set_width(W);
+        ensure_visible_blocks(h());
+        if (ratio > 0.0f) m_scroll_y = (int)(ratio * (float)content_height());
+        redraw();
+        return;
+    }
+    if (!m_container->document())
+    {
+        m_pending_render_width = -1;
+        return;
+    }
+    int W = m_pending_render_width;
+    m_pending_render_width = -1;
+    try {
+        m_container->document()->render(litehtml::pixel_t((float)W));
+    } catch (const std::bad_alloc &) {
+        set_render_error(I18n::get("preview.fail.oom"));
+    } catch (...) {
+        set_render_error(I18n::get("preview.fail.render"));
+    }
+    redraw();
+}
+
+void ViewWidget::cancel_deferred_render()
+{
+    if (m_debounce_active) {
+        Fl::remove_timeout(debounce_timer_cb, this);
+        m_debounce_active = false;
+    }
+    m_pending_render_width = -1;
 }
 
 int ViewWidget::handle(int event)

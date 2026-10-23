@@ -73,6 +73,14 @@ public:
     // corners / icon / taskbar behavior (same as the old setupToolChrome).
     void applyToolChrome();
 
+    // Apply the process-wide rounded-corner setting once the HWND exists
+    // (modal dialogs have no ToolChrome subclass to do it for them).
+    void show() FL_OVERRIDE;
+
+    // Hide the outer glow with the window. A modal dialog has no subclass
+    // proc, so nothing else would hide it on close.
+    void hide() FL_OVERRIDE;
+
 protected:
     // One-shot timeout that re-applies WS_EX_APPWINDOW after a tool window
     // is shown (mirrors MainWindow::fixTaskbarCb). border(0) sets
@@ -80,6 +88,14 @@ protected:
     // re-apply + SetForegroundWindow makes the taskbar button show even on
     // the very first launch. Tool windows only.
     static void fixToolTaskbarCb(void *data);
+
+    // One-shot follow-up for show() (modal dialogs AND tool windows):
+    // unconditionally re-sync the outer glow once the event loop runs, and
+    // give modal dialogs their first activation. See DialogBase.cpp show()
+    // for why: the decorations are applied after ShowWindow already made the
+    // window visible, and modal dialogs otherwise miss every corrective
+    // message until the first user click on the title bar.
+    static void firstFrameFixCb(void *data);
 
 protected:
     // Build the shared title bar + (tool mode) WindowFrame. Call FIRST,

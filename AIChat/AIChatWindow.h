@@ -14,6 +14,7 @@
 class Fl_Text_Editor;
 class Fl_Text_Display;
 class Fl_Text_Buffer;
+class ThemedTextEditor;   // ui/ThemeWidgets.h(输入框实际类型,见 .cpp 构造)
 class Fl_Input;
 class Fl_Check_Button;
 class Fl_Button;
@@ -109,7 +110,7 @@ private:
 
     Fl_Text_Display *m_chatDisp = nullptr;
     Fl_Text_Buffer  *m_chatBuf = nullptr;
-    Fl_Text_Editor  *m_inputEdit = nullptr;
+    ThemedTextEditor *m_inputEdit = nullptr;   // 实际构造类型(原误写基类)
     Fl_Text_Buffer  *m_inputBuf = nullptr;
     Fl_Check_Button *m_attachSel = nullptr;
     Fl_Button *m_sendBtn = nullptr, *m_toDocBtn = nullptr, *m_clearBtn = nullptr;

@@ -1,6 +1,11 @@
 #include "preview_panel.h"
 #include "preprocess.h"
+#include "core/I18n.h"       // localized render-failure messages
+#include "core/PathUtils.h"
 #include <FL/Fl.H>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 
 // ----------------------------------------------------------------------------
 // 异步渲染：常驻后台线程 + 覆盖式请求。
@@ -32,6 +37,9 @@ PreviewPanel::PreviewPanel()
             }
         }
     });
+    m_container->set_remote_settled_callback([this]() {
+        if (m_remoteSettledCb) m_remoteSettledCb();
+    });
     m_worker = std::thread([this]() { workerLoop(); });
 }
 
@@ -54,6 +62,7 @@ void PreviewPanel::workerLoop()
 {
     for (;;) {
         std::string markdown, build_dir, doc_dir, base_font;
+        bool force_remote = false;
         int version = 0;
         {
             std::unique_lock<std::mutex> lock(m_mutex);
@@ -63,6 +72,7 @@ void PreviewPanel::workerLoop()
             build_dir = m_requestBuildDir;
             doc_dir = m_requestDocDir;
             base_font = m_requestFont;
+            force_remote = m_requestForceRemote;
             version = m_requestVersion;
             m_hasRequest = false;              // 只处理最新请求（覆盖式）
         }
@@ -70,14 +80,33 @@ void PreviewPanel::workerLoop()
         std::string html;
         bool failed = false;
         std::string failMsg;
+        auto w0 = std::chrono::steady_clock::now();
         try {
             html = md_to_html(markdown, build_dir, doc_dir, &headings, base_font);
         } catch (const std::bad_alloc &) {
             failed = true;
-            failMsg = "Preview failed: out of memory (document too large).";
+            failMsg = I18n::get("preview.fail.oom");
         } catch (...) {
             failed = true;
-            failMsg = "Preview failed while converting this document.";
+            failMsg = I18n::get("preview.fail.render");
+        }
+        mdv_prof_ms("preprocess(md_to_html)", std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - w0).count());
+        // 诊断：PECIA_DUMP_HTML=1 时把产出的 HTML 落盘到 exe 同级
+        // preview_dump.html，供离线探针（temp/probe_*.exe）用同一份输入复现
+        // 「预处理之后再解析」的成本，从而把 preprocess 与 parse 彻底分开。
+        {
+            static const bool dump = [] {
+                const char* v = getenv("PECIA_DUMP_HTML");
+                return v && *v && *v != '0';
+            }();
+            if (dump && !html.empty()) {
+                std::string p = pathutil::exeDir() + "/preview_dump.html";
+                if (FILE* f = fopen(p.c_str(), "wb")) {
+                    fwrite(html.data(), 1, html.size(), f);
+                    fclose(f);
+                }
+            }
         }
         if (failed) {
             // Do not let the exception kill the worker thread: m_workerBusy
@@ -104,6 +133,7 @@ void PreviewPanel::workerLoop()
                 m_pendingHtml = std::move(html);
                 m_pendingHeadings = std::move(headings);
                 m_pendingError.clear();
+                m_pendingForceRemote = force_remote;
                 m_pendingVersion = version;
             }
             m_workerBusy = false;              // 渲染完成（无论是否交付）
@@ -135,7 +165,7 @@ void PreviewPanel::setBaseUrl(const std::string &dir)
 }
 
 void PreviewPanel::renderAsync(const std::string &markdown, const std::string &build_dir,
-                               const std::string &doc_dir)
+                               const std::string &doc_dir, bool forceRemoteRefresh)
 {
     m_view->set_rendering(true);   // 空内容时显示 Rendering...
     // 容器把远程图片直接下载到这个目录（用 URL 原名），于是该目录同时就是
@@ -150,6 +180,7 @@ void PreviewPanel::renderAsync(const std::string &markdown, const std::string &b
         m_requestBuildDir = build_dir;
         m_requestDocDir = doc_dir;
         m_requestFont = m_baseFont;           // 本次请求的基准字体（预览跟随编辑器）
+        m_requestForceRemote = forceRemoteRefresh;
         m_requestVersion = m_nextVersion;
         m_hasRequest = true;
         m_workerBusy = true;                   // 泵 keep 依据：请求已发或 worker 渲染中
@@ -167,6 +198,7 @@ void PreviewPanel::pump()
     std::string html;
     std::vector<PreviewHeading> headings;
     std::string error;
+    bool forceRemote = false;
     bool hasResult = false;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -174,6 +206,7 @@ void PreviewPanel::pump()
             html = m_pendingHtml;
             headings = std::move(m_pendingHeadings);
             error = std::move(m_pendingError);
+            forceRemote = m_pendingForceRemote;
             m_pendingHtml.clear();
             m_pendingVersion = 0;
             hasResult = true;
@@ -189,7 +222,7 @@ void PreviewPanel::pump()
         if (m_headingsCb) m_headingsCb({});
         return;
     }
-    applyResult(html, std::move(headings));
+    applyResult(html, std::move(headings), forceRemote);
 }
 
 void PreviewPanel::timerCb(void *data)
@@ -209,14 +242,26 @@ void PreviewPanel::timerCb(void *data)
     }
 }
 
-void PreviewPanel::applyResult(const std::string &html, std::vector<PreviewHeading> headings)
+void PreviewPanel::applyResult(const std::string &html, std::vector<PreviewHeading> headings,
+                               bool forceRemoteRefresh)
 {
     m_view->set_rendering(false);
     // 自动刷新后保持垂直滚动百分比位置
     float ratio = 0.0f;
     if (m_view->has_content() && m_view->content_height() > 0)
         ratio = (float)m_view->scroll_y() / (float)m_view->content_height();
+    // Manual Refresh only: drop the decoded images (and their owned pixel
+    // buffers) before re-laying out. load_and_render() would otherwise keep
+    // them because the HTML is unchanged, and the force flag would have no
+    // effect. Text widths are cleared for the same reason (same HTML, but a
+    // full refresh is the user's explicit request).
+    if (forceRemoteRefresh && m_container) {
+        m_container->clear_images();
+        m_container->clear_text_width_cache();
+    }
+    if (m_container) m_container->set_force_remote_refresh(forceRemoteRefresh);
     m_view->load_and_render(html);
+    if (m_container) m_container->set_force_remote_refresh(false);
     // Failure (e.g. bad_alloc laying out a huge document) leaves no content,
     // so content_height() is 0 and scrolling must be skipped. load_and_render
     // already reports the reason into the panel.
@@ -228,6 +273,12 @@ void PreviewPanel::applyResult(const std::string &html, std::vector<PreviewHeadi
 
 void PreviewPanel::scrollToAnchor(const std::string &id)
 {
+    // 分块模式（大文档）没有单一 document，锚点只能在块表里找；命中块就跳到
+    // 块首。先试这条路径，失败再退回全量路径的元素查找。
+    if (m_view->has_content() && !id.empty() && m_view->scroll_to_anchor(id)) {
+        m_view->redraw();
+        return;
+    }
     // on_anchor_click expects a fragment URL starting with '#'. TOC ids are
     // bare ("toc-N"), so prepend the '#' here or the jump would silently no-op.
     if (m_container && m_view->has_content() && !id.empty()) {

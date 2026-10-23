@@ -1,8 +1,7 @@
 # 第三方组件与许可证说明（Third-Party Notices）
 
 本文件列出 Pecia 引用的全部第三方组件、各自许可证、是否被本项目修改
-及修改记录位置。**随源码与发布包一起分发**（`pack.bat` 会将其拷入发布目录，
-与 `LICENSE` 并列）。
+及修改记录位置。**随源码与发布包一起分发**（随发布包分发，与 `LICENSE` 并列）。
 
 > 本项目自身采用 **GNU AGPL-3.0**，见 [LICENSE](LICENSE)。
 > 本说明仅作许可证合规提示，不构成法律意见。
@@ -13,11 +12,11 @@
 
 | 组件 | 版本 | 来源 | 许可证 | 本项目修改 |
 |------|------|------|--------|-----------|
-| FLTK | 1.4.5 | https://github.com/fltk/fltk | FLTK License（LGPL-2.0 + 静态链接例外） | ✅ 5 个文件（见『三、本项目对第三方库源码的修改』） |
+| FLTK | 1.4.5 | https://github.com/fltk/fltk | FLTK License（LGPL-2.0 + 静态链接例外） | ✅ 6 个文件（见『三、本项目对第三方库源码的修改』） |
 | Lua | 5.5.1 | https://github.com/lua/lua | MIT | 否 |
 | PCRE2 | 10.47 | https://github.com/PCRE2Project/pcre2 | BSD-3-Clause | 否 |
 | md4c | 2026-09-11 (10fa4f44) | https://github.com/mity/md4c | MIT | 否 |
-| litehtml | 0.10 | https://github.com/litehtml/litehtml | BSD-3-Clause（内嵌 gumbo：MIT） | ✅ 1 个 patch（见『三、本项目对第三方库源码的修改』） |
+| litehtml | 0.10 | https://github.com/litehtml/litehtml | BSD-3-Clause（内嵌 gumbo：MIT） | ✅ 25 个文件（见『三、本项目对第三方库源码的修改』） |
 | stb | 2026-08-02 (2c980bb5) | https://github.com/nothings/stb | MIT（dual：公有领域 / MIT） | 否 |
 
 > 各库完整的版权与许可文本均保留在 `.thirdparty/<库名>/` 对应目录
@@ -51,8 +50,8 @@ MIT / Apache-2.0 / BSD-2/3-Clause / Zlib / Unlicense（公有领域）等
 
 | 库 | 内容 | 记录文档 | 归档位置 |
 |----|------|----------|----------|
-| FLTK | 菜单勾选框填充色分离（check_color）；禁用内部 fakemenu 冗余窗口；菜单高亮切换强制双缓冲；文本撤销事务分组（begin/end_undo_transaction）；超链接下划线 1px 细化；垂直滚动量程封顶（`update_v_scrollbar`）；滚动条单一整轨道（去箭头区，`Fl_Scrollbar`） | `build/FLTK_PATCHES.md` | `main/patches/fltk-1.4.5/` |
-| litehtml | 超长非 CJK 词（长 URL / 长英文）按 8 字符拆词断行 | `build/LITEHTML_PATCHES.md` | `main/patches/litehtml-0.10/` |
+| FLTK | 菜单勾选框填充色分离（check_color）；禁用内部 fakemenu 冗余窗口；菜单高亮切换强制双缓冲；文本撤销事务分组（begin/end_undo_transaction）；超链接下划线 1px 细化；垂直滚动量程封顶（`update_v_scrollbar`）；滚动条单一整轨道（去箭头区，`Fl_Scrollbar`）；弹出菜单分隔线扁平化（单色 1px，取 `g_borderColour`，`Fl_Menu.cxx`） | `build/FLTK_PATCHES.md` | `main/patches/fltk-1.4.5/` |
+| litehtml | 超长非 CJK 词（长 URL / 长英文）按 8 字符拆词断行；CSS 属性实例共享（预览内存优化，含写时复制与文档级样式池）；`position::round()` 改为边对齐取整；深嵌套输入（数千层嵌套 `var()`）的栈溢出防护 | `build/LITEHTML_PATCHES.md` | `main/patches/litehtml-0.10/` |
 
 `main/patches/` 存放的是**修改后完整文件**，构建时由 `3_patch.bat` 自动覆盖到 `.thirdparty/`；将来升级库版本时按两张
 `*_PATCHES.md` 重新应用。
@@ -70,7 +69,7 @@ MIT / Apache-2.0 / BSD-2/3-Clause / Zlib / Unlicense（公有领域）等
 
 ## 五、发布包（项目根 `release/`）内容
 
-`build/pack.bat` 生成的发布目录 / zip **输出到项目根 `release/`**
+发布目录 / zip **输出到项目根 `release/`**
 （`main/` 上一级，与 `.thirdparty/`、`build/` 同级；`main/` 内只放源码，
 不存放任何发布产物）。发布包中与许可证相关的文件：
 

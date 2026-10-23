@@ -22,8 +22,17 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <functional>
+#include <sstream>
+#include <string>
 #include <thread>
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 
 #define CHECK(cond)                                                        \
     do {                                                                   \
@@ -147,11 +156,54 @@ static void test_clamp_does_not_affect_normal_buffer() {
     CHECK(finished);
 }
 
+// 5. The clamp has to exist in the SHIPPING code, not just in this file.
+//
+// Tests 2-4 prove the clamp *would* work; they re-implement it locally because
+// MainWindow cannot be linked here. That leaves the obvious hole: delete the
+// guard from production and every test above still passes. So read the two
+// real call sites and assert the guard is still there and still ahead of the
+// scan. Coarse by design - it pins "the clamp was not removed", not its shape.
+static std::string readSource(const char *rel) {
+    wchar_t exe[MAX_PATH];
+    if (!GetModuleFileNameW(nullptr, exe, MAX_PATH)) return {};
+    // Tests run from build/, so build/.. is the repo root and main/ is beside it.
+    std::filesystem::path mainDir =
+        std::filesystem::path(exe).parent_path().parent_path() / "main";
+    std::ifstream f(mainDir / rel, std::ios::binary);
+    if (!f) return {};
+    std::stringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
+}
+
+static void test_production_keeps_the_clamp() {
+    // updateStatusBar(): the clamp must precede the call that hangs.
+    const std::string mw = readSource("ui/MainWindow_files.cpp");
+    CHECK(!mw.empty());
+    if (!mw.empty()) {
+        const size_t scan = mw.find("count_displayed_characters");
+        CHECK(scan != std::string::npos);
+        // rfind searches backwards from `scan`: the guard must be above it.
+        CHECK(mw.rfind("if (pos > blen) pos = blen;", scan) != std::string::npos);
+    }
+
+    // Editor::draw / updateLineHighlight: line_start/line_end take `pos`, so the
+    // clamps must be in that file at all. (Two distinct guards: `len` for the
+    // highlight path, `blen` for the draw path.)
+    const std::string ed = readSource("editor/Editor.cpp");
+    CHECK(!ed.empty());
+    if (!ed.empty()) {
+        CHECK(ed.find("if (pos > len) pos = len;") != std::string::npos);
+        CHECK(ed.find("if (pos > blen) pos = blen;") != std::string::npos);
+    }
+}
+
 int main() {
     test_fltk_hang_exists();
     test_clamped_calls_safe_on_empty();
     test_clamped_line_calls_safe_on_empty();
     test_clamp_does_not_affect_normal_buffer();
+    test_production_keeps_the_clamp();
     fprintf(stderr, "%s\n", g_failures == 0 ? "ALL PASS" : "FAILURES");
     return g_failures == 0 ? 0 : 1;
 }

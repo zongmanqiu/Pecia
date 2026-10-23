@@ -5,6 +5,8 @@
 // inputs and the accent selection color on buttons.
 #pragma once
 
+#include <FL/Fl.H>
+#include <FL/Fl_Box.H>
 #include <FL/Fl_Text_Display.H>
 #include <FL/Fl_Text_Editor.H>
 #include <FL/Fl_Window.H>
@@ -15,13 +17,14 @@
 #include <FL/Fl_Input.H>
 #include <FL/fl_draw.H>
 #include <initializer_list>
+
+#include "ui/BandColourSource.h"
 #include <string>
+#include <vector>
 
 #include "core/Theme.h"
-
-#if defined(_WIN32)
-#include "ui/ImeInPlace.h"
-#endif
+#include "ui/BlinkInput.h"   // ThemedInput 继承它：光标闪烁与主编辑器同周期
+#include "ui/ImeInPlace.h"   // ThemedTextEditor 直接继承 ImeInPlace::Host
 
 namespace {
 
@@ -235,6 +238,45 @@ inline void fitButtonRow(std::initializer_list<Fl_Button *> btns,
     }
 }
 
+// 对话框底部按钮条 —— Options / 确认框 / AI 聊天 / Lua 工具窗共用的那一套：
+//   · 通栏 Fl_Group，底色 background2（比内容区深一档，形成"页脚"分层）
+//   · HoverButton：静止底色=background2（与条同色，只剩 1px 边框）、
+//     悬停/按下=highlight2、文字 text1、宽度按标签自适应
+//   · 右对齐；**btns 的顺序就是从左到右的视觉顺序**，最后一个落在最右边，
+//     因此"取消/否定"类按钮必须放在数组末尾（全项目统一：[OK][Cancel]，
+//     与 Windows 习惯一致）。本函数内部倒序遍历，切勿再按"第一个在最右"理解。
+// 之所以做成函数：以前每个对话框各写一遍，FontDialog 就写歪了（固定 96px 宽 +
+// background3 底色 + highlight1 悬停 + 按钮顺序反了）。
+inline Fl_Group *createDialogButtonBar(int x, int y, int w, int h,
+                                       const ThemeColors &tc, int fontSize,
+                                       const std::vector<HoverButton *> &btns,
+                                       int margin, int gap) {
+    Fl_Group *bar = new Fl_Group(x, y, w, h);
+    bar->box(FL_FLAT_BOX);
+    bar->color(tc.background2);
+    bar->begin();
+    for (HoverButton *b : btns) {
+        if (!b) continue;
+        b->labelsize(fontSize);
+        b->labelcolor(tc.text1);
+        b->color(tc.background2);
+        b->selection_color(tc.highlight2);
+        b->setPressColor(tc.highlight2);
+        b->fit();                       // 宽度按标签算，全程序同一个规则
+        bar->add(b);
+    }
+    int bx = x + w - margin;
+    for (size_t i = btns.size(); i-- > 0;) {
+        HoverButton *b = btns[i];
+        if (!b) continue;
+        b->position(bx - b->w(), y + (h - b->h()) / 2);
+        bx -= b->w() + gap;
+    }
+    bar->end();
+    bar->resizable(nullptr);
+    return bar;
+}
+
 // Dropdown styled like the Options dialog's Tab width / Auto save
 // choices: rectangular FL_BORDER_BOX with a divider line and arrow.
 // Fl_Choice would hardcode its own box type otherwise.
@@ -291,11 +333,11 @@ public:
 // theme background/text and a cursor colour matching the main window's
 // textPrimary. Replaces bare Fl_Input so every dialog input looks (and has
 // the same caret colour as) the main editor.
-class ThemedInput : public Fl_Input {
+class ThemedInput : public BlinkInput {
 public:
     ThemedInput(int x, int y, int w, int h, const ThemeColors &tc,
                 const char *lbl = nullptr)
-        : Fl_Input(x, y, w, h, lbl) {
+        : BlinkInput(x, y, w, h, lbl) {
         box(FL_BORDER_BOX);
         color(tc.background1);
         textcolor(tc.text1);
@@ -312,9 +354,65 @@ public:
     }
 };
 
+// ---------------------------------------------------------------------------
+// 搜索框(ShortcutDialog / FontDialog 共用;提取自 ui/ShortcutDialog.cpp)。
+// 组成:左侧 24px 内缩的输入框 boxtype(文本从图标之后开始)+ 在输入框
+// **自身 draw() 里**画的手绘放大镜 + 可选的输入内浅色提示字。见开发指南
+// 「UI 改动规约」:UI 元素只复用不复制——再做第三个搜索框时直接用
+// SearchInput,不要再抄一份。
+// ---------------------------------------------------------------------------
+constexpr int kSearchFieldH = 22;   // 输入框高度(与 find/go-to 栏输入框同高)
+constexpr int kSearchIconW  = 24;   // 左侧图标区内缩(文本起点偏移)
+
+// 与 FL_BORDER_BOX 逐像素相同、但左内缩 kSearchIconW 的 boxtype。
+// FL_FREE_BOXTYPE 槽位进程内只注册一次(inline 函数的局部静态全 TU 共享)。
+inline Fl_Boxtype searchInputBoxtype() {
+    static const Fl_Boxtype b = [] {
+        Fl_Boxtype t = (Fl_Boxtype)FL_FREE_BOXTYPE;
+        Fl::set_boxtype(t, Fl::get_boxtype(FL_BORDER_BOX),
+                        kSearchIconW, 1, kSearchIconW + 2, 2, nullptr);
+        return t;
+    }();
+    return b;
+}
+
+// 搜索输入框:BlinkInput + 左内缩 boxtype,放大镜画在本控件内部。
+// 图标为什么不能做成兄弟控件:输入框每次 FL_DAMAGE_ALL 重绘(获焦、
+// 光标闪烁、输入)都会走 Fl_Input::draw() 的 draw_box(),用背景色把
+// 整个矩形(含左内缩)不透明填掉,兄弟图标的像素随即被盖掉——
+// FontDialog 曾因此「图标消失」(它构造时把焦点给了输入框,500ms 一次的
+// 闪烁重绘把图标擦了;快捷键对话框只是因为打开时不自动聚焦才没暴露。
+// 实测 2026-10-22,temp/probe/ 三阶段截屏:0.4s 时图标 136 个非背景像素,
+// 点击/闪烁后只剩 24 个)。画在本控件内,每次重绘都连着重画,永不丢。
+class SearchInput : public BlinkInput {
+public:
+    SearchInput(int X, int Y, int W, int H, const char *l = nullptr)
+        : BlinkInput(X, Y, W, H, l) {
+        box(searchInputBoxtype());
+    }
+
+    // 放大镜颜色(主题 text2)。
+    void iconColor(Fl_Color c) { m_icon = c; redraw(); }
+
+    void draw() FL_OVERRIDE {
+        BlinkInput::draw();
+        // 几何与旧兄弟控件版 SearchIconBox(16x16 图标框 @(x+5,y+4))
+        // 逐像素一致:镜圈内缩 1px,柄从圈缘延伸到内缩右缘。
+        fl_color(m_icon);
+        fl_line_style(FL_SOLID, 2);
+        fl_arc(x() + 6, y() + 5, 11, 11, 0, 360);          // lens
+        fl_line(x() + 15, y() + 14, x() + 20, y() + 19);   // handle
+        fl_line_style(FL_SOLID, 1);
+    }
+
+private:
+    Fl_Color m_icon = FL_BLACK;
+};
+
 // Text display styled like the main window's editor panes, including
 // custom-drawn scrollbars identical to Editor::drawCustomScrollbar.
-class ThemedTextDisplay : public Fl_Text_Display {
+class ThemedTextDisplay : public Fl_Text_Display,
+                          public windowChrome::BandColourSource {
 public:
     ThemedTextDisplay(int x, int y, int w, int h, const ThemeColors &tc)
         : Fl_Text_Display(x, y, w, h), m_tc(tc) {
@@ -325,6 +423,34 @@ public:
         scrollbar_size(10);
         styleToolScrollbar(mVScrollBar, FL_VERT_SLIDER, tc);
         styleToolScrollbar(mHScrollBar, FL_HOR_SLIDER, tc);
+    }
+
+    // The scrollbars are painted by drawToolScrollbar() below, not by FLTK's
+    // box, so the widget tree reports the text-area colour there. The
+    // non-client band abuts the right-hand scrollbar and would otherwise show
+    // the text background instead of the scrollbar track (measured: band
+    // #000000 beside a #323232 track on 208 of 606 rows).
+    bool bandColourAt(int x, int y, unsigned int *colour) const override {
+        if (!colour) return false;
+        Fl_Scrollbar *bars[2] = { mVScrollBar, mHScrollBar };
+        for (Fl_Scrollbar *sb : bars) {
+            if (!sb || !sb->visible()) continue;
+            if (x < sb->x() || x >= sb->x() + sb->w()) continue;
+            if (y < sb->y() || y >= sb->y() + sb->h()) continue;
+            Fl_Color track, thumb;
+            scrollbarColors(m_tc, track, thumb);
+            const bool vert = (sb == mVScrollBar);
+            int len = 0, pos = 0;
+            if (vert) scrollbarThumbGeometry(sb, sb->y(), sb->h(), sb->w(),
+                                             &len, &pos);
+            else      scrollbarThumbGeometry(sb, sb->x(), sb->w(), sb->h(),
+                                             &len, &pos);
+            const int along = vert ? y : x;
+            *colour = static_cast<unsigned int>(
+                (along >= pos && along < pos + len) ? thumb : track);
+            return true;
+        }
+        return false;   // text area: let the normal tree walk resolve it
     }
 
     void draw() FL_OVERRIDE {
@@ -338,7 +464,9 @@ private:
 };
 
 // Text editor styled like the main window's editor panes.
-class ThemedTextEditor : public Fl_Text_Editor {
+class ThemedTextEditor : public Fl_Text_Editor,
+                         public ImeInPlace::Host,
+                         public windowChrome::BandColourSource {
 public:
     ThemedTextEditor(int x, int y, int w, int h, const ThemeColors &tc,
                      bool lineHighlight = true)
@@ -348,6 +476,10 @@ public:
         textcolor(tc.text1);
         selection_color(tc.highlight2);
         cursor_color(tc.text1);
+        // 与主编辑器一致：交给 FLTK 画 2px、无端帽的光标（见 Editor 构造函数）。
+        // 这里原本自绘"擦 5px + 画 3px"，既遮字又会和 FLTK 原生光标（HEAVY 3px）
+        // 叠出残影 —— 已删。
+        cursor_style(Fl_Text_Display::SIMPLE_CURSOR);
         scrollbar_size(10);
         styleToolScrollbar(mVScrollBar, FL_VERT_SLIDER, tc);
         styleToolScrollbar(mHScrollBar, FL_HOR_SLIDER, tc);
@@ -355,10 +487,103 @@ public:
 
     ~ThemedTextEditor() override {
 #if defined(_WIN32)
-        // Free the IME per-editor state (avoids a permanent leak of
-        // CompState + a dangling Fl_Text_Editor* in the shared hook).
+        // Unregister from the shared IME hook before the widget goes away.
         ImeInPlace::release(this);
 #endif
+    }
+
+    // ---- ImeInPlace::Host (same composition path as the main editor) ----
+    Fl_Widget *imeWidget() override { return this; }
+
+    // Same reason as ThemedTextDisplay: the scrollbars are hand-painted.
+    bool bandColourAt(int x, int y, unsigned int *colour) const override {
+        if (!colour) return false;
+        Fl_Scrollbar *bars[2] = { mVScrollBar, mHScrollBar };
+        for (Fl_Scrollbar *sb : bars) {
+            if (!sb || !sb->visible()) continue;
+            if (x < sb->x() || x >= sb->x() + sb->w()) continue;
+            if (y < sb->y() || y >= sb->y() + sb->h()) continue;
+            Fl_Color track, thumb;
+            scrollbarColors(m_tc, track, thumb);
+            const bool vert = (sb == mVScrollBar);
+            int len = 0, pos = 0;
+            if (vert) scrollbarThumbGeometry(sb, sb->y(), sb->h(), sb->w(),
+                                             &len, &pos);
+            else      scrollbarThumbGeometry(sb, sb->x(), sb->w(), sb->h(),
+                                             &len, &pos);
+            const int along = vert ? y : x;
+            *colour = static_cast<unsigned int>(
+                (along >= pos && along < pos + len) ? thumb : track);
+            return true;
+        }
+        return false;
+    }
+
+    void imeCompositionStart() override {
+        if (!buffer()) return;
+        m_compActive = true;
+        m_compStart = insert_position();
+        m_compEnd = m_compStart;
+        int s = 0, e = 0;
+        if (buffer()->selection_position(&s, &e) && e > s) {
+            m_compStart = s;
+            m_compEnd = e;
+        }
+        m_compText.clear();
+        m_compCursorBytes = 0;
+    }
+
+    void imeCompositionUpdate(const char *utf8, int cursorBytes) override {
+        if (!buffer()) return;
+        if (!m_compActive) imeCompositionStart();
+        if (!m_compActive) return;
+        m_compText = utf8 ? utf8 : "";
+        if (cursorBytes < 0) cursorBytes = 0;
+        if (cursorBytes > (int)m_compText.size())
+            cursorBytes = (int)m_compText.size();
+        m_compCursorBytes = cursorBytes;
+        int caret = m_compStart + m_compCursorBytes;
+        if (caret > buffer()->length()) caret = buffer()->length();
+        insert_position(caret);
+        show_insert_position();
+        redraw();
+    }
+
+    void imeCompositionCommit(const char *utf8) override {
+        if (!buffer()) return;
+        if (!m_compActive) {
+            m_compStart = insert_position();
+            m_compEnd = m_compStart;
+        }
+        std::string s = utf8 ? utf8 : "";
+        int start = m_compStart;
+        int end = m_compEnd;
+        if (start < 0) start = insert_position();
+        if (end < start) end = start;
+        int len = buffer()->length();
+        if (start > len) start = len;
+        if (end > len) end = len;
+        if (start != end || !s.empty())
+            buffer()->replace(start, end, s.c_str());
+        insert_position(start + (int)s.size());
+        show_insert_position();
+        set_changed();
+        if (when() & FL_WHEN_CHANGED) do_callback(FL_REASON_CHANGED);
+        m_compActive = false;
+        m_compText.clear();
+        m_compCursorBytes = 0;
+        m_compStart = m_compEnd = -1;
+        syncHighlightBuffer();
+        redraw();
+    }
+
+    void imeCompositionEnd() override {
+        if (!m_compActive) return;
+        m_compActive = false;
+        m_compText.clear();
+        m_compCursorBytes = 0;
+        m_compStart = m_compEnd = -1;
+        redraw();
     }
 
     // ---- Current-line highlight via style buffer (same as Editor.cpp) ----
@@ -476,7 +701,14 @@ public:
     }
 
     void draw() FL_OVERRIDE {
+        // Composition: the buffer has no string yet, so FLTK's caret would sit
+        // at compStart instead of the composition cursor. Suppress it while the
+        // shared 2px composition caret is drawn below.
+        const bool composing = m_compActive;
+        const int savedCursorOn = mCursorOn;
+        if (composing) mCursorOn = 0;
         Fl_Text_Editor::draw();
+        mCursorOn = savedCursorOn;
 
         // Same overlay clipping as Editor.cpp: FLTK pops its text_area
         // clip before returning, so the highlight strip and the caret
@@ -519,18 +751,38 @@ public:
             }
         }
 
-        // Cursor: a plain 3px vertical bar with no caps - same as the
-        // main Pecia editor (Editor.cpp draw()).
-        {
-            int curX, curY;
-            if (mCursorOn && Fl::focus() == this &&
-                position_to_xy(insert_position(), &curX, &curY)) {
+        // 光标不再自绘：构造函数已设 cursor_style(SIMPLE_CURSOR)，FLTK 自己画
+        // 2px 无端帽的光标。原来那套"先用底色擦 5px 再画 3px"既遮字，又必须
+        // 精确盖掉 FLTK 的原生光标（HEAVY 3px + 端帽）——擦不干净就是残影/双光标。
+        // 与主编辑器 Editor 的做法保持一致。
+        //
+        // 但必须在这里**把 FLTK 的光标再画一遍**：上面那块「行尾到右缘」的底色
+        // 是从行尾开始铺的，光标停在行尾（打字时的常态）会被它整个盖住，用户看到
+        // 的就是"没有光标"。复用 FLTK 自己的 draw_cursor()，几何/宽度与它原生那次
+        // 完全一致，不引入第二套几何。
+        // Composition overlay: same helper, same 2px caret and same blink
+        // phase as the main editor and every dialog input.
+        if (composing && !m_compText.empty()) {
+            int cx = 0, cy = 0;
+            if (position_to_xy(m_compStart, &cx, &cy)) {
                 fl_font(textfont(), textsize());
-                int barH = mMaxsize ? mMaxsize : fl_height();
-                fl_color(color());
-                fl_rectf(curX - 2, curY, 5, barH);
-                fl_color(cursor_color());
-                fl_rectf(curX - 1, curY, 3, barH);
+                const int lineH = fl_height();
+                const bool caretVisible = mCursorOn && Fl::focus() == this;
+                ImeInPlace::drawComposition(
+                    m_compText.c_str(), m_compCursorBytes, cx, cy, lineH,
+                    textcolor(), cursor_color(), caretVisible,
+                    textfont(), textsize(), window(),
+                    text_area.x, y(), text_area.w, h());
+            }
+        }
+
+        if (!composing && mCursorOn && buffer() && Fl::focus() == this) {
+            int selStart = 0, selEnd = 0;
+            const bool hasSel = buffer()->selection_position(&selStart, &selEnd);
+            const int cur = insert_position();
+            if (!hasSel || cur < selStart || cur > selEnd) {
+                int curX = 0, curY = 0;
+                if (position_to_xy(cur, &curX, &curY)) draw_cursor(curX, curY);
             }
         }
 
@@ -549,4 +801,11 @@ private:
     Fl_Text_Display::Style_Table_Entry m_styleTable[2];
     int                m_lastLineStart = -1;
     bool               m_hlDataSet = false;
+
+    // IME composition state (same members/semantics as Editor.cpp).
+    bool        m_compActive = false;
+    int         m_compStart = -1;
+    int         m_compEnd = -1;
+    std::string m_compText;
+    int         m_compCursorBytes = 0;
 };

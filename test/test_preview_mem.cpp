@@ -243,10 +243,16 @@ int main() {
     std::fprintf(stderr, "sizeof(element)        = %zu  (css is %.0f%% of a node)\n",
                  sizeof(element), 100.0 * (double)sizeof(css_properties) / (double)sizeof(element));
 
-    // 4: the per-node constants quoted in the docs are still true. If
-    // litehtml moved css_properties out of line, per-node cost would drop
-    // ~90% and this fails — telling us the numbers went stale rather than
-    // leaving them quietly wrong.
+    // 4: the per-node constants quoted in the docs are still true.
+    //
+    // UPDATED 2026-10-20 (P0 css_properties sharing): m_css is no longer a value
+    // member but a shared_ptr to an interned instance, so sizeof(element) DROPPED
+    // by ~880 bytes and css_properties is no longer inside it. This check used to
+    // assert v_el >= v_css ("css really is stored inline"); it is now inverted on
+    // purpose, because shared storage is the new intended shape. If someone later
+    // makes css_properties inline again, this turns red and the per-node numbers
+    // in the header must be re-measured - exactly what the original guard wanted.
+    //
     // sizeof() is a constant expression, so comparing it directly makes
     // MSVC warn C4127. The point of these three is the compile-time value,
     // so route it through a volatile read: same assertion, no warning, and
@@ -254,8 +260,20 @@ int main() {
     volatile size_t v_css = sizeof(css_properties);
     volatile size_t v_el = sizeof(element);
     CHECK(v_css > 500);
-    CHECK(v_el >= v_css);
-    CHECK(v_css * 100 / v_el >= 80);
+    // A node now stores a pointer, not the whole style block.
+    CHECK(v_el < v_css);
+    // The element itself must stay in the "small object + pointer" shape: if it
+    // grows back toward css_properties-sized (someone re-inlining m_css, or
+    // stuffing a per-node style copy in for convenience), per-node cost and the
+    // 740x amplification figure in the header are both wrong again.
+    // Band, not an exact number: layout is ours to change, the *shape* is not.
+    // Measured 160 bytes on MSVC x64 with css_properties shared (2026-10-23).
+    //
+    // This used to read `v_css * 100 / v_el >= 80`, which is a tautology the
+    // moment v_el < v_css holds (620 >= 80 here): it could never fail, so it
+    // was not a gate at all.
+    CHECK(v_el >= 64);
+    CHECK(v_el <= 512);
 
     g_nodes = 0;
     Measured m8 = measure(makeDoc(8 * 1024), 64 * 1024);

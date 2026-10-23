@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Pecia VERSION 1.0.6 LANGUAGES C CXX)
+project(Pecia VERSION 1.1.0 LANGUAGES C CXX)
 
 # ── Supported target is strictly Windows x64 (64-bit) only. ────────────────
 # The project is deliberately single-platform / single-arch: it uses Windows
@@ -205,6 +205,7 @@ core/EncodingCore.cpp
 core/OpLog.cpp
 core/ShortcutCore.cpp
     editor/Document.cpp
+    editor/FontUtils.cpp
     editor/Editor.cpp
     script/LuaEngine.cpp
     script/LuaParamParser.cpp
@@ -221,6 +222,8 @@ ui/MainWindow_settings.cpp
 ui/MainWindow_callbacks.cpp
     ui/MainWindow_timers.cpp
     ui/MainWindow_preview.cpp
+    ui/MainWindow_sidepanel.cpp
+    ui/SidePanel.cpp
     ui/MenuTable.cpp
     ui/Layout.cpp
     ui/FindReplace.cpp
@@ -232,8 +235,10 @@ ui/MatchHighlight.cpp
     ui/AboutDialog.cpp
     ui/TitleBar.cpp
     ui/WindowFrame.cpp
+    ui/WindowShadow.cpp
     ui/ConfirmDialog.cpp
     ui/ParamDialog.cpp
+    ui/FontDialog.cpp
     ui/DialogBase.cpp
     ui/ImeInPlace.cpp
     ui/ToolChrome.cpp
@@ -244,6 +249,7 @@ ui/MatchHighlight.cpp
     core/Updater.cpp
     mdview/preprocess.cpp
     mdview/image_export.cpp
+    mdview/block_layout.cpp
     mdview/container.cpp
     mdview/preview_panel.cpp
     build/pecia.rc
@@ -251,7 +257,13 @@ ui/MatchHighlight.cpp
 )
 
 if(MSVC)
-    target_compile_options(Pecia PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /MD)
+    # Zero-warning policy (2026-10-23): every FIRST-PARTY target（三个 exe + 全部
+    # 测试）都带 /W4 /WX —— 警告即构建失败。全量重编 264 个 TU 为 0 警告，所以
+    # /WX 不是在掩盖历史欠账，只是不允许新的欠账落地。
+    #
+    # 第三方目标（lua_static / pcre2-* / litehtml / gumbo）**故意**保留 /W1 或定点
+    # /wd：那些警告不是我们该修的，给它们加 /WX 只会让上游头文件一改就断构建。
+    target_compile_options(Pecia PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /WX /MD)
 endif()
 
 target_include_directories(Pecia PRIVATE
@@ -264,6 +276,10 @@ target_include_directories(Pecia PRIVATE
     ${CMAKE_SOURCE_DIR}/build
     ${CMAKE_SOURCE_DIR}/mdview
     ${CMAKE_SOURCE_DIR}/../.thirdparty/litehtml-0.10/include
+    # mdview/block_layout.cpp 直接用 gumbo 的源码位置信息切分大文档（切点必须
+    # 落在 <body> 顶层元素之间）。litehtml 自带的 gumbo 是内部依赖，这里显式
+    # 暴露它的头目录 —— 换 litehtml 版本时要确认这个路径仍然存在。
+    ${CMAKE_SOURCE_DIR}/../.thirdparty/litehtml-0.10/src/gumbo/include
     ${CMAKE_SOURCE_DIR}/../.thirdparty/stb-2026-08-02
     ${PCRE2_DIR}/src
     ${FLTK_INCLUDE_DIRS}
@@ -347,6 +363,7 @@ add_executable(PeciaLua WIN32
     script/LuaParamParser.cpp
     ui/TitleBar.cpp
     ui/WindowFrame.cpp
+    ui/WindowShadow.cpp
     ui/ParamDialog.cpp
     ui/InfoWindow.cpp
     ui/DialogBase.cpp
@@ -370,7 +387,7 @@ target_include_directories(PeciaLua PRIVATE
 
 target_compile_definitions(PeciaLua PRIVATE UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS)
 if(MSVC)
-    target_compile_options(PeciaLua PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /MD)
+    target_compile_options(PeciaLua PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /WX /MD)
     set_target_properties(PeciaLua PROPERTIES LINK_FLAGS "/MANIFEST:NO /MAP:PeciaLua.map /DYNAMICBASE:NO")
 endif()
 
@@ -415,6 +432,7 @@ add_executable(PeciaAIChat WIN32
     core/Theme.cpp
     ui/TitleBar.cpp
     ui/WindowFrame.cpp
+    ui/WindowShadow.cpp
     core/ShortcutCore.cpp
     ui/Layout.cpp
     ui/ImeInPlace.cpp
@@ -433,7 +451,7 @@ target_include_directories(PeciaAIChat PRIVATE
 
 target_compile_definitions(PeciaAIChat PRIVATE UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS)
 if(MSVC)
-    target_compile_options(PeciaAIChat PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /MD)
+    target_compile_options(PeciaAIChat PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /WX /MD)
     set_target_properties(PeciaAIChat PROPERTIES LINK_FLAGS "/MANIFEST:NO /MAP:PeciaAIChat.map /DYNAMICBASE:NO")
 endif()
 
@@ -564,7 +582,7 @@ add_executable(test_search_core
 )
 target_include_directories(test_search_core PRIVATE ${CMAKE_SOURCE_DIR})
 if(MSVC)
-    target_compile_options(test_search_core PRIVATE /utf-8 /permissive- /W4 /MD)
+    target_compile_options(test_search_core PRIVATE /utf-8 /permissive- /W4 /WX /MD)
     target_compile_definitions(test_search_core PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 add_test(NAME search_core COMMAND test_search_core)
@@ -575,10 +593,14 @@ add_executable(test_encoding_core
 )
 target_include_directories(test_encoding_core PRIVATE ${CMAKE_SOURCE_DIR})
 if(MSVC)
-    target_compile_options(test_encoding_core PRIVATE /utf-8 /permissive- /W4 /MD)
+    target_compile_options(test_encoding_core PRIVATE /utf-8 /permissive- /W4 /WX /MD)
     target_compile_definitions(test_encoding_core PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 add_test(NAME encoding_core COMMAND test_encoding_core)
+# Same binary, forced "CP54936 not usable": locks the contract that GB18030
+# then vanishes from the save-as list instead of showing an unusable entry.
+add_test(NAME encoding_core_no_gb18030 COMMAND test_encoding_core)
+set_tests_properties(encoding_core_no_gb18030 PROPERTIES ENVIRONMENT "PECIA_FORCE_NO_GB18030=1")
 
 add_executable(test_document
     test/test_document.cpp
@@ -593,7 +615,7 @@ target_include_directories(test_document PRIVATE
     ${FLTK_INCLUDE_DIRS}
 )
 if(MSVC)
-    target_compile_options(test_document PRIVATE /utf-8 /permissive- /W4 /MD)
+    target_compile_options(test_document PRIVATE /utf-8 /permissive- /W4 /WX /MD)
     target_compile_definitions(test_document PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 target_link_libraries(test_document PRIVATE
@@ -631,7 +653,7 @@ target_include_directories(test_preview_gate PRIVATE
     ${FLTK_INCLUDE_DIRS}
 )
 if(MSVC)
-    target_compile_options(test_preview_gate PRIVATE /utf-8 /permissive- /W4 /MD)
+    target_compile_options(test_preview_gate PRIVATE /utf-8 /permissive- /W4 /WX /MD)
     target_compile_definitions(test_preview_gate PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 target_link_libraries(test_preview_gate PRIVATE
@@ -677,7 +699,7 @@ target_include_directories(test_preview_mem PRIVATE
     ${FLTK_INCLUDE_DIRS}
 )
 if(MSVC)
-    target_compile_options(test_preview_mem PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /MD)
+    target_compile_options(test_preview_mem PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /WX /MD)
     target_compile_definitions(test_preview_mem PRIVATE
         UNICODE _UNICODE NOMINMAX _CRT_SECURE_NO_WARNINGS)
     set_target_properties(test_preview_mem PROPERTIES LINK_FLAGS "/FORCE:MULTIPLE")
@@ -704,6 +726,106 @@ target_link_libraries(test_preview_mem PRIVATE
 add_test(NAME preview_mem COMMAND test_preview_mem)
 set_tests_properties(preview_mem PROPERTIES TIMEOUT 60)
 
+# --- block layout / virtualization (P3 of 预览内存优化方案) -------------------
+# Splitting one document into viewport-sized blocks is what makes preview memory
+# independent of document length. Every way it can go wrong is silent: a cut
+# through a <pre>, a void element losing its offset, a window that never
+# releases, or a measured height reused at a different width. None of those
+# crash -- the page just quietly renders less than it should. Asserted here on
+# the chain's contract (element coverage, bounded live set, advancing geometry),
+# not on the byte budget or px-per-KB constants, which are tuning knobs.
+add_executable(test_block_layout
+    test/test_block_layout.cpp
+    mdview/block_layout.cpp
+)
+target_include_directories(test_block_layout PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/mdview
+    ${PECIA_THIRDPARTY}/litehtml-0.10/include
+    ${PECIA_THIRDPARTY}/litehtml-0.10/src/gumbo/include
+)
+if(MSVC)
+    target_compile_options(test_block_layout PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /WX /MD)
+    target_compile_definitions(test_block_layout PRIVATE
+        UNICODE _UNICODE NOMINMAX _CRT_SECURE_NO_WARNINGS)
+endif()
+target_link_libraries(test_block_layout PRIVATE
+    litehtml
+    user32 gdi32
+)
+add_test(NAME block_layout COMMAND test_block_layout)
+set_tests_properties(block_layout PROPERTIES TIMEOUT 60)
+
+
+# --- css_properties sharing pool (P0 of 预览内存优化方案) --------------------
+# Sharing computed styles cuts ~37 MB off a mid-size document, but it can fail
+# silently in two ways: operator== missing a field merges DIFFERENT styles, and
+# ignoring the parent lets inherited properties merge across differently styled
+# parents. Neither crashes - text simply renders in the wrong style - so both
+# are asserted here rather than left to eyeballing screenshots. See the header
+# comment of the test itself for the reasoning.
+add_executable(test_litehtml_css_pool
+    test/test_litehtml_css_pool.cpp
+)
+target_include_directories(test_litehtml_css_pool PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${PECIA_THIRDPARTY}/litehtml-0.10/include
+)
+if(MSVC)
+    target_compile_options(test_litehtml_css_pool PRIVATE /utf-8 /permissive- /W4 /WX /MD)
+    target_compile_definitions(test_litehtml_css_pool PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+target_link_libraries(test_litehtml_css_pool PRIVATE
+    litehtml
+    user32 gdi32
+)
+add_test(NAME litehtml_css_pool COMMAND test_litehtml_css_pool)
+set_tests_properties(litehtml_css_pool PROPERTIES TIMEOUT 60)
+
+# --- text width cache (P2 of 预览内存优化方案) --------------------------------
+# 这个缓存出错的唯一表现是「排版宽度错了」——不崩溃、不报警，只是文字按
+# 错误的宽度折行。最容易漏的是键少一维：只按文本做键，换字号后整篇仍按旧
+# 字号折行。测试逐个维度破坏相等。纯标准库，不链 FLTK/litehtml。
+add_executable(test_text_width_cache
+    test/test_text_width_cache.cpp
+)
+target_include_directories(test_text_width_cache PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+if(MSVC)
+    target_compile_options(test_text_width_cache PRIVATE /utf-8 /permissive- /W4 /WX /MD)
+    target_compile_definitions(test_text_width_cache PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+add_test(NAME text_width_cache COMMAND test_text_width_cache)
+set_tests_properties(text_width_cache PROPERTIES TIMEOUT 30)
+
+# --- deep-nesting stack safety ----------------------------------------------
+# litehtml recurses per nesting level with no bound (css_parser's
+# consume_function<->consume_component_value, and document::create_node for the
+# DOM). Past roughly 2000 nested <div>s the MSVC stack overflows and the
+# process dies with 0xC00000FD - uncatchable, so the editor takes the user's
+# unsaved work with it. The bound lives in litehtml; this test is the proof
+# that it holds. See the header comment of the test for the full reasoning.
+add_executable(test_nest_depth
+    test/test_nest_depth.cpp
+)
+target_include_directories(test_nest_depth PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${PECIA_THIRDPARTY}/litehtml-0.10/include
+    # gumbo.h, for the diagnostic that parses without building a litehtml tree
+    ${PECIA_THIRDPARTY}/litehtml-0.10/src/gumbo/include
+)
+if(MSVC)
+    target_compile_options(test_nest_depth PRIVATE /utf-8 /permissive- /W4 /WX /MD)
+    target_compile_definitions(test_nest_depth PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+target_link_libraries(test_nest_depth PRIVATE
+    litehtml
+    user32 gdi32
+)
+add_test(NAME nest_depth COMMAND test_nest_depth)
+set_tests_properties(nest_depth PROPERTIES TIMEOUT 120)
+
 # 图片导出（远程图片落盘/命名）单测。只链 image_export.cpp，不碰
 # md4c/litehtml/两个 Rust FFI，链接面最小。
 add_executable(test_md_export
@@ -716,7 +838,7 @@ target_include_directories(test_md_export PRIVATE
     ${FLTK_INCLUDE_DIRS}
 )
 if(MSVC)
-    target_compile_options(test_md_export PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /MD)
+    target_compile_options(test_md_export PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /WX /MD)
     target_compile_definitions(test_md_export PRIVATE
         UNICODE _UNICODE NOMINMAX _CRT_SECURE_NO_WARNINGS)
 endif()
@@ -742,7 +864,7 @@ target_include_directories(test_vscroll_geom PRIVATE
     ${FLTK_INCLUDE_DIRS}
 )
 if(MSVC)
-    target_compile_options(test_vscroll_geom PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /MD)
+    target_compile_options(test_vscroll_geom PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /WX /MD)
     target_compile_definitions(test_vscroll_geom PRIVATE
         UNICODE _UNICODE NOMINMAX _CRT_SECURE_NO_WARNINGS)
 endif()
@@ -781,7 +903,7 @@ target_include_directories(test_vscroll_reach PRIVATE
     ${FLTK_INCLUDE_DIRS}
 )
 if(MSVC)
-    target_compile_options(test_vscroll_reach PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /MD)
+    target_compile_options(test_vscroll_reach PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /WX /MD)
     target_compile_definitions(test_vscroll_reach PRIVATE
         UNICODE _UNICODE NOMINMAX _CRT_SECURE_NO_WARNINGS)
 endif()
@@ -822,7 +944,7 @@ target_include_directories(test_export_e2e PRIVATE
     ${PECIA_THIRDPARTY}/stb-2026-08-02
 )
 if(MSVC)
-    target_compile_options(test_export_e2e PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /MD)
+    target_compile_options(test_export_e2e PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /WX /MD)
     target_compile_definitions(test_export_e2e PRIVATE
         UNICODE _UNICODE NOMINMAX _CRT_SECURE_NO_WARNINGS)
     set_target_properties(test_export_e2e PROPERTIES LINK_FLAGS "/FORCE:MULTIPLE")
@@ -853,7 +975,9 @@ add_executable(test_match_highlight
     test/test_stubs.cpp
     test/test_mainwindow_stubs.cpp
     ui/MatchHighlight.cpp
+    editor/FontUtils.cpp
     editor/Editor.cpp
+    ui/ImeInPlace.cpp
     core/Config.cpp
     core/UiBridge.cpp
     core/OpLog.cpp
@@ -864,7 +988,7 @@ target_include_directories(test_match_highlight PRIVATE
     ${FLTK_INCLUDE_DIRS}
 )
 if(MSVC)
-    target_compile_options(test_match_highlight PRIVATE /utf-8 /permissive- /W4 /MD)
+    target_compile_options(test_match_highlight PRIVATE /utf-8 /permissive- /W4 /WX /MD)
     target_compile_definitions(test_match_highlight PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 target_link_libraries(test_match_highlight PRIVATE
@@ -896,7 +1020,7 @@ target_include_directories(test_config PRIVATE
     ${FLTK_INCLUDE_DIRS}
 )
 if(MSVC)
-    target_compile_options(test_config PRIVATE /utf-8 /permissive- /W4 /MD)
+    target_compile_options(test_config PRIVATE /utf-8 /permissive- /W4 /WX /MD)
     target_compile_definitions(test_config PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 target_link_libraries(test_config PRIVATE
@@ -927,7 +1051,7 @@ target_include_directories(test_param_parser PRIVATE
     ${CMAKE_SOURCE_DIR}
 )
 if(MSVC)
-    target_compile_options(test_param_parser PRIVATE /utf-8 /permissive- /W4 /MD)
+    target_compile_options(test_param_parser PRIVATE /utf-8 /permissive- /W4 /WX /MD)
     target_compile_definitions(test_param_parser PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 add_test(NAME param_parser COMMAND test_param_parser)
@@ -939,7 +1063,7 @@ target_include_directories(test_docs PRIVATE
     ${CMAKE_SOURCE_DIR}
 )
 if(MSVC)
-    target_compile_options(test_docs PRIVATE /utf-8 /permissive- /W4 /MD)
+    target_compile_options(test_docs PRIVATE /utf-8 /permissive- /W4 /WX /MD)
     target_compile_definitions(test_docs PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 add_test(NAME docs COMMAND test_docs)
@@ -957,7 +1081,7 @@ target_include_directories(test_lua_engine PRIVATE
     ${FLTK_INCLUDE_DIRS}
 )
 if(MSVC)
-    target_compile_options(test_lua_engine PRIVATE /utf-8 /permissive- /W4 /MD)
+    target_compile_options(test_lua_engine PRIVATE /utf-8 /permissive- /W4 /WX /MD)
     target_compile_definitions(test_lua_engine PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 target_link_libraries(test_lua_engine PRIVATE
@@ -991,7 +1115,7 @@ target_include_directories(test_undo_guard PRIVATE
     ${FLTK_INCLUDE_DIRS}
 )
 if(MSVC)
-    target_compile_options(test_undo_guard PRIVATE /utf-8 /permissive- /W4 /MD)
+    target_compile_options(test_undo_guard PRIVATE /utf-8 /permissive- /W4 /WX /MD)
     target_compile_definitions(test_undo_guard PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 target_link_libraries(test_undo_guard PRIVATE
@@ -1025,7 +1149,7 @@ target_include_directories(test_script_manager PRIVATE
     ${FLTK_INCLUDE_DIRS}
 )
 if(MSVC)
-    target_compile_options(test_script_manager PRIVATE /utf-8 /permissive- /W4 /MD)
+    target_compile_options(test_script_manager PRIVATE /utf-8 /permissive- /W4 /WX /MD)
     target_compile_definitions(test_script_manager PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 target_link_libraries(test_script_manager PRIVATE
@@ -1056,6 +1180,35 @@ add_test(NAME script_manager COMMAND test_script_manager)
 add_dependencies(test_script_manager pecia_copy_lang)
 
 # ---------------------------------------------------------------------------
+# Built-in script gate - parses every shipped Lua script with the real
+# Lua 5.5.1 parser and checks the pairing scripts' output.
+#
+# Why: script/scripts/ (92 files) had NO coverage at all. The engine
+# (test_lua_engine) and the folder scanner (test_script_manager) were
+# both tested, but the script FILES were never parsed - so a syntax
+# error shipped silently (02.Pair/02_doublequote.lua was broken from
+# 1.0.0 and only surfaced when a user clicked that menu entry).
+#
+# It reads the SOURCE tree (main/script/scripts), not the build copy,
+# because the source tree is what gets shipped.
+# ---------------------------------------------------------------------------
+add_executable(test_builtin_scripts
+    test/test_builtin_scripts.cpp
+)
+target_include_directories(test_builtin_scripts PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${LUA_DIR}
+)
+if(MSVC)
+    target_compile_options(test_builtin_scripts PRIVATE /utf-8 /permissive- /W4 /WX /MD)
+    target_compile_definitions(test_builtin_scripts PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+target_link_libraries(test_builtin_scripts PRIVATE
+    lua_static
+)
+add_test(NAME builtin_scripts COMMAND test_builtin_scripts)
+
+# ---------------------------------------------------------------------------
 # UI smoke test - constructs/opens every dialog via its real code path (with
 # a smoke-mode flag that skips the blocking modal loop) so "open a window and
 # it crashes" regressions (e.g. the ShortcutDialog child(0) crash, ParamDialog
@@ -1067,12 +1220,15 @@ add_executable(test_ui_smoke
     ui/AboutDialog.cpp
     ui/ConfirmDialog.cpp
     ui/ParamDialog.cpp
+    ui/FontDialog.cpp
+    editor/FontUtils.cpp
     ui/ShortcutDialog.cpp
     ui/InfoWindow.cpp
     ui/DialogBase.cpp
     ui/ImeInPlace.cpp
     ui/TitleBar.cpp
     ui/WindowFrame.cpp
+    ui/WindowShadow.cpp
     ui/ToolChrome.cpp
     ui/Layout.cpp
     core/Config.cpp
@@ -1089,7 +1245,7 @@ target_include_directories(test_ui_smoke PRIVATE
     ${FLTK_INCLUDE_DIRS}
 )
 if(MSVC)
-    target_compile_options(test_ui_smoke PRIVATE /utf-8 /permissive- /W4 /MD)
+    target_compile_options(test_ui_smoke PRIVATE /utf-8 /permissive- /W4 /WX /MD)
     target_compile_definitions(test_ui_smoke PRIVATE _CRT_SECURE_NO_WARNINGS UNICODE _UNICODE)
 endif()
 target_link_libraries(test_ui_smoke PRIVATE
@@ -1145,6 +1301,7 @@ add_executable(test_ui_tool_smoke
     ui/ImeInPlace.cpp
     ui/TitleBar.cpp
     ui/WindowFrame.cpp
+    ui/WindowShadow.cpp
     ui/ToolChrome.cpp
     ui/Layout.cpp
 )
@@ -1161,7 +1318,7 @@ target_include_directories(test_ui_tool_smoke PRIVATE
     ${FLTK_INCLUDE_DIRS}
 )
 if(MSVC)
-    target_compile_options(test_ui_tool_smoke PRIVATE /utf-8 /permissive- /W4 /MD)
+    target_compile_options(test_ui_tool_smoke PRIVATE /utf-8 /permissive- /W4 /WX /MD)
     target_compile_definitions(test_ui_tool_smoke PRIVATE _CRT_SECURE_NO_WARNINGS UNICODE _UNICODE)
 endif()
 target_link_libraries(test_ui_tool_smoke PRIVATE
@@ -1190,6 +1347,140 @@ set_tests_properties(ui_tool_smoke PROPERTIES TIMEOUT 60)
 add_dependencies(test_ui_tool_smoke pecia_copy_lang)
 add_dependencies(test_ui_tool_smoke pecia_copy_theme)
 
+# ---------------------------------------------------------------------------
+# Main-window assembly smoke test.
+#
+# Links the SAME source set as Pecia.exe (minus main.cpp / the .rc files), so
+# the window it builds IS the product window: custom frame + native subclass
+# chain + shadow + title bar + menu table + tab bar + side panel + preview
+# pane + status bar. Before this target existed, all eleven
+# ui/MainWindow_*.cpp, ui/MenuTable.cpp and ui/SidePanel.cpp were compiled by
+# no test at all (see 开发指南 十节 §7).
+#
+# Deliberately NOT an *_stubs.cpp job: needing stubs would mean the layering is
+# wrong. If this fails to link, fix the dependency direction, do not stub.
+# ---------------------------------------------------------------------------
+add_executable(test_mainwindow_smoke
+    test/test_mainwindow_smoke.cpp
+    core/Config.cpp
+    core/CrashReport.cpp
+    core/I18n.cpp
+    core/Theme.cpp
+    core/FileManager.cpp
+    core/UiBridge.cpp
+    core/SearchCore.cpp
+    core/EncodingCore.cpp
+    core/OpLog.cpp
+    core/ShortcutCore.cpp
+    core/AiApiClient.cpp
+    core/Updater.cpp
+    editor/Document.cpp
+    editor/FontUtils.cpp
+    editor/Editor.cpp
+    script/LuaEngine.cpp
+    script/LuaParamParser.cpp
+    script/ScriptManager.cpp
+    ui/MainWindow.cpp
+    ui/MainWindow_toolbar.cpp
+    ui/MainWindow_view.cpp
+    ui/MainWindow_lua.cpp
+    ui/MainWindow_lang.cpp
+    ui/MainWindow_tabs.cpp
+    ui/MainWindow_files.cpp
+    ui/MainWindow_frame.cpp
+    ui/MainWindow_settings.cpp
+    ui/MainWindow_callbacks.cpp
+    ui/MainWindow_timers.cpp
+    ui/MainWindow_preview.cpp
+    ui/MainWindow_sidepanel.cpp
+    ui/SidePanel.cpp
+    ui/MenuTable.cpp
+    ui/Layout.cpp
+    ui/FindReplace.cpp
+    ui/MatchHighlight.cpp
+    ui/GoTo.cpp
+    ui/SettingsDialog.cpp
+    ui/ShortcutDialog.cpp
+    ui/InfoWindow.cpp
+    ui/AboutDialog.cpp
+    ui/TitleBar.cpp
+    ui/WindowFrame.cpp
+    ui/WindowShadow.cpp
+    ui/ConfirmDialog.cpp
+    ui/ParamDialog.cpp
+    ui/FontDialog.cpp
+    ui/DialogBase.cpp
+    ui/ImeInPlace.cpp
+    ui/ToolChrome.cpp
+    ui/UiBridge.cpp
+    LuaTool/LuaPipeServer.cpp
+    LuaTool/AiPushServer.cpp
+    mdview/preprocess.cpp
+    mdview/image_export.cpp
+    mdview/block_layout.cpp
+    mdview/container.cpp
+    mdview/preview_panel.cpp
+)
+target_include_directories(test_mainwindow_smoke PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/editor
+    ${CMAKE_SOURCE_DIR}/script
+    ${CMAKE_SOURCE_DIR}/ui
+    ${CMAKE_SOURCE_DIR}/LuaTool
+    ${CMAKE_SOURCE_DIR}/build
+    ${CMAKE_SOURCE_DIR}/mdview
+    ${CMAKE_SOURCE_DIR}/../.thirdparty/litehtml-0.10/include
+    ${CMAKE_SOURCE_DIR}/../.thirdparty/litehtml-0.10/src/gumbo/include
+    ${CMAKE_SOURCE_DIR}/../.thirdparty/stb-2026-08-02
+    ${PCRE2_DIR}/src
+    ${FLTK_INCLUDE_DIRS}
+)
+if(MSVC)
+    target_compile_options(test_mainwindow_smoke PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /WX /MD)
+    target_compile_definitions(test_mainwindow_smoke PRIVATE
+        UNICODE _UNICODE NOMINMAX _CRT_SECURE_NO_WARNINGS
+        "PECIA_VERSION=\"${PROJECT_VERSION}\"")
+endif()
+target_link_libraries(test_mainwindow_smoke PRIVATE
+    ${FLTK_LIBRARIES}
+    lua_static
+    pcre2-8-static
+    md4c
+    md4c-html
+    litehtml
+    ${CMAKE_SOURCE_DIR}/../.thirdparty/mermaid-rs-renderer-0.3.1/mmdr-ffi/target/release/mermaid_ffi.lib
+    ${CMAKE_SOURCE_DIR}/../.thirdparty/RaTeX-0.1.14/ratex-ffi/target/release/ratex_ffi.lib
+    comctl32
+    shell32
+    user32
+    imm32
+    gdi32
+    kernel32
+    winspool
+    ole32
+    oleaut32
+    uuid
+    comdlg32
+    advapi32
+    ws2_32
+    userenv
+    ntdll
+    bcrypt
+    gdiplus
+    dwmapi
+)
+# Same two Rust staticlibs as the product: LTO leaves duplicate std runtime
+# symbols in each, and their contents are byte-identical (see the Pecia target).
+if(MSVC)
+    set_target_properties(test_mainwindow_smoke PROPERTIES
+        LINK_FLAGS "/FORCE:MULTIPLE")
+endif()
+add_test(NAME mainwindow_smoke COMMAND test_mainwindow_smoke)
+set_tests_properties(mainwindow_smoke PROPERTIES TIMEOUT 90)
+add_dependencies(test_mainwindow_smoke pecia_copy_lang)
+add_dependencies(test_mainwindow_smoke pecia_copy_theme)
+
 # Pipe wire protocol: locks the frame format (4-byte tag + u32 LE length
 # + payload, OK/ERR reply) used by the Lua console Save As -> reload
 # scripts chain. Client links the REAL PipeClient.cpp (the exact
@@ -1201,7 +1492,7 @@ add_executable(test_pipe_protocol
 )
 target_include_directories(test_pipe_protocol PRIVATE ${CMAKE_SOURCE_DIR})
 if(MSVC)
-    target_compile_options(test_pipe_protocol PRIVATE /utf-8 /permissive- /W4 /MD)
+    target_compile_options(test_pipe_protocol PRIVATE /utf-8 /permissive- /W4 /WX /MD)
     target_compile_definitions(test_pipe_protocol PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 target_link_libraries(test_pipe_protocol PRIVATE kernel32)
@@ -1222,7 +1513,7 @@ target_include_directories(test_shortcut_core PRIVATE
     ${FLTK_INCLUDE_DIRS}
 )
 if(MSVC)
-    target_compile_options(test_shortcut_core PRIVATE /utf-8 /permissive- /W4 /MD)
+    target_compile_options(test_shortcut_core PRIVATE /utf-8 /permissive- /W4 /WX /MD)
     target_compile_definitions(test_shortcut_core PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 target_link_libraries(test_shortcut_core PRIVATE ${FLTK_LIBRARIES} kernel32)

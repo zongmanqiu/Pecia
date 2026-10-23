@@ -3,7 +3,7 @@
 > 本文档描述从零开始构建 Pecia 的基本步骤：需要哪些工具、依赖从哪来、
 > 打补丁（patch）怎么操作、Rust FFI 绑定归谁所有、编译与测试怎么跑。
 > 它是 `full.bat` / `1_check_env.bat` / `2_download.bat` / `3_patch.bat` /
-> `4_build_rust.bat` / `5_build_pecia.bat` 的**人类可读版流程说明**，
+> `4_build_rust.bat` / `5_build_pecia.bat` / `check_fltk_patch.ps1` 的**人类可读版流程说明**，
 > 实际一键构建请直接运行这些脚本（见第四、五节）。
 
 ---
@@ -113,7 +113,7 @@ build/         最终分发目录（项目根：Pecia.exe / lang/ / theme/ / scr
 | ② | **`2_download.bat`** | 下载 + 解压 6 个 C/C++ 第三方库到 `.thirdparty/` | 首次搭建、或新增依赖库后 |
 | ③ | **`3_patch.bat`** | 把 `main/patches/` 应用到 `.thirdparty/`（单向） | 改了补丁、想单独同步 |
 | ④ | **`4_build_rust.bat`** | `cargo fetch` 拉取 Rust 依赖 → `cargo build --release` 编出 `mermaid_ffi.lib` / `ratex_ffi.lib` | 改了 FFI 壳、或 Rust 依赖有变动时 |
-| ⑤ | **`5_build_pecia.bat`** | 编 FLTK → CMake 配置 + 编译 Pecia 三件套 → `ctest` 跑 14 个测试（**测试不过 = 构建失败**） | 日常改代码后重编 |
+| ⑤ | **`5_build_pecia.bat`** | 编 FLTK → CMake 配置 + 编译 Pecia 三件套 → `ctest` 跑 27 个测试（**测试不过 = 构建失败**） | 日常改代码后重编 |
 | ★ | **`full.bat`** | **总入口**：①→②→③→④→⑤ 全自动（① 为只读工具链体检，不下载不编译） | 只想双击一次完成全部工作 |
 
 关于 `full.bat` 的两个开关（它默认已打开）：
@@ -183,10 +183,22 @@ full.bat
 > 怀疑 `.thirdparty/` 整体损坏时，设 `PECIA_FORCE_DOWNLOAD=1` 强制全部重下重解。
 
 ### 步骤 ③：应用补丁（`3_patch.bat`，幂等）
-把 `main/patches/` 下的修改覆盖到 `.thirdparty/`，**只有 `patches → .thirdparty` 单向**：
+把 `main/patches/` 下的修改同步到 `.thirdparty/`，**只有 `patches → .thirdparty` 单向**：
 - FLTK：`FL/*`、`src/*`
-- litehtml：`src/*`
+- litehtml：`src/*`、`include/litehtml/*`、`src/gumbo/*`
 - Rust FFI 壳：`mmdr-ffi/`、`ratex-ffi/` 的 `Cargo.toml` / `Cargo.lock` / `src/*`
+
+**只复制内容真的变了的文件**（`fc /b` 逐字节比较）。这不是性能优化，是为了让 mtime 有意义：
+`copy /Y` 每次都会把目标 mtime 刷成"现在"，于是时间戳再也分不清"这个文件刚被打过补丁"
+和"这个文件只是被碰了一下"。2026-10-23 就这么丢过一次菜单阴影——旧补丁集覆盖了源码、
+FLTK 从旧源码重编、源码随后恢复，而 `5_build_pecia.bat` 看到"补丁比库旧"就再没重建过。
+无变化时脚本**一个文件都不打印**，空跑一眼可辨。
+
+> 紧随其后，`5_build_pecia.bat` 还会跑 `check_fltk_patch.ps1`：从 `patches/fltk-1.4.5/`
+> 抽出补丁声明的每个 `pecia*` 外部钩子，逐个确认 `fltk.lib` 里真有这个符号。
+> 因为 FLTK 补丁用 `/alternatename` 给了空实现兜底，**库缺钩子时链接照过、程序照跑、
+> 功能静默消失**。缺符号时脚本强制重建（删库 + 删 obj），重建后再验一次；
+> 仍然缺就直接构建失败——坏库不允许进入下一步。
 
 ### 步骤 ④：编译 Rust FFI（`4_build_rust.bat`）
 这是最容易被忽略的一步——**Rust 也要编译**：
@@ -211,6 +223,13 @@ full.bat
 4. `[5/7]` FLTK：lib 不存在、或补丁源比已编 `.lib` 新时自动重编
 5. `[6/7]` `cmake -G "NMake Makefiles"` 配置 + `cmake --build`（**复用缓存做增量**；
    仅当 `temp/cmake_build` 的缓存来自其他生成器时才清空重建）
+   > **头文件依赖保护**：本机 `cl /utf-8` 的 `/showIncludes` 输出是 UTF-8，而
+   > CMake 写进 `build.make` 的过滤前缀是 ANSI，两者永远不匹配，CMake 的
+   > `.obj.d` 全是空文件——**改头文件不会触发包含它的 .cpp 重编**。
+   > 因此构建前会跑 `ensure_header_deps.ps1`：只要有 `.h` 比最旧的项目 `.obj`
+   > 新，就删除 Pecia / PeciaLua / PeciaAIChat / 测试的 `.obj` 与 `.res`，
+   > 迫使这些目标全量重编（第三方库不动）。不这样做时，旧对象按旧类布局
+   > 访问新头文件会直接 0xC0000005（2026-10-22 实测）。
 6. `[7/7]` `ctest --output-on-failure` 运行全部单元测试。
    **这一步是门禁（GATE），不是报告**：任一测试失败 → 脚本 `exit /b 1`，
    `full.bat` 随即中止并报 `[ERROR] 5_build_pecia.bat shi bai`。
@@ -241,7 +260,6 @@ full.bat
 
 ### 内部脚本（一般不用直接跑）
 - `msvc_env.bat`：被所有脚本 `call` 的环境探测（不单独跑）。
-- `pack.bat`：把 `build/` 内容打包到 `release/<版本>/`（见第六节）。
 
 > 老版一体化脚本 `setup.bat` / `build.bat` 已于 2026-09-12 **删除**（职责分别由 ②③④ 与 ⑤ 取代）；
 > 临时问题清单 `BUILD_ISSUES.md` 同时删除——它的最后一项遗留就是"清空依赖后首跑"验证。
@@ -257,7 +275,7 @@ build/
 ├── Pecia.exe          主程序
 ├── PeciaLua.exe       Lua 工具（独立进程，命名管道通信）
 ├── PeciaAIChat.exe    AI 对话工具（独立进程）
-├── test_*.exe         ×14 单元测试可执行（含 test_docs 文档一致性门禁）
+├── test_*.exe         ×25 单元测试可执行（含 test_docs 文档一致性门禁）
 ├── lang/  theme/  script/  运行时资源（构建时从 main/ 复制）
 ├── LICENSE / THIRD-PARTY-NOTICES.md   （由 CMake 目标 pecia_copy_licenses 复制）
 └── licenses/          各直接链接库的许可证原文（自 .thirdparty/ 拷贝 ×7）
@@ -270,11 +288,12 @@ build/
 （注意上游文件名不统一：FLTK 是 `COPYING`、Lua 的 MIT 声明在 `doc/readme.html`）。
 **因此 `build/` 目录本身即可直接分发**，与 `release/` 内容一致。
 
-- **质量门禁**：零警告（`/W4`）、14 个测试全绿、文档一致性（`test_docs`）通过。
-- **分发打包**：`pack.bat` 复制 `exe + lang/ + theme/ + script/ + LICENSE +
-  THIRD-PARTY-NOTICES.md + licenses/` 到 `release/<版本>/`，并生成 zip。
+- **质量门禁**：零警告（`/W4 /WX`）、27 个测试全绿、文档一致性（`test_docs`）通过。
+- **分发打包**：本仓库不提供打包脚本，**手动**把上列内容（去掉 `test_*.exe`）
+  复制到 `release/<版本>/` 并压成 `Pecia_x64_<版本>.zip`；命名规则见
+  `docs/RELEASE_CHECKLIST.md` 第三节，写错会让自动更新 404。
 - **完整发行步骤**（版本号同步、质量门禁、gitee release、自动更新验证）
-  见 `docs/README/RELEASE_CHECKLIST.md`。
+  见 `docs/RELEASE_CHECKLIST.md`。
 
 ---
 
@@ -302,7 +321,7 @@ build/
    - 不能用 `%ProgramFiles(x86)%`：cmd 在 `)` 处截断变量名。
    - **不要在 `for` 体内再开 `for /f` 并依赖内层 `set` 的变量**——内层会重载环境，
      父作用域变量对外层不可见，表现为**静默跳过**。把逻辑抽成 `call :label` 子例程。
-6. **`.thirdparty` 可能被污染/重新解压**：构建强制每次从 `main/patches/` 重新同步覆盖，
+6. **`.thirdparty` 可能被污染/重新解压**：构建每次都从 `main/patches/` 同步（内容不同才复制），
    因此**只改 `.thirdparty` 而不归档到 `main/patches/` 会丢失修改**——
    任何对第三方库的改动都要先写进 `main/patches/`（`main/patches/` 只增不减）。
 7. **依赖目录残缺会被自动修复**：`.thirdparty/<name>` 存在但缺探针文件时，

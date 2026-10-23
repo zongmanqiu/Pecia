@@ -383,7 +383,9 @@ UpdateInfo checkForUpdate(const std::string &currentVersion) {
         info.hasUpdate = false;
         return info;
     }
-    // latest is newer: build deterministic download URL (matches pack.bat naming).
+    // latest is newer: build deterministic download URL. The asset name
+    // "Pecia_x64_<tag>.zip" is fixed by docs/RELEASE_CHECKLIST.md section 3 -
+    // rename the uploaded zip and auto-update 404s.
     std::string base = tag;
     if (!base.empty() && (base[0] == 'v' || base[0] == 'V')) base = base.substr(1);
     info.url = "https://gitee.com/qiuzongman/pecia/releases/download/" + tag +

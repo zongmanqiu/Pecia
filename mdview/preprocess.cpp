@@ -1,6 +1,7 @@
 #include "preprocess.h"
 #include <md4c.h>
 #include <md4c-html.h>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstdint>
@@ -20,8 +21,31 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
-/* md4c 回调 */
-static void collect_html(const MD_CHAR* chunk, MD_SIZE chunk_size, void* userdata)
+// 预处理阶段耗时诊断（PECIA_PROFILE=1）：追加到 %TEMP%/pecia_pp_profile.log。
+// 与 container.cpp 的 mdv_prof_ms 分开实现，避免 preprocess.cpp（同时也被
+// 导出/测试目标使用）依赖 FLTK。
+struct PpProf {
+    std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+    void mark(const char* tag) const;
+};
+void PpProf::mark(const char* tag) const
+{
+    static const bool on = [] {
+        const char* v = getenv("PECIA_PROFILE");
+        return v && *v && *v != '0';
+    }();
+    if (!on) return;
+    double ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t0).count();
+    const char* tmp = getenv("TEMP");
+    std::string p = std::string(tmp ? tmp : ".") + "/pecia_pp_profile.log";
+    if (FILE* f = fopen(p.c_str(), "a")) {
+        fprintf(f, "[pp] %-30s %9.1f ms\n", tag, ms);
+        fclose(f);
+    }
+};
+
+/* md4c 回调 */static void collect_html(const MD_CHAR* chunk, MD_SIZE chunk_size, void* userdata)
 {
     auto* out = static_cast<std::string*>(userdata);
     out->append(chunk, chunk_size);
@@ -111,9 +135,20 @@ static void stripEventHandlers(std::string& html)
         size_t gt = html.find('>', lt);
         if (gt == std::string::npos) break;
         // Work inside [lt, gt] only: " onxxx=..." attributes.
+        //
+        // The search for " on" must be bounded by gt. It used to be
+        // html.find(" on", p) over the whole document, so for every tag it
+        // scanned all remaining bytes until it either found an attribute or hit
+        // the end of the document. A 1.5 MB document with no on* attributes at
+        // all (the normal case) paid a full-document scan per tag — ~50k tags
+        // meant ~6 s. A tag is tens of bytes, so compare byte by byte instead.
         size_t p = lt;
         bool changed = false;
-        while ((p = html.find(" on", p)) != std::string::npos && p < gt) {
+        while (p + 3 < gt) {
+            if (!(html[p] == ' ' && html[p + 1] == 'o' && html[p + 2] == 'n')) {
+                ++p;
+                continue;
+            }
             size_t nameEnd = p + 3;
             while (nameEnd < gt && (isalnum((unsigned char)html[nameEnd]) ||
                                     html[nameEnd] == '_' || html[nameEnd] == '-'))
@@ -274,9 +309,26 @@ static const std::unordered_map<std::string, std::string>& emoji_map()
     return m;
 }
 
+// True if pos is at the start of a line (only whitespace between the
+// preceding newline and pos, or pos == 0). Markdown code fences must
+// start at the beginning of a line — a "```" inside a table cell or
+// inline code span is not a fence and must not be treated as one.
+static bool is_at_line_start(const std::string& text, size_t pos)
+{
+    size_t p = pos;
+    while (p > 0) {
+        char c = text[p - 1];
+        if (c == '\n') return true;
+        if (c != ' ' && c != '\t') return false;
+        --p;
+    }
+    return true;
+}
+
 // Fenced code-block ranges ("```" ... "```", including the fences). Content
 // inside these must be treated as literal: emoji shorthand and $$ formulas
 // should NOT be substituted there (it would corrupt code samples).
+// Only fences at line start count (CommonMark: up to 3 spaces indent).
 static std::vector<std::pair<size_t, size_t>> find_fenced_ranges(const std::string& text)
 {
     std::vector<std::pair<size_t, size_t>> ranges;
@@ -284,7 +336,14 @@ static std::vector<std::pair<size_t, size_t>> find_fenced_ranges(const std::stri
     while (i < text.size()) {
         size_t open = text.find("```", i);
         if (open == std::string::npos) break;
-        size_t close = text.find("```", open + 3);
+        if (!is_at_line_start(text, open)) { i = open + 3; continue; }
+        // closing fence must also be at line start
+        size_t close = std::string::npos;
+        size_t j = open + 3;
+        while ((j = text.find("```", j)) != std::string::npos) {
+            if (is_at_line_start(text, j)) { close = j; break; }
+            j += 3;
+        }
         if (close == std::string::npos) break;   // unterminated fence: ignore rest
         ranges.push_back({open, close + 3});     // inclusive of closing fence
         i = close + 3;
@@ -293,11 +352,23 @@ static std::vector<std::pair<size_t, size_t>> find_fenced_ranges(const std::stri
 }
 
 // True if pos falls inside any fenced code-range (or before i's next range).
+//
+// Ranges are produced in ascending, non-overlapping order by
+// find_fenced_ranges(), so this is a binary search. It used to be a linear
+// scan, and both call sites invoke it once per scanned position (every ':'
+// candidate, every "$$"): with ~1800 fenced blocks in a 1 MB document that is
+// ~10^9 range comparisons, which alone accounted for 6 s of the preview's
+// preprocess stage.
 static bool in_any_fence(const std::vector<std::pair<size_t, size_t>>& r,
                          size_t pos)
 {
-    for (const auto& p : r)
-        if (pos >= p.first && pos < p.second) return true;
+    size_t lo = 0, hi = r.size();
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (pos < r[mid].first)      hi = mid;
+        else if (pos >= r[mid].second) lo = mid + 1;
+        else                         return true;
+    }
     return false;
 }
 
@@ -452,9 +523,11 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
                        std::vector<PreviewHeading>* headings_out,
                        const std::string& base_font)
 {
+    PpProf pp;   // 阶段性耗时（PECIA_PROFILE=1），打印的是累计值
     // 0. 替换 emoji 简码为 Unicode（跳过 fenced code block 内部，避免误伤代码）
     std::vector<std::pair<size_t, size_t>> fences0 = find_fenced_ranges(markdown);
     std::string md = replace_emoji(markdown, fences0);
+    pp.mark("emoji");
 
     // 0b. 移除 [TOC] / <!-- TOC --> 占位文本。这必须在 md4c 解析之前
     // 完成：原实现把它放在生成 HTML 之后，对 md 的修改已经不会进入
@@ -506,15 +579,23 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
     }
 
     // 1b. 提取 ```math / ```katex / ```latex 代码块公式
+    // 仅匹配行首的围栏（表格单元格内的 ```math 等字样不是代码块）
     const char* formula_langs[] = {"```math", "```katex", "```latex"};
     for (const char* lang : formula_langs) {
         pos = 0;
         while ((pos = md.find(lang, pos)) != std::string::npos) {
+            if (!is_at_line_start(md, pos)) { pos += strlen(lang); continue; }
             size_t start = pos;
             size_t cs = pos + strlen(lang);
             if (cs < md.size() && md[cs] == '\r') cs++;
             if (cs < md.size() && md[cs] == '\n') cs++;
-            size_t end = md.find("```", cs);
+            // closing fence must also be at line start
+            size_t end = std::string::npos;
+            size_t j = cs;
+            while ((j = md.find("```", j)) != std::string::npos) {
+                if (is_at_line_start(md, j)) { end = j; break; }
+                j += 3;
+            }
             if (end == std::string::npos) break;
             std::string formula = md.substr(cs, end - cs);
             while (!formula.empty() && (formula.front() == '\n' || formula.front() == ' '))
@@ -529,15 +610,22 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
         }
     }
 
-    // 1c. 提取 ```mermaid 代码块
+    // 1c. 提取 ```mermaid 代码块（仅行首围栏）
     std::vector<std::string> mermaid_blocks;
     pos = 0;
     while ((pos = md.find("```mermaid", pos)) != std::string::npos) {
+        if (!is_at_line_start(md, pos)) { pos += 10; continue; }
         size_t start = pos;
         size_t cs = pos + 10;
         if (cs < md.size() && md[cs] == '\r') cs++;
         if (cs < md.size() && md[cs] == '\n') cs++;
-        size_t end = md.find("```", cs);
+        // closing fence must also be at line start
+        size_t end = std::string::npos;
+        size_t j = cs;
+        while ((j = md.find("```", j)) != std::string::npos) {
+            if (is_at_line_start(md, j)) { end = j; break; }
+            j += 3;
+        }
         if (end == std::string::npos) break;
         std::string content = md.substr(cs, end - cs);
         mermaid_blocks.push_back(content);
@@ -547,6 +635,7 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
     }
 
     // 2. md4c 解析
+    pp.mark("formula+mermaid extract");
     std::string body_html;
     int ret = md_html(
         md.data(), (MD_SIZE)md.size(),
@@ -584,6 +673,7 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
     }
 
     // 4. 从 HTML 提取标题并注入 id 属性（用于锚点跳转）
+    pp.mark("md4c html");
     // 直接从 md4c 生成的 HTML 提取标题，避免因代码块中的 # 行或 setext 风格标题（===/---）导致索引错位。
     {
         struct HInfo {
@@ -686,6 +776,7 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
     }
 
     // 3. 渲染公式为 PNG
+    pp.mark("headings+ids");
     std::string formula_dir = build_dir + "\\formulas";
     std::vector<uint64_t> formula_hashes;
     if (!formulas.empty()) {
@@ -816,17 +907,29 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
          << "   注意顺序：p+p (0-0-2) 特异性高于上面的 body>*+* (0-0-1)，\n"
          << "   所以能覆盖它，而 h2+p / p+pre 等仍保留 8px。 */\n"
          << "p + p, li + li { margin-top: 0; }\n"
+         // 行内元素不吃块间距：上面的 `li > * + *` / `td > * + *` 之类规则
+         // 会把「紧随 <strong> 的行内 <code>」也选中，给它加 8px margin-top。
+         // litehtml 把行内元素的 margin 一起算进背景盒（content_offset_height），
+         // 于是同一个 <code> 在脚注里比正文高 8px（实测 25 vs 17）、色块还会
+         // 上下错位（实测 y 偏移 -4）。行内元素不该有垂直外边距，这里归零。
+         // 特异性 0-0-1 与 `li > * + *` 相同，靠「更靠后」获胜。
+         << "code, strong, em, b, i, u, s, del, a, span, mark, img,\n"
+         << "sup, sub { margin: 0; }\n"
          << "a { color: #0366d6; text-decoration: underline; }\n"
          << "ul, ol { padding-left: 32px; }\n"
          << "/* 行内 code 的上下 padding 必须为 0。\n"
-         << "   code 是 inline-block，其纵向 padding 会被 litehtml 计入所在\n"
-         << "   行的行盒高度：正文行高 26px，含 <code> 的行变成 30px。脚注区\n"
-         << "   尤其明显 —— 脚注二是列表项且含 <code>，行距比脚注一整段大一\n"
-         << "   截，看上去像行距没对齐（浏览器侧 inline-block 的行高规则不同，\n"
-         << "   故同一份 HTML 在浏览器里是正常的，这正是纯渲染层问题）。\n"
-         << "   保留左右 padding（视觉内边距需要），只清纵向。 */\n"
+         << "   code 是 inline，litehtml 会把行内元素的纵向 padding/margin\n"
+         << "   都算进行盒与背景盒高度：正文行高 26px，带纵向 padding 的\n"
+         << "   行会被撑高、色块也跟着变厚。保留左右 padding，只清纵向。 */\n"
+         // 行内 code 的字号必须用相对单位。固定 px（曾为 14px）时，
+         // 正文里刚好等于 16px x 0.875，看着没问题；但标题会放大到
+         // h2=24px / h1=32px，code 仍是 14px，色块只有 15px 高，在
+         // 24px 的标题文字中间"特别矮"（实测：h2 内 code 15px vs 标题
+         // 行高 39px）。改成 0.875em 后 code 随父元素缩放——
+         // h1→28px、h2→21px、h3→17.5px、正文 16px→14px，任何语境下
+         // 都比周围文字小 12.5%，与浏览器一致；pre 内仍是 16x0.875=14。
          << "code { background: #f0f0f0; padding: 0 6px; border-radius: 3px;\n"
-         << "  font-family: " << code_fonts << "; font-size: 14px; }\n"
+         << "  font-family: " << code_fonts << "; font-size: 0.875em; }\n"
          << "pre { background: #f6f8fa; padding: 16px; border-radius: 6px;\n"
          << "  border: 1px solid #e1e4e8; white-space: pre-wrap; word-break: break-word; }\n"
          << "pre code { display: block; background: none; padding: 0; border-radius: 0; white-space: pre-wrap; word-break: break-word; }\n"
@@ -836,6 +939,12 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
          << "h4 { font-size: 1em; font-weight: bold; }\n"
          << "h5 { font-size: 0.875em; font-weight: bold; }\n"
          << "h6 { font-size: 0.85em; font-weight: bold; }\n"
+         // 标题内的行内 code 不再缩小。行内 code 全局是 0.875em（正文
+         // 16px→14px，视觉上刚好），但标题字号被放大到 h1=32/h2=24 后，
+         // 0.875em 只剩 28/21px，与同一行的粗体、斜体相比"明显更小"
+         // （2026-10-20 用户实测反馈）。标题里的代码属于强调，跟随标题
+         // 字号即可，所以这里用 1em 覆盖。
+         << "h1 code, h2 code, h3 code, h4 code, h5 code, h6 code { font-size: 1em; }\n"
          << "table { border-collapse: collapse; border-spacing: 0; }\n"
          << "th, td { border: 1px solid #dfe2e5; padding: 6px 13px; }\n"
          << "th { background: #f6f8fa; }\n"
@@ -849,11 +958,15 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
           << ".mermaid-img { max-width: 100%; height: auto; display: block; }\n"
           << "/* 垂直 padding 不给：inline 元素的上下 padding 会被计进行框，\n"
           << "   使含 ==高亮== 的表格行比其它行高一截，看起来像行距不齐。 */\n"
-          << "/* mark 必须是 inline-block：litehtml 对跨行 inline 的背景\n"
-          << "   box 坐标有 bug（split 后每个片段的 y 比文字低一个行高，\n"
-          << "   窄表格里换行的高亮会与文字错位）。inline-block 是原子盒、\n"
-          << "   整块换行不拆分，绕开该路径；行高实测不受影响。 */\n"
-          << "mark, .highlight { background: #ffff8c; padding: 0 4px; display: inline-block; }\n"
+          << "/* mark 保持 inline（不是 inline-block）：litehtml 的行内背景盒\n"
+          << "   高度取字体度量（ascent+descent），与 line-height 无关 —— 这\n"
+          << "   正是浏览器里荧光笔的观感（16px 字号实测 17px 高）。若改成\n"
+          << "   inline-block，背景会撑成整行高（实测 26px），比同一句里的\n"
+          << "   <code> 色块高 9px，两种色块高矮不一。\n"
+          << "   旧注释称「跨行 inline 的背景 y 偏移一个行高」，在 0.10 上\n"
+          << "   复测不成立：换行后每片段高 17、相邻片段 y 间距恒 26，引用/\n"
+          << "   列表/表格内均正确，故不再用 inline-block 绕行。 */\n"
+          << "mark, .highlight { background: #ffff8c; padding: 0 4px; }\n"
           << "del, s { text-decoration: line-through; }\n"
           << ".task-list-item { list-style: none; }\n"
           << "ul ul { list-style-type: circle; }\n"
@@ -882,6 +995,7 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
          << "\n</body>\n</html>\n";
 
     std::string html_str = html.str();
+    pp.mark("wrap html");
 
     // 注意：这里【绝不】做远程图片本地化。
     // md_to_html() 是渲染与导出两条路径共用的，产出的 HTML 有两个消费者，
@@ -1003,4 +1117,181 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
     }
 
     return html_str;
+}
+
+// ---------------------------------------------------------------------------
+// 轻量标题提取（extractOutlineHeadings）
+//
+// 为什么不用 md_to_html 顺带拿：那条路要跑公式/mermaid FFI 渲染、写 PNG、
+// 拼整页 HTML——面板只是想显示个目录，尤其预览关闭时根本没理由拉起整条
+// 渲染链。这里只调 md_parse 收集 MD_BLOCK_H，成本是一次纯 C 解析。
+//
+// id 规则必须与 md_to_html 的 <hN> 注入逐字一致（按文档顺序 toc-N、跳过
+// 空标题），否则预览开启时大纲点击会跳错锚点。
+// ---------------------------------------------------------------------------
+namespace {
+
+struct OutlineCtx {
+    std::vector<PreviewHeading>* out = nullptr;
+    bool  inHeading = false;
+    unsigned level = 0;
+    std::string text;
+    // 行号要用"累计扫描"而不是"每行从头数 \n"：后者每个标题都回扫一遍，
+    // 整体退化成 O(N*M)。md4c 的 text 回调给出的是指向原文的指针且按文档
+    // 顺序前移，所以只需从上次扫到的位置继续往前数换行即可，全程 O(N)。
+    const char* src = nullptr;   // 原文起始（用于算指针偏移）
+    size_t scanned = 0;          // 已扫描到的字节下标
+    int    curLine = 1;          // 行号游标（1-based）
+    bool   haveLine = false;     // 当前标题的首个文本是否已定位
+    int    headingLine = 0;
+};
+
+int oe_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
+    auto* c = static_cast<OutlineCtx*>(userdata);
+    if (type == MD_BLOCK_H && detail) {
+        c->inHeading = true;
+        c->level = static_cast<const MD_BLOCK_H_DETAIL*>(detail)->level;
+        c->text.clear();
+        c->haveLine = false;    // 等第一个文本回调来定位行号
+        c->headingLine = 0;
+    }
+    return 0;
+}
+
+int oe_leave_block(MD_BLOCKTYPE type, void*, void* userdata) {
+    auto* c = static_cast<OutlineCtx*>(userdata);
+    if (type != MD_BLOCK_H || !c->inHeading) return 0;
+    c->inHeading = false;
+    // 与 md_to_html 的标题文本清理一致：去首尾空白；空标题跳过（不计 id）
+    const size_t first = c->text.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return 0;
+    const size_t last = c->text.find_last_not_of(" \t\r\n");
+    PreviewHeading h;
+    h.level = (int)c->level;
+    h.text = c->text.substr(first, last - first + 1);
+    h.id = "toc-" + std::to_string(c->out->size());
+    h.line = c->headingLine;   // 0 = 未能定位（理论上不会发生；见 src/haveLine）
+    c->out->push_back(std::move(h));
+    return 0;
+}
+
+int oe_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata) {
+    auto* c = static_cast<OutlineCtx*>(userdata);
+    if (!c->inHeading) return 0;
+    // 用首个文本回调的指针定位该标题所在行：text 指向原文内部（md4c 不会
+    // 帮我们复制），所以 offset = text - src，再把行号游标推到这个位置。
+    if (!c->haveLine && c->src && text >= c->src) {
+        const size_t off = static_cast<size_t>(text - c->src);
+        if (off >= c->scanned) {          // 只往前推进（正常情况必然成立）
+            for (size_t i = c->scanned; i < off; ++i)
+                if (c->src[i] == '\n') ++c->curLine;
+            c->scanned = off;
+        }
+        c->haveLine = true;
+        c->headingLine = c->curLine;
+    }
+    switch (type) {
+    case MD_TEXT_NORMAL:
+    case MD_TEXT_CODE:        // 行内 `code`：与预览侧"剥标签留文本"一致
+    case MD_TEXT_LATEXMATH:
+    case MD_TEXT_NULLCHAR:
+        c->text.append(text, size);
+        break;
+    case MD_TEXT_ENTITY: {
+        // 与 md_to_html 同一组实体；其余按字面保留（md4c 不认识列表外实体）
+        const std::string ent(text, size);
+        if      (ent == "&amp;")  c->text.push_back('&');
+        else if (ent == "&lt;")   c->text.push_back('<');
+        else if (ent == "&gt;")   c->text.push_back('>');
+        else if (ent == "&quot;") c->text.push_back('"');
+        else if (ent == "&#39;")  c->text.push_back('\'');
+        else if (ent == "&nbsp;") c->text.push_back(' ');
+        else                      c->text += ent;
+        break;
+    }
+    // 硬折行/软折行都折叠成空格：面板行高固定，标签里出现 '\n' 会被 fl_draw
+    // 当成多行文本画出行外（预览侧同一情况也是坏的，这里不复制坏行为）。
+    case MD_TEXT_BR:
+    case MD_TEXT_SOFTBR: c->text.push_back(' '); break;
+    default: break;
+    }
+    return 0;
+}
+
+// ★ enter_span / leave_span 必须是真回调、不能是 NULL：md4c.c 的
+//   MD_ENTER_SPAN / MD_LEAVE_SPAN 宏是 `ret = ctx->parser.enter_span(...)`
+//   直接调用，没有任何 NULL 保护。只填 block/text 回调的话，文档里第一个
+//   行内标记（`代码`、**粗体**、[链接](…)）就会间接调用空函数指针，
+//   崩成 0xC0000005 at 0（2026-10-20 实测：侧栏开着打开任何 md 必崩，
+//   栈帧全落在 VCRUNTIME140 的异常传播路径上，很难第一眼看出根因）。
+//   md4c.h 只承诺 syntax 可以是 NULL；debug_log 也有 MD_LOG 的 NULL 保护，
+//   但这两个一起给空实现，省得后人再踩。
+int oe_noop_span(MD_SPANTYPE, void*, void*) { return 0; }
+void oe_noop_log(const char*, void*) {}
+
+} // namespace
+
+void extractOutlineHeadings(const std::string& markdown,
+                            std::vector<PreviewHeading>& headings)
+{
+    headings.clear();
+    OutlineCtx ctx;
+    ctx.out = &headings;
+    ctx.src = markdown.data();   // 行号定位的基准（见 oe_text）
+    MD_PARSER parser{};
+    parser.abi_version = 0;
+    // 与 md_to_html 完全相同的扩展开关：标题识别不受这些开关影响，但保持
+    // 一致可以在加新扩展时少一处"两边行为不同"的隐患。
+    parser.flags = MD_FLAG_TABLES | MD_FLAG_PERMISSIVEAUTOLINKS | MD_FLAG_TASKLISTS | MD_FLAG_STRIKETHROUGH
+                 | MD_FLAG_SUPERSCRIPTS | MD_FLAG_SUBSCRIPTS
+                 | MD_FLAG_HIGHLIGHT | MD_FLAG_FOOTNOTES | MD_FLAG_ADMONITIONS;
+    parser.enter_block = oe_enter_block;
+    parser.leave_block = oe_leave_block;
+    // span 回调见 oe_noop_span 上方的★注释：必须非 NULL
+    parser.enter_span = oe_noop_span;
+    parser.leave_span = oe_noop_span;
+    parser.text = oe_text;
+    parser.debug_log = oe_noop_log;
+    parser.syntax = nullptr;   // md4c.h：Reserved. Set to NULL.
+    md_parse(markdown.data(), (MD_SIZE)markdown.size(), &parser, &ctx);
+}
+
+// 去掉首尾空白/CRLF 后剩下的内容
+static std::string trimLine(const std::string &s)
+{
+    const size_t first = s.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return std::string();
+    const size_t last = s.find_last_not_of(" \t\r\n");
+    return s.substr(first, last - first + 1);
+}
+
+// setext 下划线：整行由 '=' 或 '-' 构成（至少一个）
+static bool isSetextUnderline(const std::string &s)
+{
+    const std::string t = trimLine(s);
+    if (t.empty()) return false;
+    const char c = t[0];
+    if (c != '=' && c != '-') return false;
+    for (char ch : t)
+        if (ch != c) return false;
+    return true;
+}
+
+bool isHeadingSourceLine(const std::string &rawLine, const std::string &label,
+                         const std::string &nextLine)
+{
+    if (label.empty()) return false;
+    const std::string body = trimLine(rawLine);
+    if (body.empty()) return false;
+
+    size_t i = 0;
+    while (i < body.size() && body[i] == '#') ++i;   // 数行首井号
+    if (i > 0) {                                     // ATX：## 标题
+        const size_t b = body.find_first_not_of(" \t", i);
+        if (b == std::string::npos) return false;
+        return body.compare(b, body.size() - b, label) == 0;
+    }
+    // 非 '#' 行：只有紧跟 setext 下划线时才是 setext 标题的正文行
+    if (!isSetextUnderline(nextLine)) return false;
+    return body == label;
 }

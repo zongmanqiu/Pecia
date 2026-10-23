@@ -362,8 +362,14 @@ static void test_user_repro_typed_chars_then_lua_then_double_undo() {
     r = buf.undo(&cursor);
     CHECK(r == 1);
     CHECK_EQ(buf.length(), 0);   // fully reverted
-    fprintf(stderr, "after undo2 len=%d text='%s' r=%d\n", buf.length(), buf.text(), r);
-    CHECK(buf.length() >= 0);
+    {
+        // Was `CHECK(buf.length() >= 0)`, which is true for every possible
+        // value of an int-returning length() - it could not fail. Prove the
+        // buffer is really empty instead, and free the copy text() hands out.
+        char *t = buf.text();
+        CHECK(t != nullptr && t[0] == '\0');
+        free(t);
+    }
 }
 
 // ---------------------------------------------------------------------------

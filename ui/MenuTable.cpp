@@ -87,55 +87,52 @@ Fl_Menu_Item g_menu[] = {
     { nullptr },
 
     // View
-    //   Status Bar
-    //   Line Numbers
+    //   Menu Bar / Script Bar / Status Bar / Side Panel / Line Numbers /
+    //   Highlight Current Line / Show Space Symbol / Word Wrap   (toggles)
     //   ─────────────────────────
-    //   Highlight Current Line
-    //   Show Space Symbol
-    //   Word Wrap
-    //   Font  ▶
-    //     Consolas / SimHei / NSimSun / MS Gothic / Gulim
-    //     Segoe UI / Nirmala UI / Leelawadee UI / Noto Sans SC
-    //     ...
+    //   Font
+    //   Rounded Corners
+    //   Window Shadow
+    //   Theme  ▶
+    //   Zoom  ▶        (Zoom Out Ctrl+- / Zoom In Ctrl++ / Reset Zoom Ctrl+0)
+    //   ─────────────────────────
     //   Statistics...
-    //   ─────────────────────────
-    //   Zoom  ▶
-    //     Zoom Out       Ctrl+-
-    //     Zoom In        Ctrl++
-    //     Reset Zoom     Ctrl+0
-    //   Multi Tab
     { "View", 0, nullptr, nullptr, FL_SUBMENU },
     { "Menu Bar",                 0, MainWindow::cbToggleMenuBar,           nullptr, FL_MENU_TOGGLE },
     { "Script Bar",                0, MainWindow::cbToggleScriptBar,          nullptr, FL_MENU_TOGGLE },
     { "Status Bar",             0, MainWindow::cbToggleStatusbar,        nullptr, FL_MENU_TOGGLE },
+    { "Side Panel",  FL_COMMAND | 'b', MainWindow::cbToggleSidePanel,         nullptr, FL_MENU_TOGGLE },
     { "Line Numbers",           0, MainWindow::cbToggleLineNumbers,      nullptr, FL_MENU_TOGGLE },
     { "Highlight Current Line", 0, MainWindow::cbToggleHighlightLine,    nullptr, FL_MENU_TOGGLE },
     { "Show Space Symbol",      0, MainWindow::cbToggleShowWhitespace,   nullptr, FL_MENU_TOGGLE },
-    { "Word Wrap",              0, MainWindow::cbToggleWrap,             nullptr, FL_MENU_TOGGLE },
-    // Font submenu - radio items, 每文字系统一个代表字体（与
-    // FontUtils::FONT_LIST 保持一致，其余文字由系统回退兜底）。
-    { "Font", 0, nullptr, nullptr, FL_SUBMENU | FL_MENU_DIVIDER },
-    { "Consolas",      0, MainWindow::cbSelectFont, nullptr, FL_MENU_RADIO },
-    { "SimHei",        0, MainWindow::cbSelectFont, nullptr, FL_MENU_RADIO },
-    { "NSimSun",       0, MainWindow::cbSelectFont, nullptr, FL_MENU_RADIO },
-    { "MS Gothic",     0, MainWindow::cbSelectFont, nullptr, FL_MENU_RADIO },
-    { "Gulim",         0, MainWindow::cbSelectFont, nullptr, FL_MENU_RADIO },
-    { "Segoe UI",      0, MainWindow::cbSelectFont, nullptr, FL_MENU_RADIO },
-    { "Nirmala UI",    0, MainWindow::cbSelectFont, nullptr, FL_MENU_RADIO },
-    { "Leelawadee UI", 0, MainWindow::cbSelectFont, nullptr, FL_MENU_RADIO },
-    { "Noto Sans SC",  0, MainWindow::cbSelectFont, nullptr, FL_MENU_RADIO },
-    { nullptr },
-    // Zoom submenu. FL_SUBMENU makes FLTK pop the submenu out to the
-    // right; the nested items use an 8-space indent so they align
-    // with the 4-space indent used by non-toggle items elsewhere,
-    // while still reading as "deeper" inside the Zoom submenu.
-    { "Zoom", 0, nullptr, nullptr, FL_SUBMENU },
+    { "Word Wrap",              0, MainWindow::cbToggleWrap,             nullptr, FL_MENU_TOGGLE | FL_MENU_DIVIDER },
+    // Font - opens the system font picker (FontDialog). 原先分隔开关组的那条
+    // 线(FL_MENU_DIVIDER)移到了 Word Wrap 上——FLTK 的分隔线画在带旗标的
+    // 项之后,线必须保持在“开关组 | 其余”之间。
+    //
+    // This used to be a radio submenu with a hard-coded 9-entry list, one
+    // "representative face" per writing system. That list was wrong: SimHei /
+    // NSimSun / Gulim are not installed on most machines and Noto Sans SC is
+    // invisible to FLTK's default ANSI-only enumeration, so selecting any of
+    // them silently fell back to Courier. The dialog enumerates what is
+    // actually installed instead - see ui/FontDialog.h.
+    { "Font", 0, MainWindow::cbSelectFont, nullptr, 0 },
+    // Rounded corners for every app window (DWM on Win11, region fallback).
+    { "Rounded Corners", 0, MainWindow::cbToggleRoundedCorners, nullptr, FL_MENU_TOGGLE },
+    // Outer glow: one switch for every app window (main, dialogs, and the
+    // Lua / AI tool processes). Default on.
+    { "Window Shadow", 0, MainWindow::cbToggleWindowShadow, nullptr, FL_MENU_TOGGLE },
+    // Theme submenu - dynamically populated via FL_SUBMENU_POINTER
+    { "Theme", 0, nullptr, nullptr, FL_SUBMENU_POINTER },
+    // Zoom submenu - 置于「主题颜色」之下、间隔线之上(用户指定的顺序)。
+    // FL_SUBMENU makes FLTK pop the submenu out to the right. 分隔旗标在
+    // Zoom 头上:FLTK 把线画在带旗标的项之后,所以线保持在 Zoom 与
+    // Statistics 之间,与原先 Theme 头上带旗标时同位。
+    { "Zoom", 0, nullptr, nullptr, FL_SUBMENU | FL_MENU_DIVIDER },
     { "Zoom Out",    FL_COMMAND | '-', MainWindow::cbZoomOut,   nullptr },
     { "Zoom In",     FL_COMMAND | '+', MainWindow::cbZoomIn,    nullptr },
     { "Reset Zoom",  FL_COMMAND | '0', MainWindow::cbZoomReset, nullptr },
     { nullptr },
-    // Theme submenu - dynamically populated via FL_SUBMENU_POINTER
-    { "Theme", 0, nullptr, nullptr, FL_SUBMENU_POINTER | FL_MENU_DIVIDER },
     { "Statistics...",      0, MainWindow::cbStatistics,             nullptr, 0 },
     { nullptr },
 
@@ -143,7 +140,10 @@ Fl_Menu_Item g_menu[] = {
     { "Markdown", 0, nullptr, nullptr, FL_SUBMENU },
     { "Preview",              FL_COMMAND | 'p', MainWindow::cbTogglePreview,        nullptr, FL_MENU_TOGGLE },
     { "Scroll Sync",          0,                MainWindow::cbToggleScrollSync,      nullptr, FL_MENU_TOGGLE },
-    { "Refresh",              0,                MainWindow::cbRefreshPreview,       nullptr, 0 },
+    // Label must stay identical to the side-panel tab (panel.outline):
+    // buildMenuKeys() maps this item to the very same i18n key.
+    { "Outline",              0,                MainWindow::cbShowOutlineInPanel,    nullptr, 0 },
+    { "Refresh",              FL_COMMAND | 'r', MainWindow::cbRefreshPreview,       nullptr, 0 },
     { "Auto Refresh",         0,                nullptr,                            nullptr, FL_SUBMENU },
     { "Off",                  0, MainWindow::cbSetAutoRefresh, (void *)(intptr_t)0,      FL_MENU_RADIO },
     { "1s",                   0, MainWindow::cbSetAutoRefresh, (void *)(intptr_t)1000,  FL_MENU_RADIO },

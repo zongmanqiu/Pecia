@@ -27,10 +27,12 @@
 #include "ui/SettingsDialog.h"
 #include "ui/ConfirmDialog.h"
 #include "ui/ParamDialog.h"
+#include "ui/FontDialog.h"
 #include "ui/ShortcutDialog.h"
 
 #include <FL/Fl.H>
 #include <FL/Fl_Preferences.H>
+#include <FL/Fl_Group.H>
 #include <FL/Fl_Check_Button.H>
 #include <FL/Fl_Input.H>
 #include <FL/Fl_Choice.H>
@@ -73,6 +75,15 @@ struct UiSmokeAccess {
         return d.comboText(d.m_rows[row].combo);
     }
     static size_t shortcutRowCount(const ShortcutDialog &d) { return d.m_rows.size(); }
+
+    // FontDialog ----------------------------------------------------------
+    static void fontSetSearch(FontDialog &d, const char *q) { d.m_search->value(q); d.rebuildList(); }
+    static void fontSetMono(FontDialog &d, bool on) { d.m_monoBox->value(on ? 1 : 0); d.rebuildList(); }
+    static size_t fontAllCount(const FontDialog &d) { return d.m_all.size(); }
+    static size_t fontShownCount(const FontDialog &d) { return d.m_shown.size(); }
+    static void fontSelectIndex(FontDialog &d, size_t i) { d.selectLine((int)i + 1); }
+    static void fontCommit(FontDialog &d) { FontDialog::cbOk(nullptr, &d); }
+    static const std::string &fontChosen(const FontDialog &d) { return d.m_chosen; }
 };
 
 namespace {
@@ -83,36 +94,66 @@ std::filesystem::path testConfigDir() {
     std::filesystem::path dir = std::filesystem::temp_directory_path() /
                                 ("pecia_ui_smoke_" + std::to_string(::GetCurrentProcessId()));
     std::error_code ec;
+    // Wipe first. The name is keyed on the PID, and PIDs get recycled: without
+    // this, a leftover settings.ini from an earlier run hands the test
+    // non-default values, and "change the settings" silently becomes "no
+    // change" (runDataFlowTest's settingsSaveTo then returns false).
+    std::filesystem::remove_all(dir, ec);
     std::filesystem::create_directories(dir, ec);
     return dir;
 }
 
 // One-time FLTK + app init before constructing any window (mirrors the
 // startup sequence in main_*.cpp).
+//
+// A dialog that only "didn't crash" is half the story: it can also build but
+// lay out to nothing (0-size window, no children), which to the user looks
+// exactly like "the menu item does nothing". checkDialog pins the other half.
+static void checkDialog(const Fl_Widget &w, const char *what) {
+    const bool sized = w.w() > 0 && w.h() > 0;
+    const auto *g = dynamic_cast<const Fl_Group *>(&w);
+    const bool hasKids = g && g->children() > 0;
+    if (!sized || !hasKids)
+        fprintf(stderr, "  [%s] w=%d h=%d children=%d\n", what, w.w(), w.h(),
+                hasKids ? g->children() : 0);
+    CHECK(sized);
+    CHECK(hasKids);
+}
+
 void runOpenTest() {
     Config cfg;
     initLayoutHeights(cfg);
-    if (!I18n::load("en")) I18n::load("en");
+    I18n::load("en");        // 只加载一次：失败不重试，语言包缺失要暴露出来
     Theme theme;
     theme.load(cfg);
     const int fs = 16;
 
     // ── Settings / Options ──
-    { SettingsDialog dlg(520, 480, "smoke-settings", &theme, fs, 16); }
-    CHECK(true);
+    {
+        SettingsDialog dlg(520, 480, "smoke-settings", &theme, fs, 16);
+        checkDialog(dlg, "settings");
+    }
 
     // ── ExtensionsDialog (Open-with chooser; previously not covered) ──
     {
         SettingsDialog dlg(520, 480, "smoke-ext", &theme, fs, 16);
         dlg.openExtensionsForTest();
+        checkDialog(dlg, "extensions");
     }
-    CHECK(true);
 
     // ── Confirm (3 / 2 / 1 buttons) ──
-    { ConfirmDialog dlg("t", "msg", "Yes", "No", "Cancel", &theme, fs); }
-    { ConfirmDialog dlg2("t", "msg", "OK", "Cancel", nullptr, &theme, fs); }
-    { ConfirmDialog dlg3("t", "msg", "OK", nullptr, nullptr, &theme, fs); }
-    CHECK(true);
+    {
+        ConfirmDialog dlg("t", "msg", "Yes", "No", "Cancel", &theme, fs);
+        checkDialog(dlg, "confirm/3");
+    }
+    {
+        ConfirmDialog dlg("t", "msg", "OK", "Cancel", nullptr, &theme, fs);
+        checkDialog(dlg, "confirm/2");
+    }
+    {
+        ConfirmDialog dlg("t", "msg", "OK", nullptr, nullptr, &theme, fs);
+        checkDialog(dlg, "confirm/1");
+    }
 
     // ── Param (multi-field incl. text/checkbox/choice, and a single short
     //    field that exposed the close-button overflow) ──
@@ -125,9 +166,10 @@ void runOpenTest() {
         LuaParam p3; p3.name = "mode"; p3.choices = {"a", "b", "c"};
         p3.defValue = "b"; p3.description = "Mode";
         ParamDialog dlg("smoke-param", {p1, p2, p3}, &theme, fs);
+        checkDialog(dlg, "param/3");
         ParamDialog dlg2("smoke-param2", {p1}, &theme, fs);
+        checkDialog(dlg2, "param/1");
     }
-    CHECK(true);
 
     // ── Shortcut (exercises layoutRows()/repositionRows()/fitButtonRow) ──
     {
@@ -140,8 +182,8 @@ void runOpenTest() {
         b.defKey = FL_F + 9; b.defMods = FL_CTRL;
         ShortcutDialog dlg(520, 560, "smoke-shortcut", &cfg, &theme, fs);
         dlg.setRows(rows);
+        checkDialog(dlg, "shortcut");
     }
-    CHECK(true);
 
     // ── Info (doc statistics; smoke mode skips the blocking loop) ──
     {
@@ -151,11 +193,16 @@ void runOpenTest() {
         iw.setWidth(320);
         iw.setRows({{"Chars", "123"}, {"Words", "45"}, {"Lines", "6"}});
         iw.show();
+        // InfoWindow owns its Fl_Window internally and hides it in smoke mode,
+        // so there is no sizing to inspect here: surviving show() is the check.
+        CHECK(true);
     }
-    CHECK(true);
 
     // ── About (smoke mode skips the blocking loop) ──
-    { showAboutDialog(&theme, fs); }
+    // showAboutDialog() owns its window internally and, in smoke mode, returns
+    // right after hiding it - there is no object left to measure. Surviving the
+    // call IS the assertion (an access violation aborts the process).
+    showAboutDialog(&theme, fs);
     CHECK(true);
 }
 
@@ -236,16 +283,62 @@ void runDataFlowTest() {
         CHECK(UiSmokeAccess::shortcutComboText(dlg, 0) == "Ctrl+Alt+P");
     }
     CHECK(true);
+
+    // ── FontDialog: real system enumeration + search + mono filter + commit.
+    // Construction alone exercises Fl::set_fonts("*") and the attr/@-prefix
+    // filters for every installed face.
+    {
+        FontDialog dlg(&theme, fs, "Consolas");
+        CHECK(UiSmokeAccess::fontAllCount(dlg) > 0);
+
+        // Search narrows the list; the default font must survive it on any
+        // Windows box (Consolas ships with the OS).
+        size_t all = UiSmokeAccess::fontAllCount(dlg);
+        UiSmokeAccess::fontSetSearch(dlg, "consol");
+        size_t narrowed = UiSmokeAccess::fontShownCount(dlg);
+        CHECK(narrowed > 0);
+        CHECK(narrowed < all);
+
+        // Monospace filter keeps only fixed-pitch faces (GDI TEXTMETRIC).
+        UiSmokeAccess::fontSetSearch(dlg, "");
+        UiSmokeAccess::fontSetMono(dlg, true);
+        CHECK(UiSmokeAccess::fontShownCount(dlg) > 0);
+        UiSmokeAccess::fontSetMono(dlg, false);
+
+        // Select the first hit and commit -> chosen() carries the name.
+        UiSmokeAccess::fontSelectIndex(dlg, 0);
+        UiSmokeAccess::fontCommit(dlg);
+        CHECK(!UiSmokeAccess::fontChosen(dlg).empty());
+    }
+    CHECK(true);
 }
 
 } // namespace
 
 int main() {
-    // 便携：与 Pecia 入口一致，禁止 FLTK 核心在 exe 之外读写 prefs。
-    // 构造控件会触发 Fl::option()，否则会在 %APPDATA%/%ProgramData% 下
-    // 生成 fltk.org/fltk.prefs。必须在任何 FLTK 调用之前设置。
+    // Portable: as with the Pecia entry point, forbid FLTK core from reading
+    // and writing prefs outside the exe. Constructing any widget touches
+    // Fl::option(), which would otherwise create fltk.org/fltk.prefs under
+    // %APPDATA%/%ProgramData%. Must run before ANY FLTK call.
     Fl_Preferences::file_access(Fl_Preferences::APP_OK);
     Fl::visual(FL_DOUBLE | FL_RGB);
+
+    // ── Startup sequence MUST mirror main.cpp ──────────────────────────────
+    // These two were missing until 2026-10-23, and their absence is why this
+    // test's windows looked nothing like the product: widget borders fell back
+    // to FLTK's stock FL_BORDER_BOX (grey/black 1px) instead of the themed one,
+    // and CJK faces were never enumerated, so Chinese labels rendered with a
+    // fallback font. A smoke test that runs a different global environment than
+    // the product cannot say anything about what the product looks like.
+    //
+    // Both steps are asserted, not just called: a silently no-op call would put
+    // us right back where we started.
+    Fl_Box_Draw_F *borderBefore = Fl::get_boxtype(FL_BORDER_BOX);
+    const int fontCount = Fl::set_fonts("*");   // main.cpp:75
+    theme_registerBorderBox();                  // main.cpp:81
+    CHECK(fontCount > 100);                     // CJK faces really enumerated
+    CHECK(Fl::get_boxtype(FL_BORDER_BOX) != borderBefore);  // themed border installed
+
     Fl::scheme("gtk+");
     ui::g_smokeMode = true;   // no blocking modal loops during the smoke test
 

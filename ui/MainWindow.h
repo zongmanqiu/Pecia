@@ -2,6 +2,7 @@
 #pragma once
 
 #include "core/Theme.h"
+#include "core/EncodingCore.h"
 #include "ui/WindowFrame.h"
 #include "core/ShortcutCore.h"
 #include "mdview/preprocess.h"   // PreviewHeading
@@ -43,6 +44,7 @@ class Fl_Menu_Button;
 class HoverMenuBar;
 class TitleBar;
 class Document;
+class SidePanel;   // ui/SidePanel.h（左侧文件树/大纲面板）
 class FindReplace;
 class GoTo;
 class Config;
@@ -86,6 +88,15 @@ public:
     void setRestoreGeometry(int x, int y, bool maximized);
 
     Fl_Menu_Bar    *menuBar() const { return m_menu; }   // 右键菜单复用主菜单项
+
+    // Append a self-contained "View" submenu to `out`, copying every View
+    // item BEFORE the Font item (the toggles: Menu Bar .. Word Wrap). Used by
+    // the editor's right-click menu, so adding a new View item above Font in
+    // g_menu automatically shows up there - no second hand-maintained list.
+    // `cap` is the remaining Fl_Menu_Item capacity; returns the number of
+    // slots written INCLUDING the submenu terminator, or 0 when there is no
+    // View/Font item. The caller must still append the outer popup terminator.
+    int buildViewContextMenu(Fl_Menu_Item *out, int cap) const;
     bool isMenuBarVisible() const { return m_showMenuBar; }
 
     // Open a file into a new tab (or reuse an existing tab if the file
@@ -182,6 +193,8 @@ public:
     static void cbToggleScriptBar(Fl_Widget *w, void *data);
     static void cbToggleHighlightLine(Fl_Widget *w, void *data);
     static void cbToggleShowWhitespace(Fl_Widget *w, void *data);
+    static void cbToggleRoundedCorners(Fl_Widget *w, void *data);
+    static void cbToggleWindowShadow(Fl_Widget *w, void *data);
     // New View menu dialogs
     static void cbSelectFont(Fl_Widget *w, void *data);
     static void cbStatistics(Fl_Widget *w, void *data);
@@ -323,13 +336,15 @@ private:
     // ---- Markdown preview (two-pane: editor | preview) ----
     PreviewPanel   *m_preview = nullptr;      // 预览面板（首次开启时创建）
     PreviewDivider *m_previewDivider = nullptr; // 分隔条（比例 20%-80%）
-    HoverMenuBar   *m_previewBar = nullptr;  // 预览顶部按钮栏（与主菜单同样式）
-    std::vector<Fl_Menu_Item> m_previewBarItems; // 按钮栏菜单项：{刷新},{目录},{nullptr}
-    class TocPopup *m_tocPopup = nullptr;    // 目录弹出面板（限高+滚动条）
-    int             m_tocPopupFontSize = -1; // 目录面板当前界面字号（-1=尚未创建）
+    // 预览顶部按钮栏已删除（2026-10-20）：刷新→Ctrl+R（同时刷新左侧面板）；
+    // 大纲→Markdown/Outline（打开左侧面板的大纲页，文案与面板页签同源：
+    // panel.outline）；面板→视图/侧面板 或 Ctrl+B。
+    // 预览视图从内容区顶缘开始。
     std::vector<std::string> m_tocLabels;    // 菜单项文本（text 指针指向其 c_str，先 reserve 保地址稳定）
     std::vector<int>         m_tocLevels;    // 与 m_tocLabels 平行的标题层级（1..6，决定缩进/字重/主次色）
     std::vector<std::string> m_tocIds;       // 菜单项锚点 id（user_data 指向其 c_str，先 reserve 保地址稳定）
+    std::vector<int>         m_outlineLines; // 源码侧标题行号（1-based），与 m_sidePanel 当前的大纲条目同序；
+                                             // 预览那条路填不出来（保持空），点击时按需重提（见 jumpToHeadingLine）
     bool            m_previewActive = false;  // 预览模式是否开启
     float           m_previewRatio = 0.5f;    // 左栏（编辑区）占比
     bool            m_autoRefreshArmed = false; // 自动刷新循环定时器已挂起
@@ -347,6 +362,22 @@ private:
     bool            m_scrollSyncEnabled = false; // 滚动同步开关（Markdown > Scroll Sync）
     int             m_lastEditorScroll = 0;   // 上次编辑滚动条位置（滚动同步去抖）
     int             m_autoRefreshMs = 5000;   // 自动刷新间隔(ms)，0=关闭(仅手动)
+
+    // ---- 左侧视图面板（文件树 / 大纲，两个 Tab 在顶部切换）----
+    //   挂在内容区最左，纵跨编辑器与预览；关闭时宽度为 0（不占空间）。
+    //   与「编辑器|预览」一样是分栏：Panel | Divider(4px 可拖动) | 内容区。
+    //   入口：视图 > 侧面板 / Ctrl+B。
+    static constexpr int kSideDividerW = 4;   // 侧栏分隔条宽（与预览分隔条一致）
+    SidePanel      *m_sidePanel = nullptr;    // 首次打开时创建
+    PreviewDivider *m_sideDivider = nullptr; // 侧栏分隔条（打开面板时创建）
+    bool            m_sidePanelOpen = false;
+    int             m_sidePanelW = 0;         // 持久宽度(px)，0=按窗口比例取默认
+    int             sidePanelWidth() const;   // 0 = 关闭
+    int             contentLeft() const;      // 内容区左缘 = 面板宽 + 分隔条宽
+    void            toggleSidePanel();
+    void            syncSidePanel();          // 重设 root/当前文档/大纲
+    void            refreshOutline();         // 从当前文档重新提取标题 → 面板大纲
+    void            jumpToHeadingLine(const std::string &anchor);  // 大纲点击 → 编辑器跳到对应源码行
     void            syncAutoRefreshMenu();    // 同步 Auto Refresh 菜单勾选
     static void     scrollSyncCb(void *data); // 编辑滚动 → 预览滚动（150ms 轮询）
     void            startScrollSync();
@@ -359,18 +390,21 @@ private:
     void            startAutoRefreshLoop();   // 按 m_autoRefreshMs 启动循环
     void            stopAutoRefreshLoop();
     // 立即用当前标签内容刷新。force=true 时无视"内容未变"判据重渲染
-    // —— 手动刷新（菜单/工具条按钮）必须真的重跑一次，否则用户点了没反应。
+    // —— 手动刷新（Markdown 菜单 / Ctrl+R）必须真的
+    // 重跑一次，否则用户点了没反应。
     void            refreshPreview(bool force = false);
     void            togglePreview();            // 开/关预览模式
-    void            layoutPreviewPanes(int contentTop, int tabsH); // 两栏排布
+    // 两栏排布。contentH = 内容区全高（含 find/go-to 栏占位），tabsH = 扣掉
+    // 栏位后的可视高度；侧栏/分隔条用 contentH（不被栏位挤短）。
+    void            layoutPreviewPanes(int contentTop, int contentH, int tabsH);
     void            rebuildPreviewToc(const std::vector<PreviewHeading> &headings); // 重建目录数据
-    void            showTocPopup();          // 弹出目录面板（按钮下方，限高+滚动）
-    static void     cbPreviewRefreshBtn(Fl_Widget *, void *); // 工具条：手动刷新
-    static void     cbPreviewTocBtn(Fl_Widget *, void *);    // 工具条：弹出目录
+    void            showOutlineInSidePanel();   // 打开左侧面板并切到大纲页
     void            setAutoRefresh(int ms);     // 设置自动刷新间隔并持久化
     void            openPreviewInBrowser();     // 导出 HTML 并用默认浏览器打开（与"另存为"同一实现）
     void            exportHtmlToFile();         // 另存为自包含 HTML（文件框选路径）
 public:
+    static void  cbToggleSidePanel(Fl_Widget *, void *);  // 菜单：左侧面板开关
+    static void  cbShowOutlineInPanel(Fl_Widget *, void *);  // 菜单：打开侧面板大纲
     void  scrollPreview(int dy);                // 预览垂直滚动
     static void cleanupDeadPreviewDirs();       // 启动时清理死进程残留预览目录
     void  cleanupOwnPreviewDir();               // 退出时删除自己的预览目录
@@ -481,9 +515,11 @@ public:
     Fl_Menu_Item   *m_statusbarItem = nullptr;
     Fl_Menu_Item   *m_menuBarItem = nullptr;
     Fl_Menu_Item   *m_scriptBarItem = nullptr;
+    Fl_Menu_Item   *m_sidePanelItem = nullptr;
     Fl_Menu_Item   *m_highlightLineItem = nullptr;
     Fl_Menu_Item   *m_showWhitespaceItem = nullptr;
-    Fl_Menu_Item   *m_fontFirstItem = nullptr;
+    Fl_Menu_Item   *m_roundedCornersItem = nullptr;
+    Fl_Menu_Item   *m_windowShadowItem   = nullptr;
 
     // Rebuild the Recent Files submenu from Config::recentGet(). Allocates
     // a fresh m_recentMenu; the old one is freed. Safe to call when the
@@ -508,6 +544,12 @@ public:
     bool checkSaveBeforeClose(int tabIndex);
     bool doSave(int tabIndex);
     bool doSaveAs(int tabIndex);
+
+    // If `enc` cannot represent the current buffer, offer to save as UTF-8
+    // instead of writing '?' substitutions. Returns false when the user
+    // cancels (or the buffer is not valid UTF-8 either, so no fallback can
+    // help). On success, `enc` may be changed to Encoding::UTF8.
+    bool resolveLossyEncoding(Document *doc, Encoding &enc);
 
     // Offer to save every dirty document before an action that kills this
     // process (self-update). Returns true when it is safe to continue:
@@ -562,6 +604,11 @@ public:
     // cbSetTheme and after a settings.ini-driven theme change.
     void applyThemeColors();
 
+    // Hover tooltips (FLTK Fl_Tooltip) follow the theme as well. Static:
+    // the constructor applies it before the first applyThemeColors() call,
+    // which only runs on theme switch / settings reload.
+    static void applyTooltipTheme(const ThemeColors &tc, int uiFontSize);
+
     void refreshAll();
 
     // Persisted scheme
@@ -576,6 +623,12 @@ public:
     // standard 4-space leading indent so they align with toggle items'
     // checkbox slot; toggle items have no indent (matching g_menu).
     void applyLanguageToMenu();
+
+    // Re-read every theme file's `name.<lang>` for the current UI language
+    // and update the dynamic View > Theme submenu labels in place. The
+    // submenu is built once from FL_SUBMENU_POINTER, so applyLanguageToMenu()
+    // cannot reach it; call this whenever I18n::load() switches language.
+    void refreshThemeMenuLabels();
 
     // One-time mapping of each localizable menu item to its I18n key,
     // captured while the menu is still in its original English form so

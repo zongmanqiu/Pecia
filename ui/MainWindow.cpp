@@ -8,6 +8,8 @@
 #include "ui/ConfirmDialog.h"
 #include "ui/InfoWindow.h"
 #include "ui/TitleBar.h"
+#include "ui/WindowFrame.h"   // windowChrome:: rounded-corner registry
+#include "ui/WindowShadow.h"  // outer glow (View > Window Shadow)
 
 #include "script/LuaEngine.h"
 #include "LuaTool/LuaPipeServer.h"
@@ -206,10 +208,19 @@ MainWindow::MainWindow(int w, int h, const char *title)
     // Load theme colors from config BEFORE applying to TitleBar
     m_theme.load(*m_cfg);
     theme_updateBorderColour(m_theme.colors());
+    applyTooltipTheme(m_theme.colors(), m_cfg->getUiFontSize());
     m_titleBar->color(m_theme.colors().background2);
     m_titleBar->setTheme(&m_theme);
     // Ensure theme colors are persisted to INI (writes defaults if missing)
     m_theme.save(*m_cfg);
+
+    // The window's own colour is what shows through wherever no child paints a
+    // background (the side panel's content area is one such place: SidePanel
+    // and its Fl_Scroll are FL_NO_BOX). FLTK defaults it to FL_GRAY, which then
+    // leaked into two places: the non-client pixels (the border's inner half
+    // blends against it) and any momentary gap between child repaints. Keep it
+    // on the editor background so both read as "no frame at all".
+    color(m_theme.colors().background1);
 
     int menuY = TITLE_H;
     m_menu = new HoverMenuBar(0, menuY, w, MENU_H);
@@ -362,6 +373,10 @@ MainWindow::MainWindow(int w, int h, const char *title)
     if (m_statusbarItem) {
         if (m_showStatusbar) m_statusbarItem->set(); else m_statusbarItem->clear();
     }
+    // Side panel toggle moved from Markdown to View; cache it while the menu
+    // is still in English (find_item by English path fails after translation).
+    m_sidePanelItem = (Fl_Menu_Item *)m_menu->find_item("View/Side Panel");
+    if (m_sidePanelItem) m_sidePanelItem->clear();   // default off; config applied later
 
     // Apply persisted menu bar visibility (default on).
     m_showMenuBar = m_cfg->getShowMenuBar();
@@ -391,6 +406,29 @@ MainWindow::MainWindow(int w, int h, const char *title)
     m_showWhitespaceItem = (Fl_Menu_Item *)m_menu->find_item("View/Show Space Symbol");
     if (m_showWhitespaceItem) {
         if (m_cfg->getShowWhitespace()) m_showWhitespaceItem->set(); else m_showWhitespaceItem->clear();
+    }
+    // Rounded corners apply to every app window. Publish the persisted value
+    // for dialogs created later in this process; the main window itself is
+    // rounded in fixTaskbarCb() once its HWND exists.
+    m_roundedCornersItem = (Fl_Menu_Item *)m_menu->find_item("View/Rounded Corners");
+    {
+        const bool rounded = m_cfg->getRoundedCorners();
+        windowChrome::setRoundedCornersEnabled(rounded);
+        if (m_roundedCornersItem) {
+            if (rounded) m_roundedCornersItem->set(); else m_roundedCornersItem->clear();
+        }
+    }
+    // Outer glow: same scope as the corners (every app window), published
+    // here so dialogs opened later in this process pick it up. The main
+    // window itself attaches its glow in fixTaskbarCb, once the HWND and
+    // the final frame exist.
+    m_windowShadowItem = (Fl_Menu_Item *)m_menu->find_item("View/Window Shadow");
+    {
+        const bool glow = m_cfg->getWindowShadow();
+        windowShadow::setEnabled(glow);
+        if (m_windowShadowItem) {
+            if (glow) m_windowShadowItem->set(); else m_windowShadowItem->clear();
+        }
     }
 
     // Apply persisted always-on-top state to the window right away so
@@ -459,11 +497,8 @@ MainWindow::MainWindow(int w, int h, const char *title)
                 ThemeColors tc;
                 tc.loadFromFile(path);
                 const char *curLang = I18n::currentCode();
-                if (curLang && strcmp(curLang, "zh-CN") == 0 && !tc.displayNameZh.empty()) {
-                    displayName = tc.displayNameZh;
-                } else if (!tc.displayName.empty()) {
-                    displayName = tc.displayName;
-                }
+                std::string localized = tc.localizedName(curLang);
+                if (!localized.empty()) displayName = localized;
             }
             m_themeMenu[i].text = _strdup(displayName.c_str());
             m_themeMenu[i].user_data_ = _strdup(stem);  // store actual filename stem
@@ -515,21 +550,8 @@ MainWindow::MainWindow(int w, int h, const char *title)
         }
     }
 
-    // Sync the Font radio submenu with the persisted choice.
-    // find_item() must run before applyLanguageToMenu()
-    // because the Font submenu header gets translated afterwards.
-    char curFont[64];
-    m_cfg->getEditorFont(curFont, sizeof(curFont));
-    m_fontFirstItem = (Fl_Menu_Item *)m_menu->find_item("View/Font/Consolas");
-    for (int i = 0; i < FontUtils::FONT_COUNT; ++i) {
-        char path[128];
-        snprintf(path, sizeof(path), "View/Font/%s", FontUtils::FONT_LIST[i]);
-        Fl_Menu_Item *fi = (Fl_Menu_Item *)m_menu->find_item(path);
-        if (fi && FontUtils::strCaseCmp(FontUtils::FONT_LIST[i], curFont) == 0) {
-            m_menu->setonly(fi);
-            break;
-        }
-    }
+    // The View > Font item is a single entry that opens FontDialog; there is
+    // no radio submenu left to sync (the old hard-coded 9-entry list is gone).
 
     // Sync the Theme radio submenu with the persisted theme.
     // Walk the dynamic m_themeMenu array directly.
@@ -569,6 +591,9 @@ MainWindow::MainWindow(int w, int h, const char *title)
 
     // Lay out the initial tab page
     layoutTabs();
+
+    // 恢复上次的左侧面板状态（文件树/大纲；默认关闭）
+    if (m_cfg && m_cfg->getSidePanel()) toggleSidePanel();
 
     // Start the cursor blink timer. The callback re-arms itself on each
     // tick, so this single add_timeout is enough to keep the cursor

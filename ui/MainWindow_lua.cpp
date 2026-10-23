@@ -98,7 +98,7 @@ bool launchTool(const char *exeName, const char *mutexName,
 
     if (GetFileAttributesW(toolPathW.c_str()) == INVALID_FILE_ATTRIBUTES) {
         fl_message_title("Pecia");
-        fl_alert("未找到 %s\n请确认构建产物完整。", toolPathU8.c_str());
+        fl_alert(I18n::get("tool.notfound"), toolPathU8.c_str());
         return false;
     }
 
@@ -112,7 +112,7 @@ bool launchTool(const char *exeName, const char *mutexName,
     if (!CreateProcessW(toolPathW.c_str(), &cmd[0], nullptr, nullptr, FALSE, 0,
                         nullptr, exeDirW, &si, &pi)) {
         fl_message_title("Pecia");
-        fl_alert("无法启动 %s：%lu", exeName, (unsigned long)GetLastError());
+        fl_alert(I18n::get("tool.launchfailed"), exeName, (unsigned long)GetLastError());
         return false;
     }
     CloseHandle(pi.hThread);

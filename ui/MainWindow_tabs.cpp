@@ -268,8 +268,9 @@ void MainWindow::layoutTabs() {
     int findBarH = (m_findBar && m_findBar->visible()) ? FINDBAR_H : 0;
     int goToBarH = (m_goToBar && m_goToBar->visible()) ? GOTOBAR_H : 0;
     int tabsH = statusY - contentTop - findBarH - goToBarH;
-    // 预览模式：两栏（编辑 | 分隔条 | 预览）；否则单栏全宽
-    layoutPreviewPanes(contentTop, tabsH);
+    // 预览模式：两栏（编辑 | 分隔条 | 预览）；否则单栏全宽。
+    // 第三个参数是内容区全高：侧栏/分隔条按它排，不被 find/go-to 栏挤短。
+    layoutPreviewPanes(contentTop, statusY - contentTop, tabsH);
 
     // Tell FLTK to forget the old "initial sizes" — this prevents
     // Fl_Tabs::draw() from re-positioning children using stale bounds
@@ -303,11 +304,16 @@ void MainWindow::layoutTabs() {
         // Page fills the full editor area; position in WINDOW coords
         // because Fl_Tabs children use window-absolute coordinates.
         // Width follows m_tabs (narrower in preview mode).
-        t.page->resize(0, pageY, m_tabs->w(), pageH);
+        // ★ x 必须跟随 m_tabs->x()：侧栏（SidePanel）开启时 m_tabs 整体右移，
+        //   子控件若停在 x=0 会画出面板区域——表现为"面板遮挡编辑器"、
+        //   "编辑器右侧一条空白才到分隔线"、"编辑器滚动条错位"三连。
+        //   （子控件 x 曾经硬编码 0，是无侧栏时代的遗留假设。）
+        const int pageX = m_tabs->x();
+        t.page->resize(pageX, pageY, m_tabs->w(), pageH);
         // Editor fills the full editor area too. Coordinates are in
         // WINDOW space (same convention as the page), so the editor
         // shares the same origin — no gap between tab strip and editor.
-        t.editor->resize(0, pageY, m_tabs->w(), pageH);
+        t.editor->resize(pageX, pageY, m_tabs->w(), pageH);
         // Toggle the built-in close button along with multi-tab mode.
         if (multi) {
             t.page->when((uchar)(t.page->when() | FL_WHEN_CLOSED));
@@ -317,6 +323,11 @@ void MainWindow::layoutTabs() {
     }
 
     // ---- Bottom chrome (find bar + go-to bar + status bar) ----
+    // find/go-to 栏是窗口的直接子控件，绘制层级低于侧栏（侧栏后 add）。
+    // 若从 x=0 全宽排布，左段会被侧栏盖住且吃不到点击；统一从内容区左缘
+    // 开始排（无侧栏时 contentX=0，与历史行为一致）。
+    const int chromeX = m_tabs->x();
+    const int chromeW = std::max(1, w() - chromeX);
     if (m_status) {
         if (m_showStatusbar) {
             m_status->show();
@@ -331,8 +342,8 @@ void MainWindow::layoutTabs() {
     // finds them at the right spot.
     if (m_goToBar && m_goToBar->visible()) {
         const int goToY = statusY - GOTOBAR_H;
-        m_goToBar->resize(0, goToY, w(), GOTOBAR_H);
-        m_goToBar->layout(w());
+        m_goToBar->resize(chromeX, goToY, chromeW, GOTOBAR_H);
+        m_goToBar->layout(chromeW);
     }
 
     if (m_findBar && m_findBar->visible()) {
@@ -341,8 +352,8 @@ void MainWindow::layoutTabs() {
         const int findY = (m_goToBar && m_goToBar->visible())
                          ? statusY - GOTOBAR_H - FINDBAR_H
                          : statusY - FINDBAR_H;
-        m_findBar->resize(0, findY, w(), FINDBAR_H);
-        m_findBar->layout(w());
+        m_findBar->resize(chromeX, findY, chromeW, FINDBAR_H);
+        m_findBar->layout(chromeW);
     }
 
     // ---- Top chrome (title bar + menu bar + tools bar) ----
@@ -404,6 +415,9 @@ void MainWindow::switchToTab(int index) {
 
     // Markdown 预览跟随当前标签：立即刷新
     if (m_previewActive) refreshPreview();
+
+    // 左侧面板跟随当前标签：换文档就换文件树根目录 + 高亮行
+    syncSidePanel();
 
     updateTitle();
     updateStatusBar();

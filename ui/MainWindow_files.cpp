@@ -65,6 +65,9 @@ void MainWindow::newFile() {
         addTab(doc, "Unnamed");
         updateTitle();
         updateStatusBar();
+        // 新标签按 x=0 全宽创建 → 重排落到内容区左缘；侧栏回到"未打开文件"
+        layoutTabs();
+        syncSidePanel();
         redraw();
         return;
     }
@@ -96,6 +99,8 @@ void MainWindow::newFile() {
     addTab(doc, "Unnamed");
     updateTitle();
     updateStatusBar();
+    layoutTabs();          // 新标签 x=0 全宽 → 重排落到内容区左缘
+    syncSidePanel();       // 新文档无路径 → 左侧面板回到"未打开文件"
     redraw();
 }
 
@@ -286,8 +291,14 @@ void MainWindow::openFile(const char *path) {
     refreshRecentMenu();
     updateTitle();
     updateStatusBar();
+    // 新标签的编辑器/页面在 addTab 里按 x=0 全宽创建，必须重排一次才能
+    // 落到「内容区左缘」（有侧栏时右移，否则编辑器画在面板上面）。
+    layoutTabs();
     // Markdown 预览：打开文件后立即刷新（预览先开启的场景也能同步呈现）
     if (m_previewActive) refreshPreview();
+
+    // 左侧面板：新文件的目录/路径变了，重建文件树并高亮当前文件
+    syncSidePanel();
 
     // 打开 .md/.markdown 时自动开启预览（Options > Interface & System）。
     // 只有走到这里才算"新打开了一个文件" —— 已经打开过的走 switchToTab()、
@@ -598,13 +609,47 @@ bool MainWindow::confirmUnsavedBeforeUpdate() {
     return true;
 }
 
+bool MainWindow::resolveLossyEncoding(Document *doc, Encoding &enc) {
+    if (!doc) return false;
+    if (doc->canEncode(enc)) return true;
+
+    // A legacy/ANSI target cannot represent some characters. Never write
+    // '?' substitutions: offer Notepad's "save as Unicode" escape hatch.
+    if (!doc->canEncode(Encoding::UTF8)) {
+        if (UiBridge *b = uiBridge())
+            b->message(I18n::get("error.title"), I18n::get("error.encode_failed"),
+                       I18n::get("dlg.ok"));
+        return false;
+    }
+    char msg[512];
+    snprintf(msg, sizeof(msg), I18n::get("confirm.lossy_save.msg"),
+             encodingDisplayName(enc));
+    int r = ConfirmDialog(I18n::get("confirm.lossy_save.title"), msg,
+                          I18n::get("dlg.save_as_utf8"), I18n::get("dlg.cancel"),
+                          nullptr, &m_theme, m_cfg->getUiFontSize()).run();
+    if (r != 0) return false;   // cancelled / closed
+    enc = Encoding::UTF8;
+    return true;
+}
+
 bool MainWindow::doSave(int tabIndex) {
     if (tabIndex < 0 || tabIndex >= (int)m_tabsList.size()) return false;
     Document *doc = m_tabsList[tabIndex].doc;
     // Read-only documents (e.g. >100 MB large files) cannot be overwritten;
-    // the user may still use Save As to export a copy.
-    if (doc->isReadOnly()) return false;
+    // the user may still use Save As to export a copy. Say so: a silent
+    // "nothing happened" on Ctrl+S reads like the save succeeded.
+    if (doc->isReadOnly()) {
+        char _msg[512];
+        snprintf(_msg, sizeof(_msg), I18n::get("error.readonly_save"),
+                 doc->filePath());
+        if (UiBridge *b = uiBridge())
+            b->message(I18n::get("error.title"), _msg, I18n::get("dlg.ok"));
+        return false;
+    }
     if (doc->filePath()[0]) {
+        Encoding enc = doc->encoding();
+        if (!resolveLossyEncoding(doc, enc)) return false;
+        if (enc != doc->encoding()) doc->setEncoding(enc);
         bool ok = doc->saveFile();
         if (ok) {
             updateTabLabel(tabIndex);
@@ -637,28 +682,29 @@ bool MainWindow::doSaveAs(int tabIndex) {
                                    IID_IFileSaveDialog, (void**)&pfd);
     if (FAILED(hr) || !pfd) return false;
 
+    // Filter labels follow the UI language; the patterns stay language-neutral.
+    // Only three types, like Notepad's short list: text, Markdown, and "all
+    // files" - the last one is the only way to keep an arbitrary extension
+    // (.csv, .log, .ini ...) when re-saving a file that already has one.
+    const std::wstring wAll  = widen(I18n::get("filedlg.all"));
+    const std::wstring wText = widen(I18n::get("filedlg.text"));
+    const std::wstring wMd   = widen(I18n::get("filedlg.markdown"));
     COMDLG_FILTERSPEC fileTypes[] = {
-        { L"文本文件 (*.txt)",           L"*.txt" },
-        { L"Markdown (*.md)",             L"*.md" },
-        { L"日志文件 (*.log)",            L"*.log" },
-        { L"配置和脚本 (*.ini; *.cfg; *.bat)", L"*.ini;*.cfg;*.bat;*.ps1" },
-        { L"数据文件 (*.csv; *.json; *.xml)",  L"*.csv;*.json;*.xml" },
-        { L"所有文件 (*)",               L"*.*" },
+        { wText.c_str(), L"*.txt" },
+        { wMd.c_str(),   L"*.md"  },
+        { wAll.c_str(),  L"*.*"   },
     };
     pfd->SetFileTypes(ARRAYSIZE(fileTypes), fileTypes);
-    // Default type: match the current file's extension (txt/md/log/other),
-    // else fall back to txt (index 1).
+    // Default type: .md -> Markdown, .txt -> text, any OTHER extension ->
+    // "all files" (picking *.txt there would hide from the folder listing
+    // the very file being re-saved), no extension (new file) -> text.
     UINT defIdx = 1;
     const char *curPath = doc->filePath();
     if (curPath && curPath[0]) {
         const char *ext = fl_filename_ext(curPath);
         if (ext && ext[0]) {
             if (_stricmp(ext, ".md") == 0)       defIdx = 2;
-            else if (_stricmp(ext, ".log") == 0) defIdx = 3;
-            else if (_stricmp(ext, ".ini") == 0 || _stricmp(ext, ".cfg") == 0 ||
-                     _stricmp(ext, ".bat") == 0 || _stricmp(ext, ".ps1") == 0) defIdx = 4;
-            else if (_stricmp(ext, ".csv") == 0 || _stricmp(ext, ".json") == 0 ||
-                     _stricmp(ext, ".xml") == 0) defIdx = 5;
+            else if (_stricmp(ext, ".txt") != 0) defIdx = 3;
         }
     }
     pfd->SetFileTypeIndex(defIdx);
@@ -681,8 +727,42 @@ bool MainWindow::doSaveAs(int tabIndex) {
         }
     }
 
+    // Encoding dropdown, like Notepad's Save As. The list is filtered by
+    // runtime capability (GB18030 only appears when CP54936 works).
+    static const DWORD kEncodingComboId = 1001;
+    std::vector<Encoding> encodings = availableEncodings();
+    IFileDialogCustomize *customize = nullptr;
+    if (SUCCEEDED(pfd->QueryInterface(IID_PPV_ARGS(&customize))) && customize) {
+        const std::wstring label = widen(I18n::get("filedlg.encoding"));
+        customize->AddComboBox(kEncodingComboId);
+        customize->SetControlLabel(kEncodingComboId, label.c_str());
+        DWORD selected = 0;
+        for (size_t i = 0; i < encodings.size(); ++i) {
+            const std::wstring item = widen(encodingDisplayName(encodings[i]));
+            customize->AddControlItem(kEncodingComboId, (DWORD)i, item.c_str());
+            if (encodings[i] == doc->encoding()) selected = (DWORD)i;
+        }
+        customize->SetSelectedControlItem(kEncodingComboId, selected);
+    }
+
     hr = pfd->Show(nullptr);
-    if (FAILED(hr)) { pfd->Release(); return false; }
+    if (FAILED(hr)) {
+        if (customize) customize->Release();
+        pfd->Release();
+        return false;
+    }
+
+    // Read the encoding choice while the custom-control interface is alive.
+    size_t chosenIdx = 0;
+    if (customize) {
+        DWORD sel = 0;
+        if (SUCCEEDED(customize->GetSelectedControlItem(kEncodingComboId, &sel)) &&
+            sel < encodings.size())
+            chosenIdx = sel;
+        customize->Release();
+        customize = nullptr;
+    }
+    Encoding chosenEnc = encodings.empty() ? Encoding::UTF8 : encodings[chosenIdx];
 
     IShellItem *psiResult = nullptr;
     hr = pfd->GetResult(&psiResult);
@@ -707,12 +787,11 @@ bool MainWindow::doSaveAs(int tabIndex) {
             const wchar_t *extW = nullptr;
             switch (selIdx) {
                 case 2:  extW = L".md";  break;
-                case 3:  extW = L".log"; break;
-                default: extW = L".txt"; break;  // type 1 (txt) and others
+                default: extW = L".txt"; break;  // type 1 (txt)
             }
-            // Types 4/5 (ini/cfg/bat/ps1, csv/json/xml) have no single
-            // canonical extension, so only append for uniquely-named types.
-            if (extW && (selIdx <= 3)) {
+            // Type 3 is "*.*": never append there, or a deliberate
+            // extensionless name would silently become "name.txt".
+            if (extW && (selIdx <= 2)) {
                 size_t len = strlen(chosen);
                 if (len + 5 < FL_PATH_MAX) {
                     // extW already includes the leading dot (".txt"); do NOT
@@ -724,6 +803,12 @@ bool MainWindow::doSaveAs(int tabIndex) {
             }
         }
 
+        if (!resolveLossyEncoding(doc, chosenEnc)) {
+            psiResult->Release();
+            pfd->Release();
+            return false;
+        }
+        doc->setEncoding(chosenEnc);
         ok = doc->saveFile(chosen);
         if (ok) {
             char dirBuf[FL_PATH_MAX];

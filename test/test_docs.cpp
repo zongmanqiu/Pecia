@@ -3,7 +3,8 @@
 //   * key files/directories exist (core/script/ui/plugin/doc, third-party)
 //   * every test_*.cpp named in 目录结构说明.md exists
 //   * every API documented in doc/lua_api.txt is registered in LuaEngine
-//   * en/zh-CN lang files have identical key sets
+//   * every shipped language has the same key set (16 files)
+//   * every shipped theme carries its localized name for all 16 languages
 //   * third-party libs named in README.md exist under .thirdparty/
 //   * every file listed in doc/DOCS_MANIFEST.md exists
 //   * the "main/" top-level tree in 目录结构说明.md and in all 16 READMEs
@@ -18,6 +19,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <set>
 #include <sstream>
 #include <string>
@@ -94,6 +96,28 @@ static void test_doc_test_list_matches() {
     }
     CHECK(found >= 7);      // the doc lists the older test set
     CHECK_EQ((int)missing, 0);
+
+    // Reverse direction. Until 2026-10-23 this gate only asked "does every test
+    // the doc names exist?", so a test file that was never documented stayed
+    // invisible to every future reader - and two of them had been sitting there
+    // (test_stubs.cpp, test_mainwindow_stubs.cpp). Check disk -> doc as well.
+    int testFiles = 0, undocumented = 0;
+    std::error_code dirEc;
+    for (const auto &e : fs::directory_iterator(fs::path(g_mainDirW) / "test", dirEc)) {
+        if (!e.is_regular_file()) continue;
+        const std::string fn = e.path().filename().string();
+        if (fn.rfind("test_", 0) != 0) continue;
+        if (fn.size() < 4 || fn.substr(fn.size() - 4) != ".cpp") continue;
+        ++testFiles;
+        if (doc.find(fn) == std::string::npos) {
+            ++undocumented;
+            std::fprintf(stderr,
+                         "  test/%s exists but is NOT listed in doc - add a row\n",
+                         fn.c_str());
+        }
+    }
+    CHECK(testFiles >= 20);
+    CHECK_EQ(undocumented, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -131,8 +155,15 @@ static void test_documented_apis_registered() {
 }
 
 // ---------------------------------------------------------------------------
-// 4. lang en/zh-CN key sets are identical
+// 4. Every shipped UI language must carry the exact same key set.
+// Previously only en/zh-CN were compared, so a key added for those two could
+// silently be missing (raw key shown in the UI) in the other 14 languages.
 // ---------------------------------------------------------------------------
+static const char *kLangCodes[] = {
+    "en", "zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es",
+    "pt-BR", "it", "ru", "tr", "vi", "id", "hi", "ar"
+};
+
 static std::set<std::string> langKeys(const std::string &rel) {
     std::set<std::string> keys;
     std::string txt = readFile(fs::path(g_mainDirW) / fs::path(rel));
@@ -177,29 +208,78 @@ static int langKeyCount(const std::string &rel) {
 }
 
 static void test_lang_entry_capacity() {
-    const char *files[] = {"lang/en.ini", "lang/zh-CN.ini"};
-    for (const char *f : files) {
-        int n = langKeyCount(f);
-        std::fprintf(stderr, "  %s: %d entries (cap %d)\n", f, n, I18N_MAX_ENTRIES);
+    for (const char *code : kLangCodes) {
+        std::string rel = std::string("lang/") + code + ".ini";
+        int n = langKeyCount(rel);
         if (n > I18N_MAX_ENTRIES)
-            std::fprintf(stderr, "  the last %d key(s) would be SILENTLY dropped\n",
-                         n - I18N_MAX_ENTRIES);
+            std::fprintf(stderr, "  %s: %d entries (cap %d) - the last %d key(s) would be SILENTLY dropped\n",
+                         rel.c_str(), n, I18N_MAX_ENTRIES, n - I18N_MAX_ENTRIES);
         CHECK(n <= I18N_MAX_ENTRIES);
         // Warn (do not fail) when headroom gets low, so it is fixed early.
         if (n * 2 > I18N_MAX_ENTRIES)
-            std::fprintf(stderr, "  note: %s is using >50%% of the lang table\n", f);
+            std::fprintf(stderr, "  note: %s is using >50%% of the lang table\n", rel.c_str());
     }
 }
 
 static void test_lang_key_parity() {
     std::set<std::string> en = langKeys("lang/en.ini");
-    std::set<std::string> zh = langKeys("lang/zh-CN.ini");
-    for (const auto &k : en)
-        if (!zh.count(k)) std::fprintf(stderr, "  en key missing in zh-CN: %s\n", k.c_str());
-    for (const auto &k : zh)
-        if (!en.count(k)) std::fprintf(stderr, "  zh-CN key missing in en: %s\n", k.c_str());
-    CHECK_EQ((int)en.size(), (int)zh.size());
-    CHECK(en == zh);
+    CHECK(!en.empty());
+    for (const char *code : kLangCodes) {
+        std::string rel = std::string("lang/") + code + ".ini";
+        int raw = langKeyCount(rel);
+        std::set<std::string> keys = langKeys(rel);
+        if (raw != (int)keys.size()) {
+            std::fprintf(stderr, "  %s: %d duplicate key(s)\n",
+                         rel.c_str(), raw - (int)keys.size());
+        }
+        CHECK_EQ(raw, (int)keys.size());
+        for (const auto &k : en)
+            if (!keys.count(k)) std::fprintf(stderr, "  en key missing in %s: %s\n", code, k.c_str());
+        for (const auto &k : keys)
+            if (!en.count(k)) std::fprintf(stderr, "  %s key missing in en: %s\n", code, k.c_str());
+        CHECK(en == keys);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 4c. Shipped theme files must name themselves in every UI language.
+// Theme names live in theme/<stem>.ini as `name.<lang>`, so a user-supplied
+// theme is translatable without touching the program's language packs.
+// ---------------------------------------------------------------------------
+static void test_theme_name_translations() {
+    static const char *themes[] = { "light", "dark", "cream", "ice", "mint" };
+    for (const char *stem : themes) {
+        fs::path p = fs::path(g_mainDirW) / "theme" / (std::string(stem) + ".ini");
+        std::string txt = readFile(p);
+        CHECK(!txt.empty());
+        std::map<std::string, std::string> kv;
+        std::istringstream ss(txt);
+        std::string line;
+        while (std::getline(ss, line)) {
+            size_t eq = line.find('=');
+            if (eq == std::string::npos) continue;
+            std::string k = line.substr(0, eq);
+            std::string v = line.substr(eq + 1);
+            auto trim = [](std::string &s) {
+                size_t b = s.find_first_not_of(" \t\r\n");
+                size_t e = s.find_last_not_of(" \t\r\n");
+                s = (b == std::string::npos) ? std::string() : s.substr(b, e - b + 1);
+            };
+            trim(k);
+            trim(v);
+            if (!k.empty()) kv[k] = v;
+        }
+        if (kv["name"].empty())
+            std::fprintf(stderr, "  theme/%s.ini: missing English `name`\n", stem);
+        CHECK(!kv["name"].empty());
+        for (const char *code : kLangCodes) {
+            const std::string key = std::string("name.") + code;
+            auto it = kv.find(key);
+            if (it == kv.end() || it->second.empty())
+                std::fprintf(stderr, "  theme/%s.ini: missing %s\n", stem, key.c_str());
+            CHECK(it != kv.end() && !it->second.empty());
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -368,6 +448,7 @@ int main() {
     test_documented_apis_registered();
     test_lang_entry_capacity();
     test_lang_key_parity();
+    test_theme_name_translations();
     test_readme_thirdparty_dirs();
     test_manifest_files_exist();
     test_dir_tree_matches();

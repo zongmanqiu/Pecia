@@ -27,7 +27,7 @@ class Theme;
 //
 //   The dialog uses a custom-drawn title bar (border(0) + self-drawn
 //   1px gray border) matching the main window / InfoWindow style, and
-//   supports rounded vs. right-angle corners via DWM attributes.
+//   supports rounded vs. right-angle corners (Win11 DWM / Win10 region).
 class SettingsDialog : public DialogBase {
 public:
     SettingsDialog(int w, int h, const char *title, const Theme *theme = nullptr,

@@ -29,26 +29,36 @@ int main() {
     // 生成 fltk.org/fltk.prefs。必须在任何 FLTK 调用之前设置。
     Fl_Preferences::file_access(Fl_Preferences::APP_OK);
     Fl::visual(FL_DOUBLE | FL_RGB);
+
+    // 启动序列必须与 main_lua.cpp / main_ai.cpp 一致（见开发指南十节 §7）：
+    // 少了这两步，工具窗会退回 FLTK 原始控件边框、中文字体也不枚举，
+    // 测出来的"窗口"与用户看到的不再是同一个东西。两步都断言，防止空调用。
+    Fl_Box_Draw_F *borderBefore = Fl::get_boxtype(FL_BORDER_BOX);
+    const int fontCount = Fl::set_fonts("*");
+    theme_registerBorderBox();
+    CHECK(fontCount > 100);                                 // CJK 字体已枚举
+    CHECK(Fl::get_boxtype(FL_BORDER_BOX) != borderBefore);  // 主题边框已安装
+
     Fl::scheme("gtk+");
     ui::g_smokeMode = true;   // no detached threads / blocking modal loops
 
     Config cfg;
     initLayoutHeights(cfg);
-    if (!I18n::load("en")) I18n::load("en");
+    I18n::load("en");         // 只加载一次：失败也不重试，避免掩盖语言包缺失
 
     // ── Lua console ──
     {
         LuaToolWindow win(&cfg, "\\\\.\\pipe\\pecia-lua-smoke", 800, 600,
                           "smoke-lua");
+        CHECK(win.w() > 0 && win.h() > 0);
     }
-    CHECK(true);
 
     // ── AI chat ──
     {
         AIChatWindow win(&cfg, "\\\\.\\pipe\\pecia-lua-smoke", 800, 600,
                          "smoke-ai");
+        CHECK(win.w() > 0 && win.h() > 0);
     }
-    CHECK(true);
 
     if (test::failCount() == 0) {
         printf("test_ui_tool_smoke: tool windows constructed without crashing\n");

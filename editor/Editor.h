@@ -11,26 +11,13 @@
 class Document;
 class SettingsProvider;
 #include "core/Theme.h"
+#include "FontUtils.h"
+#include "ui/ImeInPlace.h"
+#include "ui/BandColourSource.h"
 class Fl_Scrollbar;
 
-// Font utilities shared between Editor and MainWindow
-namespace FontUtils {
-    // Map a Windows font name to an FLTK Fl_Font id.
-    // Falls back to FL_COURIER if the font is not found.
-    Fl_Font fontNameToId(const char *name);
-
-    // Same lookup but returns -1 when the face is not installed. Callers that
-    // walk a CSS font-family candidate list need to tell "not installed" from
-    // a real hit, which the FL_COURIER fallback above hides.
-    Fl_Font findFontByName(const char *name);
-
-    // Case-insensitive ASCII string compare (portable, no platform deps).
-    int strCaseCmp(const char *a, const char *b);
-
-    // Editor font choices for the View > Font submenu.
-    extern const char *FONT_LIST[];
-    extern const int FONT_COUNT;
-}
+// 字体工具函数（枚举/查找/等宽判定）拆在 editor/FontUtils.h ——
+// ui/FontDialog 也要用，不能和 Editor 绑在一个编译单元里。
 
 // Custom text editor subclass.
 //
@@ -49,8 +36,18 @@ namespace FontUtils {
 // proper text-on-colored-background rendering without cursor glitches.
 // If FindReplace also activates its style buffer, it simply overrides
 // the line highlight (search takes visual priority).
-class Editor : public Fl_Text_Editor {
+class Editor : public Fl_Text_Editor, public ImeInPlace::Host,
+               public windowChrome::BandColourSource
+{
 public:
+    // The text area is painted from the style table (bgColor()), which is not
+    // necessarily the widget's color(); the non-client band samples it through
+    // this hook instead of special-casing Editor in the frame painter.
+    bool bandColourAt(int, int, unsigned int *colour) const override {
+        if (!colour) return false;
+        *colour = static_cast<unsigned int>(bgColor());
+        return true;
+    }
     // Callback invoked when cursor moves (for status bar updates, etc.)
     using CursorCallback = std::function<void()>;
 
@@ -88,16 +85,16 @@ public:
     // Vertical scroll ratio in [0,1] (Markdown preview scroll sync).
     float verticalScrollRatio() const;
 
-#if defined(_WIN32)
-    // IME in-place composition (Windows only). The input method's
-    // composition string is rendered by us inside the editor (underlined,
-    // caret at GCS_CURSORPOS) so the IME hides its floating composition
-    // window (which draws a second caret at the text cursor).
-    void imeCompositionStart();
-    bool imeCompositionUpdate(const wchar_t *comp, int cursorUtf16);
-    bool imeCompositionCommit(const wchar_t *result);
-    void imeCompositionEnd();
-#endif
+    // IME in-place composition. Shared with every other text widget through
+    // ui/ImeInPlace (single window-proc hook, single caret renderer). The
+    // composition string is rendered by us inside the editor (caret at
+    // GCS_CURSORPOS) so the IME hides its floating composition window (which
+    // draws a second caret at the text cursor).
+    Fl_Widget *imeWidget() override { return this; }
+    void imeCompositionStart() override;
+    void imeCompositionUpdate(const char *utf8, int cursorBytes) override;
+    void imeCompositionCommit(const char *utf8) override;
+    void imeCompositionEnd() override;
 
     // Re-apply highlight_data() after it was cleared by external code
     // (e.g. FindReplace calling highlight_data(nullptr, ...)).
@@ -139,7 +136,9 @@ public:
         m_theme = theme;
         if (m_theme) {
             linenumber_fgcolor(m_theme->colors().text1);
-            linenumber_bgcolor(m_theme->colors().background3);
+            // 行号区与编辑区同底色（background1），边界靠 Editor::draw() 里
+            // 自绘的那条 1px 竖线（background3）划出来，不再用整条色带。
+            linenumber_bgcolor(m_theme->colors().background1);
             selection_color(m_theme->colors().highlight2);
             cursor_color(m_theme->colors().text1);
         }
@@ -205,6 +204,13 @@ private:
     // Draw a vertical guide line at the configured long-line column.
     void drawLongLineMarker();
 
+    // Draw the 1px dashed rule at the right edge of the line-number gutter.
+    // The gutter now shares the editor background (background1), so this
+    // line is the only thing that still delimits it. Colour: text2 (the
+    // secondary/hint text colour) - clearly visible without competing with
+    // the body text, and follows light/dark themes automatically.
+    void drawLineNumberSeparator();
+
     Document   *m_doc = nullptr;
     SettingsProvider *m_settings = nullptr;   // settings access (tab width, auto-indent, etc.)
     const Theme     *m_theme = nullptr;       // theme colors
@@ -224,13 +230,11 @@ private:
     int             m_urlHoverStart = -1;        // hovered URL byte range [start, end)
     int             m_urlHoverEnd = -1;
 
-#if defined(_WIN32)
     bool            m_compActive = false;       // IME composition in progress
     int             m_compStart = -1;           // buffer position where the composition lands
     int             m_compEnd = -1;             // replacement range end (== start unless a selection is replaced)
     std::string     m_compText;                 // current composition string (UTF-8)
     int             m_compCursorBytes = 0;      // caret offset inside m_compText (bytes)
-#endif
 
     // Large-file limits: beyond these sizes we skip the optional style
     // buffer / URL scanning that would otherwise duplicate the whole file

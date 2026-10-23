@@ -7,6 +7,7 @@
 #include "core/Config.h"
 #include "core/I18n.h"
 #include "core/Theme.h"
+#include "ui/BlinkInput.h"      // 与主编辑器同周期闪烁的输入框
 #include "ui/ThemeWidgets.h"   // HoverButton
 #include "ui/Layout.h"
 #include "core/ShortcutCore.h"
@@ -54,7 +55,7 @@ AIChatSettingsDialog::AIChatSettingsDialog(Config *appCfg, const Theme *theme,
         lbl->labelcolor(fg);
     };
     auto mkInput = [&](int yy) -> Fl_Input * {
-        Fl_Input *in = new Fl_Input(MARGIN + LBL_W, yy, IN_W, ROW_H);
+        Fl_Input *in = new BlinkInput(MARGIN + LBL_W, yy, IN_W, ROW_H);
         in->box(FL_BORDER_BOX);   // rectangular flat border, like SettingsDialog
         in->color(theme ? theme->colors().background1 : FL_BACKGROUND2_COLOR);
         in->textsize(uiFontSize);

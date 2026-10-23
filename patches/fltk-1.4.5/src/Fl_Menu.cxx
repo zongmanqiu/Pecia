@@ -36,6 +36,25 @@
 // Defined in Pecia's Theme.cpp; FLTK tools (fluid/fltk-options) don't use it.
 extern Fl_Color g_popupCheckColor;
 
+// PATCHED by Pecia (2026-10-22): theme border colour (core/Theme.cpp = theme
+// text1). Used for the menu divider line: one flat 1px solid line instead of
+// the upstream FL_DARK3/FL_LIGHT3 etched pair, so every popup in Pecia (menu
+// bar, script bar, editor right-click, dropdowns) shows the same flat line.
+extern Fl_Color g_borderColour;
+
+// PATCHED by Pecia (2026-10-22): every popup menu gets the same outer glow as
+// the app windows. Implemented in ui/WindowShadow.cpp (Pecia/PeciaLua/
+// PeciaAIChat + the UI tests). Other fltk.lib consumers get the no-op fallback
+// below via /alternatename, so the third-party lib stays self-contained.
+extern void peciaMenuShadowShown(Fl_Window *);
+extern void peciaMenuShadowHidden(Fl_Window *);
+#if defined(_MSC_VER)
+void peciaMenuShadowShownStub(Fl_Window *) {}
+void peciaMenuShadowHiddenStub(Fl_Window *) {}
+#pragma comment(linker, "/alternatename:?peciaMenuShadowShown@@YAXPEAVFl_Window@@@Z=?peciaMenuShadowShownStub@@YAXPEAVFl_Window@@@Z")
+#pragma comment(linker, "/alternatename:?peciaMenuShadowHidden@@YAXPEAVFl_Window@@@Z=?peciaMenuShadowHiddenStub@@YAXPEAVFl_Window@@@Z")
+#endif
+
 /** Size of the menu starting from this menu item.
 
   This method counts all menu items starting with \p this menu item,
@@ -164,6 +183,8 @@ public:
              const Fl_Menu_Item* picked, const Fl_Menu_Item* title,
              int menubar = 0, int menubar_title = 0, int right_edge = 0);
   ~menuwindow();
+  void show() FL_OVERRIDE;
+  void hide() FL_OVERRIDE;
   void set_selected(int);
   int find_selected(int mx, int my);
   int titlex(int);
@@ -517,6 +538,20 @@ menuwindow::~menuwindow() {
   delete title;
 }
 
+// Pecia patch: attach/detach the shared outer glow around every menu popup
+// (menu-bar dropdowns, right-click menus, Fl_Choice dropdowns, submenus).
+// The hidden() hook runs before Fl_Window::hide(), while fl_xid() is still
+// valid, so WindowShadow can destroy its layered companion immediately.
+void menuwindow::show() {
+  window_with_items::show();
+  peciaMenuShadowShown(this);
+}
+
+void menuwindow::hide() {
+  peciaMenuShadowHidden(this);
+  window_with_items::hide();
+}
+
 void menuwindow::position(int X, int Y) {
   if (title) {title->position(X, title->y()+Y-y());}
   Fl_Double_Window::position(X, Y);
@@ -601,10 +636,12 @@ void menuwindow::drawentry(const Fl_Menu_Item* m, int n, int eraseit) {
   }
 
   if (m->flags & FL_MENU_DIVIDER) {
-    fl_color(FL_DARK3);
+    // PATCHED by Pecia (2026-10-22): single flat 1px line in the theme border
+    // colour (g_borderColour) instead of the two-tone DARK3/LIGHT3 etched
+    // pair. One shared draw path = every Pecia popup menu renders the same
+    // flat separator (menu bar, right-click menu, Fl_Choice, script bar).
+    fl_color(g_borderColour);
     fl_xyline(BW-1, yy+hh+(Fl::menu_linespacing()-2)/2, W-2*BW+2);
-    fl_color(FL_LIGHT3);
-    fl_xyline(BW-1, yy+hh+((Fl::menu_linespacing()-2)/2+1), W-2*BW+2);
   }
 }
 

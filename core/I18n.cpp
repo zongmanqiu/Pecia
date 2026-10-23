@@ -166,7 +166,30 @@ const char *I18n::strerrorLocalized(int errn) {
     // Only accept a real localized value (not the key echoed back for a
     // missing key), otherwise fall back to the OS text.
     if (v != key && v && *v) return v;
-    return strerror(errn);
+    // Fallback: strerror() returns text in the local ANSI codepage, but
+    // every dialog string in Pecia is UTF-8 - feeding the ANSI bytes in
+    // directly shows mojibake on a Chinese Windows. Convert first.
+    static std::string s_utf8;
+    const char *raw = strerror(errn);
+    s_utf8.clear();
+#if defined(_WIN32)
+    wchar_t wbuf[512];
+    const int wn = MultiByteToWideChar(CP_ACP, 0, raw, -1, wbuf, 512);
+    if (wn > 0) {
+        const int need = WideCharToMultiByte(CP_UTF8, 0, wbuf, wn,
+                                             nullptr, 0, nullptr, nullptr);
+        if (need > 0) {
+            s_utf8.resize((size_t)need);
+            WideCharToMultiByte(CP_UTF8, 0, wbuf, wn, &s_utf8[0], need,
+                                nullptr, nullptr);
+        }
+    } else {
+        s_utf8 = raw;
+    }
+#else
+    s_utf8 = raw;
+#endif
+    return s_utf8.c_str();
 }
 
 // Scan lang/ directory and return all language codes and display names.

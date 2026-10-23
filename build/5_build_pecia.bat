@@ -128,16 +128,56 @@ if not exist "%FLTK_LIB%" (
     for %%f in ("%PATCHES%\fltk-1.4.5\FL\*" "%PATCHES%\fltk-1.4.5\src\*") do (
         if "%%~tf" gtr "!FLTK_TS!" set "FLTK_NEED=1"
     )
+    REM 2026-10-23: check the OUTPUT, not only timestamps.
+    REM   Fl_Menu.cxx calls peciaMenuShadowShown/Hidden and supplies an empty
+    REM   fallback through /alternatename, so a library built from UNPATCHED
+    REM   sources still links and still runs - it just silently loses the menu
+    REM   shadow. That is not hypothetical: an old patch set overwrote the
+    REM   sources, FLTK was rebuilt from them, the sources were restored, and
+    REM   this timestamp check called the library up to date forever after.
+    REM   A copy also refreshes mtime, so "patches newer than lib" proves
+    REM   nothing. Ask the archive itself: every pecia* hook the patch
+    REM   declares must be inside it.
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%check_fltk_patch.ps1" -Lib "!FLTK_LIB!" -PatchDir "%PATCHES%\fltk-1.4.5"
+    if !ERRORLEVEL! neq 0 (
+        echo   [WARN] FLTK ku que shao bu ding fu hao - qiang zhi zhong bian
+        set "FLTK_NEED=1"
+        set "FLTK_FORCE=1"
+    )
 )
 
 if "!FLTK_NEED!"=="1" (
     echo   FLTK xu yao bian yi...
+    if "!FLTK_FORCE!"=="1" (
+        REM A forced rebuild must not become a no-op. When the library was built
+        REM from sources that have since been restored, the .obj files can look
+        REM NEWER than the sources, so nmake would compile nothing and relink
+        REM the same broken archive. Drop the archive and the object files.
+        REM
+        REM Delete only *.obj, never the .dir directory: it also holds CMake's
+        REM generated flags.make/build.make, and removing those leaves nmake
+        REM with no rules at all ("FLTK build failed" with nothing to compile).
+        REM If that directory is already gone, the only safe move is a clean
+        REM reconfigure, which the REUSE check below then performs.
+        if exist "!FLTK_LIB!" del /q "!FLTK_LIB!"
+        if exist "%FLTK_BUILD%\src\CMakeFiles\fltk.dir\build.make" (
+            del /s /q "%FLTK_BUILD%\src\CMakeFiles\fltk.dir\*.obj" 2>nul
+        ) else (
+            if exist "%FLTK_BUILD%" rd /s /q "%FLTK_BUILD%"
+        )
+    )
     REM NMake Makefiles is single-config; mixing generators in one dir is not
     REM allowed, so wipe a stale non-NMake build dir before configuring.
     set "REUSE="
     if exist "%FLTK_BUILD%\CMakeCache.txt" (
         findstr /C:"CMAKE_GENERATOR:INTERNAL=NMake Makefiles" "%FLTK_BUILD%\CMakeCache.txt" >nul 2>&1
-        if !ERRORLEVEL! equ 0 set "REUSE=1"
+        if !ERRORLEVEL! equ 0 (
+            REM CMakeCache.txt alone is not enough: a half-cleaned build dir keeps
+            REM the cache but loses the generated build.make, and nmake then dies
+            REM with U1052 while the script reports a generic build failure. Only
+            REM reuse the directory when the generated rules are still intact.
+            if exist "%FLTK_BUILD%\src\CMakeFiles\fltk.dir\build.make" set "REUSE=1"
+        )
     )
     if not defined REUSE (
         if exist "%FLTK_BUILD%" rmdir /s /q "%FLTK_BUILD%"
@@ -156,6 +196,26 @@ if "!FLTK_NEED!"=="1" (
     cmake --build .
     if !ERRORLEVEL! neq 0 (
         echo   [ERROR] FLTK bian yi shi bai
+        pause
+        exit /b 1
+    )
+    REM Re-check AFTER the rebuild. If the sources in .thirdparty are not the
+    REM archived ones (e.g. an old patch set left them behind), the fresh
+    REM library is still wrong - and shipping it would silently drop a feature
+    REM again. A wrong library must never pass this step, so fail the build
+    REM instead of continuing with a warning.
+    REM
+    REM Re-probe the archive path first: when the library was missing before the
+    REM rebuild, FLTK_LIB above was repointed at lib\Release\ (which this FLTK
+    REM never produces), so checking it now would report a missing file instead
+    REM of a missing hook.
+    set "FLTK_LIB=%FLTK_BUILD%\lib\fltk.lib"
+    if not exist "!FLTK_LIB!" set "FLTK_LIB=%FLTK_BUILD%\lib\Release\fltk.lib"
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%check_fltk_patch.ps1" -Lib "!FLTK_LIB!" -PatchDir "%PATCHES%\fltk-1.4.5"
+    if !ERRORLEVEL! neq 0 (
+        echo   [ERROR] FLTK ku reng que shao bu ding fu hao
+        echo           .thirdparty/fltk-1.4.5 yu patches/fltk-1.4.5 bu yi zhi?
+        echo           xian yun xing 3_patch.bat, ran hou chong shi
         pause
         exit /b 1
     )
@@ -195,6 +255,18 @@ if "!NEED_CONFIGURE!"=="1" (
         pause
         exit /b 1
     )
+)
+
+REM --- header dependency guard ------------------------------------------------
+REM cl /utf-8 emits UTF-8 /showIncludes lines while CMake's filter prefix is
+REM ANSI, so header edits never rebuild their includers (and a stale object
+REM crashed the app on 2026-10-22). Drop project objects when a header is
+REM newer than the oldest one; third-party libraries are untouched.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%ensure_header_deps.ps1" -MainDir "%PROJECT_ROOT%\main" -BuildDir "%BUILD_DIR%"
+if !ERRORLEVEL! neq 0 (
+    echo   [ERROR] header dependency check failed
+    pause
+    exit /b 1
 )
 
 echo   bian yi Release...

@@ -14,25 +14,9 @@
 
 // Fl_Input subclass that does NOT consume Ctrl+H / Ctrl+F / Ctrl+G
 // internally, so those shortcuts can reach MainWindow's dispatchShortcut.
-class PassThruInput : public Fl_Input {
-public:
-    PassThruInput(int x, int y, int w, int h, const char *lbl = nullptr)
-        : Fl_Input(x, y, w, h, lbl) {}
-    int handle(int ev) FL_OVERRIDE {
-        if (ev == FL_KEYDOWN || ev == FL_SHORTCUT) {
-            int k = Fl::event_key();
-            int s = Fl::event_state();
-            // Let Ctrl+F/H/G and Enter pass through to the parent
-            // so MainWindow's dispatchShortcut / GoTo::handle() can
-            // process them.
-            if ((s & FL_COMMAND) && (k == 'f' || k == 'h' || k == 'g'))
-                return 0;
-            if (k == FL_Enter || k == FL_KP_Enter)
-                return 0;
-        }
-        return Fl_Input::handle(ev);
-    }
-};
+// 直接复用共享头（ui/PassThruInput.h）—— 这里以前又抄了一份同名类，导致
+// Go To 的输入框和 Find/Replace 行为不完全一致（连光标闪烁都少一份）。
+#include "ui/PassThruInput.h"
 
 static const int LINE_H = gBarH;   // one bar row (unified height)
 static const int GAP = 6;

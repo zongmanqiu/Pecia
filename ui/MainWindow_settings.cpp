@@ -15,6 +15,8 @@
 #include "ui/ConfirmDialog.h"
 #include "ui/TitleBar.h"
 #include "ui/WindowFrame.h"   // WindowFrame::NC_PAD (frame size)
+#include "ui/WindowShadow.h"  // outer glow (View > Window Shadow)
+#include "ui/SidePanel.h"     // theme switch must recolour the panel (setColors)
 #include "ui/HoverMenuBar.h"
 #include "core/Config.h"
 #include "core/Theme.h"
@@ -24,6 +26,7 @@
 #include "script/ScriptManager.h"
 #include "ui/Layout.h"
 #include <FL/Fl_Menu_Item.H>
+#include <FL/Fl_Tooltip.H>
 #include <FL/Fl_Menu_Bar.H>
 #include <FL/Fl_Text_Editor.H>
 #include <FL/Fl_Text_Buffer.H>
@@ -92,6 +95,8 @@ void MainWindow::buildMenuKeys() {
         { "Markdown",                      "menu.markdown" },
         { "Markdown/Preview",              "menu.markdown.preview" },
         { "Markdown/Scroll Sync",          "menu.markdown.scrollsync" },
+        // 与侧面板「大纲」页签共用同一个 i18n key，保证两处文案永远一致。
+        { "Markdown/Outline",              "panel.outline" },
         { "Markdown/Refresh",              "menu.markdown.refresh" },
         { "Markdown/Auto Refresh",         "menu.markdown.autorefresh" },
         { "Markdown/Auto Refresh/Off",     "menu.markdown.off" },
@@ -102,6 +107,7 @@ void MainWindow::buildMenuKeys() {
         { "View/Menu Bar",                   "menu.view.menubar" },
         { "View/Script Bar",                 "menu.view.scriptbar" },
         { "View/Status Bar",              "menu.view.statusbar" },
+        { "View/Side Panel",                 "menu.view.sidepanel" },
         { "View/Line Numbers",            "menu.view.linenumbers" },
         { "View/Highlight Current Line",  "menu.view.highlightline" },
         { "View/Show Space Symbol",       "menu.view.showwhitespace" },
@@ -109,13 +115,15 @@ void MainWindow::buildMenuKeys() {
         { "View/Font",                "menu.view.font" },
         { "View/Statistics...",       "menu.view.statistics" },
         { "View/Zoom",                "menu.view.zoom" },
-        { "View/Zoom/        Zoom Out",    "menu.view.zoomout" },
-        { "View/Zoom/        Zoom In",     "menu.view.zoomin" },
-        { "View/Zoom/        Reset Zoom",  "menu.view.zoomreset" },
-        // Theme submenu - hardcoded light/dark
+        { "View/Zoom/Zoom Out",        "menu.view.zoomout" },
+        { "View/Zoom/Zoom In",         "menu.view.zoomin" },
+        { "View/Zoom/Reset Zoom",      "menu.view.zoomreset" },
+        { "View/Rounded Corners",          "menu.view.roundedcorners" },
+        { "View/Window Shadow",            "menu.view.windowshadow" },
+        // Theme submenu header (children are the dynamic FL_SUBMENU_POINTER
+        // array m_themeMenu; their labels come from each theme file's
+        // name.<lang> and are refreshed by refreshThemeMenuLabels()).
         { "View/Theme",            "menu.view.theme" },
-        { "View/Theme/light",      "theme.light" },
-        { "View/Theme/dark",       "theme.dark" },
         { "View/Multi Tab",               "menu.view.multitab" },
 
         { "Tools",                         "menu.tools" },
@@ -157,6 +165,32 @@ void MainWindow::buildMenuKeys() {
     }
 }
 
+// Re-read each theme file's localized display name for the current UI
+// language and swap it into the dynamic View > Theme submenu. The submenu
+// entries live in m_themeMenu (FL_SUBMENU_POINTER), so they are invisible to
+// applyLanguageToMenu()'s m_menuKeys table. Called on every language switch.
+void MainWindow::refreshThemeMenuLabels() {
+    if (!m_themeMenu) return;
+    const char *lang = I18n::currentCode();
+    std::string dir = pathutil::exeDir();
+    for (int i = 0; i < m_themeMenuSize && m_themeMenu[i].text; ++i) {
+        const char *stem = static_cast<const char *>(m_themeMenu[i].user_data_);
+        if (!stem || !*stem) continue;
+        std::string name = stem;
+        if (!dir.empty()) {
+            char path[FL_PATH_MAX];
+            snprintf(path, sizeof(path), "%s/theme/%s.ini", dir.c_str(), stem);
+            ThemeColors tc;
+            tc.loadFromFile(path);
+            std::string localized = tc.localizedName(lang);
+            if (!localized.empty()) name = localized;
+        }
+        free((void *)m_themeMenu[i].text);
+        m_themeMenu[i].text = _strdup(name.c_str());
+    }
+    if (m_menu) m_menu->redraw();
+}
+
 // Re-translate every menu item via the currently-loaded I18n table.
 // Toggle items (FL_MENU_TOGGLE) get the bare translated label (no
 // leading space - the checkbox slot occupies the indent). All other
@@ -176,32 +210,11 @@ void MainWindow::applyLanguageToMenu() {
     // We must not touch e.item->text yet - push_back may relocate the
     // std::string objects if the vector reallocates, invalidating any
     // c_str() pointers we already handed out.
-    const char *curLang = I18n::currentCode();
     for (size_t i = 0; i < m_menuKeys.size(); ++i) {
         const MenuKeyEntry &e = m_menuKeys[i];
         std::string text;
-        // Theme sub-items (theme.light, theme.dark):
-        // use the display name from the theme file, not I18n.
-        if (strncmp(e.key, "theme.", 6) == 0) {
-            const char *stem = e.key + 6;  // "light", "dark"
-            std::string dir = pathutil::exeDir();
-            if (!dir.empty()) {
-                char path[FL_PATH_MAX];
-                snprintf(path, sizeof(path), "%s/theme/%s.ini", dir.c_str(), stem);
-                ThemeColors tc;
-                tc.loadFromFile(path);
-                // Use the display name from the theme file.
-                if (curLang && strcmp(curLang, "zh-CN") == 0 && !tc.displayNameZh.empty()) {
-                    text = tc.displayNameZh;
-                } else if (!tc.displayName.empty()) {
-                    text = tc.displayName;
-                } else {
-                    text = stem;
-                }
-            } else {
-                text = stem;
-            }
-        } else {
+        // Normal items: translate via the I18n table.
+        {
             const char *t = I18n::get(e.key);
             // Defensive fallback: if I18n returns empty (corrupted/missing
             // lang file, or I18n not yet loaded), use the key itself so the
@@ -238,12 +251,26 @@ void MainWindow::applyLanguageToMenu() {
 
 // Re-apply the active theme colors to the whole main window: chrome, menus,
 // status bar, tabs, and every open editor. Called after a preset switch.
+// 悬停提示（Fl_Tooltip）是全局静态状态，不是某个控件的属性，所以构造函数里
+// 也要单独刷一次：applyThemeColors() 只在"切主题/配置文件变化"时才跑，启动
+// 路径并不经过它，只写在那边的话首启仍是 FLTK 默认的亮黄方框。
+void MainWindow::applyTooltipTheme(const ThemeColors &tc, int uiFontSize) {
+    Fl_Tooltip::color(tc.background3);
+    Fl_Tooltip::textcolor(tc.text1);
+    Fl_Tooltip::font(FL_HELVETICA);
+    Fl_Tooltip::size(static_cast<Fl_Fontsize>(uiFontSize > 0 ? uiFontSize : 16));
+}
+
 void MainWindow::applyThemeColors() {
     m_theme.load(*m_cfg);   // re-read theme.name + any ini overrides
     theme_updateBorderColour(m_theme.colors());
 
     // Window root / chrome
-    color(m_theme.colors().background2);
+    // background1, not background2: this colour shows through wherever no child
+    // paints a background (the side panel's content area is one such place),
+    // and it is also the last resort for the non-client band sampler. Using
+    // the frame colour here left a frame-coloured strip beside the editor.
+    color(m_theme.colors().background1);
     if (m_titleBar) {
         m_titleBar->color(m_theme.colors().background2);
         m_titleBar->setTheme(&m_theme);
@@ -266,6 +293,9 @@ void MainWindow::applyThemeColors() {
         m_status->textcolor(m_theme.colors().text1);
         m_status->redraw();
     }
+    // 悬停提示跟随主题：FLTK 默认是亮黄色方框，贴在白色编辑区/侧栏旁边太突兀。
+    // 配色取菜单条同款 background3 + 主文字色，字号跟 UI 字号走。
+    applyTooltipTheme(m_theme.colors(), m_cfg->getUiFontSize());
     if (m_scriptBar) {
         m_scriptBar->color(m_theme.colors().background3);
         m_scriptBar->selection_color(m_theme.colors().highlight1);
@@ -314,15 +344,37 @@ void MainWindow::applyThemeColors() {
     if (m_previewDivider) {
         m_previewDivider->setDividerColor(m_theme.colors().background2);
     }
-    // Preview bar (refresh/TOC buttons) follows menu bar theme
-    if (m_previewBar) {
-        m_previewBar->color(m_theme.colors().background3);
-        m_previewBar->textcolor(m_theme.colors().text1);
-        m_previewBar->selection_color(m_theme.colors().highlight1);
-        m_previewBar->check_color(m_theme.colors().highlight2);
-        m_previewBar->setPressColor(m_theme.colors().highlight2);
-        m_previewBar->redraw();
+    // 侧栏分隔条跟随主题（与预览分隔条同参）
+    if (m_sideDivider) {
+        m_sideDivider->setDividerColor(m_theme.colors().background2);
     }
+    // 侧面板自身也要换色。它只在 layoutPreviewPanes() 里 setColors()，而那只
+    // 在布局变化时跑，所以切主题后侧栏（Tab 条 / 树行 / 滚动条）会一直是旧
+    // 配色，直到碰一次开关侧栏或预览才刷新（用户 2026-10-22 反馈）。
+    if (m_sidePanel) {
+        m_sidePanel->setColors(m_theme.colors(),
+                               m_cfg ? m_cfg->getUiFontSize() : 16);
+        m_sidePanel->redraw();
+    }
+
+    // The non-client border is painted in WM_NCPAINT, and Windows never
+    // re-sends that message just because FLTK repainted the client area.
+    // Without an explicit invalidate the border keeps the previous theme's
+    // colour after View > Theme (measured, when the strip was colour-filled:
+    // from "light" while the window had already switched to "cream").
+    windowChrome::refreshFrameBand(this);
+
+    // Two more places keep a copy of the border colour, and both survive a
+    // client repaint:
+    //  * the registered colour that the layered frame bitmap is built from -
+    //    re-register it, or the arcs keep the old theme's colour while the
+    //    straight runs (read live) already use the new one;
+    //  * that bitmap itself, which is cached per window - sync() rebuilds it
+    //    once the colour above actually changed (kShadowB in the cache key).
+    windowChrome::applyRoundedCorners(this, m_cfg ? m_cfg->getRoundedCorners()
+                                                  : false,
+                                      m_theme.colors().text1);
+    windowShadow::sync(this);
 
     redraw();
 }
@@ -499,45 +551,50 @@ void MainWindow::syncFromConfig() {
         if (sw) m_showWhitespaceItem->set(); else m_showWhitespaceItem->clear();
     }
 
-    // Editor font - sync radio selection and apply to editors
+    // Rounded corners (all app windows). Win11 uses DWM with the theme
+    // border colour; Win10/8 fall back to the region + hard-drawn border.
+    bool rounded = m_cfg->getRoundedCorners();
+    windowChrome::setRoundedCornersEnabled(rounded);
+    if (m_roundedCornersItem &&
+        (m_roundedCornersItem->flags & FL_MENU_VALUE) != (rounded ? FL_MENU_VALUE : 0)) {
+        if (rounded) m_roundedCornersItem->set(); else m_roundedCornersItem->clear();
+    }
+    windowChrome::applyRoundedCorners(this, rounded, m_theme.colors().text1);
+
+    // Outer glow (all app windows). Re-read from settings.ini: another Pecia
+    // window may have toggled it.
+    bool glow = m_cfg->getWindowShadow();
+    windowShadow::setEnabled(glow);
+    if (m_windowShadowItem &&
+        (m_windowShadowItem->flags & FL_MENU_VALUE) != (glow ? FL_MENU_VALUE : 0)) {
+        if (glow) m_windowShadowItem->set(); else m_windowShadowItem->clear();
+    }
+    windowShadow::applyAll();
+
+    // Editor font - apply to editors
     char cfgFont[64];
     m_cfg->getEditorFont(cfgFont, sizeof(cfgFont));
-    // 旧配置可能引用已从字体列表移除的字体（如 Cascadia Mono）:
-    // 启动/同步时自动迁移回默认 Consolas，避免静默落到 Courier 回退。
-    if (cfgFont[0]) {
-        bool known = false;
-        for (int i = 0; i < FontUtils::FONT_COUNT; ++i) {
-            if (FontUtils::strCaseCmp(FontUtils::FONT_LIST[i], cfgFont) == 0) {
-                known = true;
-                break;
-            }
-        }
-        if (!known) {
-            m_cfg->setEditorFont("Consolas");
-            snprintf(cfgFont, sizeof(cfgFont), "%s", "Consolas");
-        }
+    // 配置里引用的字体在系统上找不到时迁移回默认 Consolas（历史 bug：硬编码
+    // 列表里的 Gulim 等字体多数机器没装，fontNameToId 静默回退 Courier，
+    // 编辑器一直按 Courier 渲染而用户无感知）。判定改为"系统里实际存在"，
+    // 而不是"在某个硬编码列表里"——FontDialog 只会写入系统里存在的名字，
+    // 但旧配置文件里可能还留着无效名字。
+    if (cfgFont[0] && FontUtils::findFontByName(cfgFont) < 0) {
+        m_cfg->setEditorFont(FontUtils::defaultFontName());
+        snprintf(cfgFont, sizeof(cfgFont), "%s", FontUtils::defaultFontName());
     }
+    bool fontFaceChanged = false;
     for (auto &t : m_tabsList) {
         const char *curName = Fl::get_font_name(t.editor->textfont(), nullptr);
         if (!curName || FontUtils::strCaseCmp(curName, cfgFont) != 0) {
             t.editor->setFontFace(cfgFont);
+            fontFaceChanged = true;
         }
     }
-    // Update font radio selection using cached first item pointer
-    if (m_fontFirstItem) {
-        for (int i = 0; i < FontUtils::FONT_COUNT; ++i) {
-            Fl_Menu_Item *fi = m_fontFirstItem + i;
-            if (!fi->label()) break;
-            const char *label = fi->label();
-            while (*label == ' ') ++label;
-            if (FontUtils::strCaseCmp(label, cfgFont) == 0) {
-                if (!(fi->flags & FL_MENU_VALUE)) {
-                    m_menu->setonly(fi);
-                }
-                break;
-            }
-        }
-    }
+    // 行号区宽度是按 linenumber_font() 量的（updateLinenumberWidth），字体一换
+    // 数字宽度就变，必须按新字体重算——否则换字体后行号区还是旧宽度（数字被
+    // 挤或留一大块空白）。上面的 Line Numbers 段在换字体之前跑过一次，这里补一次。
+    if (fontFaceChanged && m_cfg->getLineNumbers()) updateLinenumberWidth();
 
     // Always on Top
     bool aot = m_cfg->getAlwaysOnTop();
@@ -551,6 +608,8 @@ void MainWindow::syncFromConfig() {
     if (strcmp(I18n::currentCode(), newLang) != 0) {
         I18n::load(newLang);
         applyLanguageToMenu();
+        refreshThemeMenuLabels();
+        if (m_sidePanel) m_sidePanel->refreshLanguage();
         updateTitle();
         updateStatusBar();
         if (m_findBar) m_findBar->refreshLabels();
@@ -798,7 +857,7 @@ void MainWindow::saveSettings() {
     // it - instead of treating the maximized (full-screen) size as normal.
     // The geometry is read from Win32 (GetWindowRect / GetWindowPlacement)
     // rather than FLTK's x()/y(): the custom frame shifts the window by
-    // -NC_PAD after show, so FLTK's own coordinates would drift 6px per
+    // -NC_PAD after show, so FLTK's own coordinates would drift NC_PAD px per
     // launch. The OS rect is authoritative and drift-free.
     int persistW = w(), persistH = h();
     int persistX = x(), persistY = y();

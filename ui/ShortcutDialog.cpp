@@ -5,6 +5,7 @@
 #include "core/I18n.h"
 #include "core/Theme.h"
 #include "ui/Layout.h"
+#include "ui/BlinkInput.h"    // 与主编辑器同周期闪烁的输入框
 #include "ui/ThemeWidgets.h"
 
 #include <FL/Fl.H>
@@ -193,39 +194,9 @@ private:
 
 // ---------------------------------------------------------------------------
 
-static const int kFieldH = 22;              // find/go-to bar input height (FIELD_H)
-static const int kIconW = 24;               // search-icon inset inside the input
-
-// Input boxtype identical to FL_BORDER_BOX but with a 24 px left inset,
-// so the input text starts AFTER the search-magnifier icon.
-static Fl_Boxtype s_searchBoxtype = FL_NO_BOX;
-
-static void ensureSearchBoxtype() {
-    if (s_searchBoxtype != FL_NO_BOX) return;
-    s_searchBoxtype = (Fl_Boxtype)FL_FREE_BOXTYPE;
-    Fl::set_boxtype(s_searchBoxtype, Fl::get_boxtype(FL_BORDER_BOX),
-                    24, 1, 26, 2, nullptr);
-}
-
-// Magnifier icon drawn inside the filter input's left inset.
-class SearchIconBox : public Fl_Box {
-public:
-    SearchIconBox(int X, int Y, int W, int H, Fl_Color c)
-        : Fl_Box(X, Y, W, H), m_color(c) {
-        box(FL_NO_BOX);
-    }
-    void draw() FL_OVERRIDE {
-        Fl_Box::draw();
-        fl_color(m_color);
-        fl_line_style(FL_SOLID, 2);
-        fl_arc(x() + 1, y() + 1, 11, 11, 0, 360);          // lens
-        fl_line(x() + 10, y() + 10, x() + 15, y() + 15);   // handle
-        fl_line_style(FL_SOLID, 1);
-    }
-
-private:
-    Fl_Color m_color;
-};
+// 搜索框组件(输入框高度/图标内缩/boxtype/放大镜)已上提到 ui/ThemeWidgets.h
+// (kSearchFieldH / kSearchIconW / searchInputBoxtype() / SearchIconBox),
+// 供 ShortcutDialog 与 FontDialog 共用——不要在本文件再抄一份。
 
 ShortcutDialog::ShortcutDialog(int w, int h, const char *title, Config *cfg,
                                const Theme *theme, int uiFontSize)
@@ -264,41 +235,34 @@ ShortcutDialog::ShortcutDialog(int w, int h, const char *title, Config *cfg,
     // in the input's left inset (the custom boxtype shifts the text
     // past it). Recording / error feedback shares the in-input hint
     // area, so the bar never grows a second row.
-    ensureSearchBoxtype();
     Fl_Group *filterBar = new Fl_Group(0, filterTop, w, GOTOBAR_H);
     filterBar->box(FL_FLAT_BOX);
     filterBar->color(theme ? theme->colors().background3 : fl_rgb_color(245, 245, 245));
 
-    m_filterInput = new Fl_Input(24,
-                                 filterTop + (GOTOBAR_H - kFieldH) / 2,
-                                 w - 48, kFieldH);
+    m_filterInput = new SearchInput(24,
+                                 filterTop + (GOTOBAR_H - kSearchFieldH) / 2,
+                                 w - 48, kSearchFieldH);
     m_filterInput->textsize(uiFontSize);
-    m_filterInput->box(s_searchBoxtype);
     m_filterInput->color(theme ? theme->colors().background1 : FL_WHITE);
     m_filterInput->textcolor(theme ? theme->colors().text1 : FL_BLACK);
     m_filterInput->selection_color(theme ? theme->colors().highlight2
                                          : FL_SELECTION_COLOR);
     m_filterInput->callback(cbFilter, this);
     m_filterInput->when(FL_WHEN_CHANGED | FL_WHEN_RELEASE);
+    m_filterInput->iconColor(theme ? theme->colors().text2
+                                   : fl_rgb_color(140, 140, 140));
 
     // Light in-input hint (same look as the find bar's "Find:" note),
     // placed after the icon inset. Doubles as the recording prompt and
     // error line (setHintText()).
-    m_hintLabel = new Fl_Box(FL_NO_BOX, m_filterInput->x() + kIconW + 4,
+    m_hintLabel = new Fl_Box(FL_NO_BOX, m_filterInput->x() + kSearchIconW + 4,
                              m_filterInput->y(),
-                             w - 48 - kIconW - 8, kFieldH,
+                             w - 48 - kSearchIconW - 8, kSearchFieldH,
                              I18n::get("shortcut.dialog.filter"));
     m_hintLabel->labelsize(uiFontSize);
     m_hintLabel->labelcolor(theme ? theme->colors().text2
                                   : fl_rgb_color(140, 140, 140));
     m_hintLabel->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-
-    // Magnifier icon inside the input's left inset.
-    new SearchIconBox(m_filterInput->x() + 5,
-                      m_filterInput->y() + (kFieldH - 16) / 2 + 1,
-                      16, 16,
-                      theme ? theme->colors().text2
-                            : fl_rgb_color(140, 140, 140));
 
     filterBar->resizable(nullptr);
     filterBar->end();

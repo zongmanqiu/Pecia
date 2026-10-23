@@ -65,14 +65,21 @@ static bool applyKey(ThemeColors &tc, const char *key, const char *val) {
         tc.displayName = val;
         return true;
     }
-    // name.zh-CN, name.ja, name.ko, etc.
+    // name.zh-CN, name.ja, name.ko, name.pt-BR, ... - one entry per language.
+    // Stored generically so a user-added theme works in every UI language
+    // without any code change.
     if (strncmp(key, "name.", 5) == 0) {
         const char *lang = key + 5;
-        if (strcmp(lang, "zh-CN") == 0) {
-            tc.displayNameZh = val;
+        if (*lang) {
+            for (auto &kv : tc.nameTranslations) {
+                if (kv.first == lang) {
+                    kv.second = val;
+                    return true;
+                }
+            }
+            tc.nameTranslations.emplace_back(lang, val);
             return true;
         }
-        // Future: store other languages in a map if needed.
     }
     return false;
 }
@@ -151,14 +158,8 @@ Theme::Theme() {
 }
 
 std::string Theme::displayName(const char *lang) const {
-    // Try Chinese first if requested.
-    if (lang && strcmp(lang, "zh-CN") == 0 && !m_colors.displayNameZh.empty()) {
-        return m_colors.displayNameZh;
-    }
-    // Fall back to English name.
-    if (!m_colors.displayName.empty()) {
-        return m_colors.displayName;
-    }
+    std::string name = m_colors.localizedName(lang);
+    if (!name.empty()) return name;
     // Last resort: return the preset key itself.
     return m_preset;
 }
