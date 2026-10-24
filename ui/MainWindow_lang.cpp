@@ -88,6 +88,10 @@ void MainWindow::s_applyLangDeferred(void *data) {
 // The FL_SUBMENU_POINTER flag on the parent "Recent Files" item tells
 // FLTK to read its user_data() as a pointer to this submenu array.
 void MainWindow::refreshRecentMenu() {
+    // Pick up entries that other Pecia windows added since this process
+    // started (single-tab mode runs one process per opened file).
+    if (m_cfg) m_cfg->recentSync();
+
     // Free the previous array and its _strdup'd strings (if any).
     if (m_recentMenu) {
         for (int i = 0; i < m_recentMenuSize; ++i) {
@@ -116,16 +120,12 @@ void MainWindow::refreshRecentMenu() {
             if (!path[0]) continue;
             const char *base = fl_filename_name(path);
             char label[FL_PATH_MAX + 64];
+            // Zero-padded two-digit index ("01".."10"): keeps every row
+            // aligned and stops the 10th entry from losing its number.
             // 5-space gap between index, filename, and path.
-            if (i < 9) {
-                snprintf(label, sizeof(label),
-                         "%d     %s     %s",
-                         i + 1, base ? base : path, path);
-            } else {
-                snprintf(label, sizeof(label),
-                         "  %s     %s",
-                         base ? base : path, path);
-            }
+            snprintf(label, sizeof(label),
+                     "%02d     %s     %s",
+                     i + 1, base ? base : path, path);
             m_recentMenu[i].text = _strdup(label);
             m_recentMenu[i].callback_ = cbOpenRecent;
             m_recentMenu[i].user_data_ = reinterpret_cast<void *>((intptr_t)i);

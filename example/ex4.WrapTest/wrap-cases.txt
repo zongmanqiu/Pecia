@@ -1,0 +1,78 @@
+Pecia 换行测试样张
+=====================================================================
+用法
+  1. 用 Pecia 打开本文件，View > Word Wrap 打开软换行。
+  2. 把窗口宽度分别调到约 520 / 640 / 800 / 1000 px 各看一遍。
+  3. 每组用例之间用空行分隔，标题行只用于识别用例，不参与换行判定。
+
+判定标准
+  - 普通中英混排：行尾空白不应长期超过一个“整词/整 token”的宽度。
+  - 超长 URL、路径、无空格长串：应在当前行内继续按字符填充，而不是整段
+    跳到下一行、把上一行留出大片空白。
+  - 行首不应出现 。，、；：！？）》】”』 等收尾标点；
+    行尾不应出现 （《【“‘『 等起始标点。
+  - 普通英文单词默认不拆开；只有整个 token 宽于一整行时才允许内部断开。
+  - 以上都只是“观感约定”，最终以实际换行结果为准，不做像素级对齐要求。
+
+
+[01] 纯中文，无空格无标点
+这是一个用来测试纯中文段落在软换行下能否把每一行都填满的样例段落它故意不使用任何空格和标点因为中文本身每个字之间都可以断行如果实现正确那么每一行的右端都应该接近文本区的右边缘而不应该出现一行只剩几个字下一行却从中间开始的情况请调整窗口宽度反复观察多行之间的填充是否均匀。
+
+
+[02] 纯中文，含完整标点与括号
+第一句先说明背景，第二句补充细节；第三句给出结论：混排文本的换行必须同时考虑断行机会与标点禁则。第四句引用一段话——“标点不能出现在行首，也不能被孤立地留在行尾。”第五句列举若干符号：（圆括号）、【方括号】、《书名号》、〈尖括号〉、『引号』以及省略号……最后一句用感叹号和问号收尾，看看会不会有标点被甩到下一行开头！你注意到了吗？
+
+
+[03] 纯英文，正常长度单词
+Pecia is a lightweight native text editor built with FLTK. This paragraph contains only ordinary English words of normal length, so a correct greedy word wrap should fill each line with as many complete words as possible and move the next word to the following line only when it does not fit. Resize the window and watch the right edge: the leftover space should never grow much wider than the word that was moved down. The last line of the paragraph is expected to be short, and that is perfectly fine.
+
+
+[04] 中英混排，词间有空格
+Pecia 是一个轻量的 Markdown 编辑器，使用 FLTK 绘制界面，启动速度和内存占用都比较克制。它支持 Word Wrap、行号、多标签页以及 Markdown 预览，也保留了纯文本编辑器应有的简单直接。The quick brown fox jumps over the lazy dog 这句话经常被用来测试字体宽度，因为其中既有窄字母也有宽字母。把窗口调窄一些，观察中英文交界处的空格是否被合理利用，以及行尾是否出现了不必要的提前换行。
+
+
+[05] 中英紧邻，无空格
+这是中文English直接相邻without任何空格的情况用来测试CJK与拉丁字母边界是否可以作为断行点。如果边界不可断，那么整段文字会变成一个很长的不可断单元，只能在接近右边缘时按字符硬切；如果边界可断，换行就会自然很多。再混入数字12345和符号ABC以及中文标点，看看Pecia能否在保持英文单词完整的同时，让每一行都尽量填满。
+
+
+[06] 中文 + 数字 + 单位 + 符号
+实验条件如下：温度25.4℃，湿度60%，采样率48kHz，误差不超过±0.05%，电压范围3.3V至5.0V，频率响应20Hz–20kHz。第二组数据是1024×768、1920×1080和3840×2160三种分辨率，压缩比分别为2:1、4:1和8:1。请观察数字串和单位是否被不必要地拆开，以及百分号、摄氏度符号和乘号附近的断行是否自然。
+
+
+[07] 长英文单词与超长无空格串
+下面两个词故意很长：pneumonoultramicroscopicsilicovolcanoconiosis 和 supercalifragilisticexpialidocious。它们都比普通单词长，但仍应尽量整体换行而不是从中间劈开。接下来是一个真正超过整行宽度的无空格串：aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa。对于这种 token，允许在当前行内按字符填满，剩余部分续到下一行，不应先把它整个挪到下一行再切开。
+
+
+[08] 超长 URL（行首开始）
+https://example.com/api/v2/resources/documents/2026/10/24/very-long-segment-name-for-wrapping-tests?filter=language%3Dzh-CN&sort=modified_desc&include=author,tags,permissions&page=1&page_size=100&fields=id,title,summary,created_at,updated_at
+
+[09] 短前缀 + 超长 URL（关键用例）
+参考链接：https://example.com/download/releases/2026/10/24/pecia-line-wrap-test-build-with-an-extremely-long-file-name-and-query-string?token=abcdefghijklmnopqrstuvwxyz0123456789&redirect=%2Fdocs%2Fline-wrapping%2Fcases 如果你看到“参考链接：”这一行后面留出大片空白、URL 整段跳到下一行，就说明超长 token 的前瞻兜底还没有生效。
+
+
+[10] 超长 Windows 路径
+E:\tmp\AI.Agent\Pecia\main\example\ex4.WrapTest\a-very-long-directory-name-created-only-for-line-wrapping-tests\another-deeply-nested-folder\wrap-cases-with-an-extremely-long-file-name.txt 这个路径没有任何空格，所以在分隔符处断行或在必要处按字符断行都可以接受，但不应该把整条路径直接丢到下一行。
+
+
+[11] 标点与断行的边界情况
+第一句。第二句，第三句；第四句：第五句！第六句？第七句、第八句……第九句——《书名》第十句【注释】第十一句（补充）第十二句“引用”第十三句『再引用』。请把窗口宽度慢慢调小，观察收尾标点是否始终留在上一行行尾，起始标点是否始终留在下一行行首，以及省略号和破折号附近有没有奇怪的断点。
+
+
+[12] 日文与韩文
+日本語の文章は漢字とひらがなとカタカナが混在しています。吾輩は猫である。名前はまだ無い。どこで生れたかとんと見当がつかぬ。한국어 문장은 띄어쓰기를 사용하지만 한글 음절 사이에서도 줄바꿈이 가능해야 합니다. 다람쥐 헌 쳇바퀴에 타고파. 이 문장은 한글과 라틴 문자 mixed の混在も含みます。观察假名、汉字、谚文与拉丁字母之间的断行是否自然。
+
+
+[13] Emoji 与符号混排
+今天的任务清单：😀 写周报 ✅ 修三个 bug 🐛 看两封邮件 ✉️ 跑步五公里 🏃 晚上读书 📚 明天继续 🚀✨🔥。Emoji 的宽度与普通字符不同，换行时不应该把它们拆成乱码，也不应该因为它们导致整行明显偏移。再混入一些符号：© ® ™ € £ ¥ § ¶ † ‡ • … —。
+
+
+[14] 制表符与混排
+列一	列二	列三	备注	中文说明	English note	混合内容。制表符的宽度取决于当前列位置，软换行时不能把制表符算成固定一个字符宽，否则行尾会突然多出或少掉一大段。第二行：名称	数量	单价	小计	备注信息	Additional information for wrapping test。第三行：短	中中等	很长很长很长很长很长很长很长很长很长很长很长很长的单元格内容	结束。
+
+
+[15] Markdown 原始标记混排
+这一段包含 **加粗的中文内容**、*斜体的 English words*、`inline code with spaces`、以及一个链接 [换行测试文档](https://example.com/docs/line-wrapping/wrap-cases.txt?version=2026-10-24)。还可能遇到 ~~删除线~~、> 引用符号、- 列表符号和 ## 标题符号。因为编辑器显示的是原始 Markdown，这些标记本身也会参与宽度计算，观察标记与中英文之间的断行是否仍然合理。
+
+
+[16] 单行、最后一行与边界收尾
+这一行很短。这一行稍微长一点但仍然不需要换行。这一行会刚好落在文本区右边缘附近，用来观察临界情况下最后一个字符是否被裁掉。最后一行故意只留一个字。完

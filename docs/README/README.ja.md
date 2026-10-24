@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ 最新版をダウンロード (1.1.0) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.0/Pecia_x64_1.1.0.zip)** ｜ **[⬇️ 最新版をダウンロード (1.1.0) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.0/Pecia_x64_1.1.0.zip)** ｜ [Gitee リポジトリ](https://gitee.com/qiuzongman/pecia) ｜ [GitHub ミラー](https://github.com/zongmanqiu/Pecia) | [Bilibili デモ](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ 最新版をダウンロード (1.1.1) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.1/Pecia_x64_1.1.1.zip)** ｜ **[⬇️ 最新版をダウンロード (1.1.1) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.1/Pecia_x64_1.1.1.zip)** ｜ [Gitee リポジトリ](https://gitee.com/qiuzongman/pecia) ｜ [GitHub ミラー](https://github.com/zongmanqiu/Pecia) | [Bilibili デモ](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 C++17 + FLTK ベースの Windows 軽量テキストエディタ。マルチタブ、大ファイルの高速オープン、マルチエンコーディング対応、Lua スクリプト拡張。新機能：サイドパネル（ファイルツリー／アウトライン）、フォント選択ダイアログ、ウィンドウシャドウ。Markdown プレビューは超大規模文書を分割レンダリング。
 

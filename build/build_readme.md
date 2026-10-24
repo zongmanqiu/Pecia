@@ -223,13 +223,12 @@ FLTK 从旧源码重编、源码随后恢复，而 `5_build_pecia.bat` 看到"�
 4. `[5/7]` FLTK：lib 不存在、或补丁源比已编 `.lib` 新时自动重编
 5. `[6/7]` `cmake -G "NMake Makefiles"` 配置 + `cmake --build`（**复用缓存做增量**；
    仅当 `temp/cmake_build` 的缓存来自其他生成器时才清空重建）
-   > **头文件依赖保护**：本机 `cl /utf-8` 的 `/showIncludes` 输出是 UTF-8，而
-   > CMake 写进 `build.make` 的过滤前缀是 ANSI，两者永远不匹配，CMake 的
-   > `.obj.d` 全是空文件——**改头文件不会触发包含它的 .cpp 重编**。
-   > 因此构建前会跑 `ensure_header_deps.ps1`：只要有 `.h` 比最旧的项目 `.obj`
-   > 新，就删除 Pecia / PeciaLua / PeciaAIChat / 测试的 `.obj` 与 `.res`，
-   > 迫使这些目标全量重编（第三方库不动）。不这样做时，旧对象按旧类布局
-   > 访问新头文件会直接 0xC0000005（2026-10-22 实测）。
+   > **头文件依赖**：Makefile 生成器下 CMakeLists 设 `CMAKE_DEPENDS_USE_COMPILER=FALSE`，
+   > 由 CMake 自带的 include 扫描器跟踪头文件（不依赖 `cl /showIncludes`，因此不受
+   > 中文前缀 / UTF-8 编码不一致影响）。改一个 `.h` 只会重编真正包含它的 `.cpp`，
+   > 不再全量重编。`ensure_header_deps.ps1` 仅保留为手动清理工具，构建脚本不再调用。
+   > 历史：旧做法依赖 `.obj.d`，但 `cl /utf-8` 输出 UTF-8、CMake 写入 ANSI，
+   > 前缀永不匹配（`.obj.d` 全空），陈旧对象按旧类布局访问新头文件会 0xC0000005。
 6. `[7/7]` `ctest --output-on-failure` 运行全部单元测试。
    **这一步是门禁（GATE），不是报告**：任一测试失败 → 脚本 `exit /b 1`，
    `full.bat` 随即中止并报 `[ERROR] 5_build_pecia.bat shi bai`。

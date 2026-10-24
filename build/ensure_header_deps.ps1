@@ -1,16 +1,21 @@
-# ensure_header_deps.ps1 - work around broken /showIncludes parsing.
+# ensure_header_deps.ps1 - manual recovery tool (legacy).
 #
-# cl.exe is invoked with /utf-8, so its /showIncludes lines are UTF-8, while
-# CMake writes the generated --filter-prefix in the ANSI code page (measured:
-# prefix D7A2D2E2... vs cl output E6B3A8E6848F...). The prefixes never match,
-# every .obj.d is empty, and editing a header does NOT recompile the .cpp files
+# 2026-10-24: this is NO LONGER called by the build scripts. CMakeLists now
+# sets CMAKE_DEPENDS_USE_COMPILER=FALSE for Makefile generators, so CMake's
+# own include scanner tracks headers and header edits rebuild only the
+# affected TUs. That removed the root cause described below.
+#
+# Keep this script for one-off recovery when a build is suspected to contain
+# stale objects (e.g. after switching generators or aborting a build): run it
+# once, then rebuild. It deletes every project object; third-party libraries
+# are untouched.
+#
+# Historical note (why the old build scripts ran it before every build):
+# cl /utf-8 emits /showIncludes lines as UTF-8 while CMake wrote the NMake
+# makefile prefix in the ANSI code page. The prefixes never matched, every
+# .obj.d was empty, and editing a header did NOT recompile the .cpp files
 # that include it. A stale MainWindow.cpp.obj built against the old TitleBar
 # layout crashed with 0xC0000005 on 2026-10-22.
-#
-# Until CMake/cl can be made to agree on one encoding, remove the project's
-# own object files whenever a header is newer than the oldest object. The next
-# nmake run then recompiles everything that belongs to Pecia / the two tools /
-# the tests. Third-party libraries are untouched (they do not include main/).
 
 param(
     [Parameter(Mandatory = $true)][string]$MainDir,

@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ Baixar a versão mais recente (1.1.0) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.0/Pecia_x64_1.1.0.zip)** ｜ **[⬇️ Baixar a versão mais recente (1.1.0) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.0/Pecia_x64_1.1.0.zip)** ｜ [Repositório Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Espelho GitHub](https://github.com/zongmanqiu/Pecia) | [Demo no Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ Baixar a versão mais recente (1.1.1) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.1/Pecia_x64_1.1.1.zip)** ｜ **[⬇️ Baixar a versão mais recente (1.1.1) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.1/Pecia_x64_1.1.1.zip)** ｜ [Repositório Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Espelho GitHub](https://github.com/zongmanqiu/Pecia) | [Demo no Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 Editor de texto leve para Windows baseado em C++17 + FLTK. Suporte a múltiplas abas, abertura instantânea de arquivos grandes, suporte a múltiplas codificações, extensão por scripts Lua. Novo: painel lateral (árvore de arquivos/estrutura), diálogo de seleção de fonte, sombras de janela; a pré-visualização de Markdown renderiza documentos muito grandes em blocos.
 

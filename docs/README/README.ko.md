@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ 최신 버전 다운로드 (1.1.0) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.0/Pecia_x64_1.1.0.zip)** ｜ **[⬇️ 최신 버전 다운로드 (1.1.0) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.0/Pecia_x64_1.1.0.zip)** ｜ [Gitee 저장소](https://gitee.com/qiuzongman/pecia) ｜ [GitHub 미러](https://github.com/zongmanqiu/Pecia) | [Bilibili 데모](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ 최신 버전 다운로드 (1.1.1) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.1/Pecia_x64_1.1.1.zip)** ｜ **[⬇️ 최신 버전 다운로드 (1.1.1) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.1/Pecia_x64_1.1.1.zip)** ｜ [Gitee 저장소](https://gitee.com/qiuzongman/pecia) ｜ [GitHub 미러](https://github.com/zongmanqiu/Pecia) | [Bilibili 데모](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 C++17 + FLTK 기반 Windows 경량 텍스트 편집기. 멀티 탭, 대용량 파일 즉시 열기, 다중 인코딩 지원, Lua 스크립트 확장. 새 기능: 사이드 패널(파일 트리/개요), 글꼴 선택 대화상자, 창 그림자. Markdown 미리보기는 초대형 문서를 분할 렌더링합니다.
 

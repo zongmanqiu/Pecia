@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ 下載最新版 (1.1.0) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.0/Pecia_x64_1.1.0.zip)** ｜ **[⬇️ 下載最新版 (1.1.0) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.0/Pecia_x64_1.1.0.zip)** ｜ [Gitee 主倉](https://gitee.com/qiuzongman/pecia) ｜ [GitHub 鏡像](https://github.com/zongmanqiu/Pecia) | [B 站影片示範](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ 下載最新版 (1.1.1) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.1/Pecia_x64_1.1.1.zip)** ｜ **[⬇️ 下載最新版 (1.1.1) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.1/Pecia_x64_1.1.1.zip)** ｜ [Gitee 主倉](https://gitee.com/qiuzongman/pecia) ｜ [GitHub 鏡像](https://github.com/zongmanqiu/Pecia) | [B 站影片示範](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 基於 C++17 + FLTK 的 Windows 輕量級文字編輯器。多標籤、大檔案秒開、多編碼支援、Lua 腳本擴充。新增：側邊欄（檔案樹/大綱）、字型選擇對話方塊、視窗陰影；Markdown 預覽對超大檔案分塊渲染。
 

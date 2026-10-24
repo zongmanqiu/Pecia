@@ -257,11 +257,16 @@ Config();
     void setLastDir(const char *dir);
 
     // Recent files (max 10, most recent first). Backed by an external
-    // "recent file.ini" next to the exe.
+    // "recent file.ini" next to the exe. The list is shared by every
+    // running Pecia window, so adds merge with the on-disk state instead
+    // of overwriting it with this process's startup snapshot.
     int  recentCount();
     void recentGet(int index, char *buf, int len);
     void recentAdd(const char *path);
     void recentClear();
+    // Refresh the in-memory list from disk without writing (used before
+    // rebuilding the Recent Files menu so other windows' entries show up).
+    void recentSync();
 
     // File-change detection for multi-window sync.
     // Returns true if settings.ini has been modified by another process.
@@ -372,6 +377,10 @@ public:
 
     // Locate "recent file.ini" next to the running exe and load it.
     void recentLoad();
-    // Write the in-memory list back to "recent file.ini".
+    // Read the recent-file list from disk. Returns false on an I/O error
+    // ("out" is left untouched); a missing file is an empty list, not an
+    // error.
+    bool readRecentList(std::vector<std::string> &out);
+    // Write the in-memory list back to "recent file.ini" (atomic replace).
     void recentSave();
 };

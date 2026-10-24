@@ -23,7 +23,7 @@
 | `build/2_download.bat` | 下载+解压第三方库到 .thirdparty/(含探针校验与残缺自动修复) | 下载/解压/完整性校验逻辑变化时 |
 | `build/3_patch.bat` | 把 main/patches/ 单向应用到 .thirdparty/ | 补丁同步范围/逻辑变化时 |
 | `build/4_build_rust.bat` | cargo fetch + cargo build --release 编两个 Rust FFI 静态库 | FFI 依赖拉取/构建逻辑变化时 |
-| `build/ensure_header_deps.ps1` | 头文件依赖保护：CMake/NMake 的 `/showIncludes` 前缀与 `cl /utf-8` 输出编码不一致时，头文件改动后删除项目对象以强制重编（5_build_pecia.bat 调用） | 依赖探测/清理范围变化时 |
+| `build/ensure_header_deps.ps1` | 手动恢复工具：怀疑构建残留陈旧 `.obj` 时删除项目对象（构建脚本不再自动调用；Makefile 依赖现由 `CMAKE_DEPENDS_USE_COMPILER=FALSE` + CMake 自带 include 扫描器负责） | 依赖探测策略或清理范围变化时 |
 | `build/5_build_pecia.bat` | 编译 FLTK+Pecia 三件套并跑 ctest(**真门禁**:测试失败即整条构建失败) | 编译流程/按需重编/依赖校验逻辑变化时 |
 | `build/_common.bat` | 编号脚本共用的路径变量、tar/curl 解析、MSVC 环境装载与 `:fetch_rust_deps` 子例程 | 路径变量定义/tool 解析/环境探测入口变化时 |
 | `build/msvc_env.bat` | MSVC/Windows SDK 环境自动探测(vswhere) | 环境探测逻辑变化时 |

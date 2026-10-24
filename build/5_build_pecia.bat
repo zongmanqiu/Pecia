@@ -257,17 +257,11 @@ if "!NEED_CONFIGURE!"=="1" (
     )
 )
 
-REM --- header dependency guard ------------------------------------------------
-REM cl /utf-8 emits UTF-8 /showIncludes lines while CMake's filter prefix is
-REM ANSI, so header edits never rebuild their includers (and a stale object
-REM crashed the app on 2026-10-22). Drop project objects when a header is
-REM newer than the oldest one; third-party libraries are untouched.
-powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%ensure_header_deps.ps1" -MainDir "%PROJECT_ROOT%\main" -BuildDir "%BUILD_DIR%"
-if !ERRORLEVEL! neq 0 (
-    echo   [ERROR] header dependency check failed
-    pause
-    exit /b 1
-)
+REM --- header dependencies -----------------------------------------------------
+REM CMakeLists sets CMAKE_DEPENDS_USE_COMPILER=FALSE for Makefile generators,
+REM so CMake's own include scanner tracks headers and rebuilds only the TUs
+REM that include a changed .h. Do NOT reintroduce the old "delete every object"
+REM guard here: it turned every header edit into a full rebuild.
 
 echo   bian yi Release...
 cmake --build .

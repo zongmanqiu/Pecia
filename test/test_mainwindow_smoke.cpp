@@ -36,6 +36,7 @@
 
 #include <FL/Fl.H>
 #include <FL/Fl_Image_Surface.H>
+#include <FL/Fl_Menu_Bar.H>
 #include <FL/Fl_Text_Editor.H>
 #include <FL/Fl_Tabs.H>
 #include <FL/Fl_Menu_Item.H>
@@ -407,6 +408,20 @@ int main() {
     initLayoutHeights(cfg);
     I18n::load("en");
 
+    // Seed 10 recent files BEFORE the window is constructed so its Config
+    // loads them; the Recent Files submenu labels are checked below.
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    const fs::path exeDir = fs::path(exePath).parent_path();
+    const fs::path recentPath = exeDir / "recent file.ini";
+    std::error_code recentEc;
+    const bool hadRecentFile = fs::exists(recentPath, recentEc);
+    {
+        std::ofstream out(recentPath, std::ios::binary | std::ios::trunc);
+        for (int i = 1; i <= 10; ++i)
+            out << "File" << i << "=C:\\work\\doc" << i << ".md\n";
+    }
+
     // ── Construct + show: frame, title bar, menu bar, tabs, editor, status ──
     MainWindow win(1000, 700, "smoke-main");
     CHECK(win.w() > 0 && win.h() > 0);
@@ -415,6 +430,39 @@ int main() {
     win.show();
     CHECK(win.visible());
     settle();
+
+    // ── Recent Files labels: every row carries a two-digit index ───────────
+    // Regression: the 10th row used to drop its number entirely because the
+    // code only formatted `%d` for i < 9. All rows now use "%02d" so the
+    // 10th entry keeps its number and the list stays aligned.
+    {
+        Fl_Menu_Bar *bar = nullptr;
+        for (int i = 0; i < win.children(); ++i) {
+            auto *mb = dynamic_cast<Fl_Menu_Bar *>(win.child(i));
+            if (mb && mb->menu() && mb->find_item("File/Recent Files")) {
+                bar = mb;
+                break;
+            }
+        }
+        CHECK(bar != nullptr);
+        const Fl_Menu_Item *ri =
+            bar ? bar->find_item("File/Recent Files") : nullptr;
+        CHECK(ri != nullptr);
+        const Fl_Menu_Item *sub =
+            ri ? static_cast<const Fl_Menu_Item *>(ri->user_data()) : nullptr;
+        CHECK(sub != nullptr);
+        int rows = 0;
+        if (sub) {
+            for (const Fl_Menu_Item *it = sub; it->text; ++it) ++rows;
+        }
+        CHECK_EQ(rows, 10);
+        for (int i = 0; sub && i < rows && i < 10; ++i) {
+            char want[4];
+            std::snprintf(want, sizeof(want), "%02d", i + 1);
+            CHECK(sub[i].text && std::strncmp(sub[i].text, want, 2) == 0);
+        }
+    }
+    if (!hadRecentFile) fs::remove(recentPath, recentEc);
 
     // ── Show/hide toggles: every one re-lays out the content area ──────────
     // These are the exact callbacks the View menu fires. A regression in the

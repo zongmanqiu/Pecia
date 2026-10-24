@@ -13,8 +13,9 @@
 #include <functional>
 #include <map>
 
-// Buffer sizes above this open with word wrap forced OFF (the wrap layout
-// measures every character via GDI and takes seconds on large files). The
+// Buffer sizes above this open with word wrap forced OFF. Normal documents
+// are cheap to wrap, but pathological ones (one huge logical line) measure
+// every character via GDI and cost roughly 50 ms/MB, so keep a ceiling; the
 // user can still enable wrap manually afterwards.
 //
 // NOTE: this used to double as the markdown preview's size limit, and any
@@ -24,7 +25,11 @@
 // big" from "my markdown is broken". Slow is the user's choice; crashing the
 // process on their unsaved tabs is not. See refreshPreview() for the O(1)
 // "did the text change" test that makes large previews bearable.
-static const int kWrapLimitBytes = 4 * 1024 * 1024;   // 4 MB
+//
+// 2026-10-24: raised 4 MB -> 10 MB. Measured wrap layout is ~1 ms/MB for
+// ordinary line lengths (20 MB: ~20 ms), so 4 MB was needlessly tight for
+// modern documents.
+static const int kWrapLimitBytes = 10 * 1024 * 1024;   // 10 MB
 static const long long kTrimSkipBytes = 8LL * 1024 * 1024;   // skip working-set trim above this
 
 // Above this size the status bar counts lines incrementally (the naive

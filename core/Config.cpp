@@ -4,9 +4,7 @@
 
 #include <FL/Fl.H>              // Fl::set_fonts / Fl::get_font_name
 #include <FL/Enumerations.H>   // FL_COURIER
-#include <FL/filename.H>       // FL_PATH_MAX
 #include <FL/fl_string_functions.h>  // fl_strlcpy
-#include <FL/fl_utf8.h>        // fl_fopen, fl_unlink (UTF-8 aware)
 
 #include <string.h>
 #include <stdio.h>
@@ -1047,70 +1045,157 @@ void Config::setLastDir(const char *dir) {
 //     File2=/absolute/path/to/file2.txt
 //     ...
 //
-// Lines starting with '#' and blank lines are ignored. Any other line
-// that does not match "File<digits>=<value>" causes the file to be
-// treated as malformed: it is deleted and a fresh empty file is
-// created. Entries with an empty value are silently dropped on load.
+// Parsing is deliberately tolerant: blank lines, '#' comments, a UTF-8 BOM
+// and any unrecognised line are skipped, so a partially written or
+// hand-edited file never costs the user the whole history. Entries with an
+// empty value are silently dropped on load.
+//
+// The list is shared by every running Pecia window. I/O goes through
+// std::ifstream/ofstream opened with the filesystem::path itself: fl_fopen()
+// expects UTF-8, but path::string() returns ANSI on Windows, so the old
+// fl_fopen(path::string()) pair silently failed whenever Pecia was installed
+// in a directory with a non-ASCII name (the file was never created).
+// recentAdd() also re-reads the file and merges instead of writing this
+// process's startup snapshot back: in single-tab mode each opened file runs
+// in a separate process, and the snapshot write erased the entries the other
+// windows had just added (visible as "Recent Files only ever has one item").
 // ---------------------------------------------------------------------------
 
-void Config::recentLoad() {
-    m_recentFiles.clear();
+namespace {
 
-    FILE *fp = fl_fopen(m_recentFilePath.string().c_str(), "r");
-    if (!fp) {
-        recentSave();
-        return;
+// Serializes the read-merge-write transaction in recentAdd()/recentClear()
+// across Pecia processes (single-tab mode runs one process per opened file).
+// A named mutex is enough: the transaction is short and only touches a
+// handful of paths.
+class RecentFileLock {
+public:
+#if defined(_WIN32)
+    RecentFileLock() {
+        m_handle = CreateMutexW(nullptr, FALSE, L"Local\\Pecia.RecentFiles");
+        if (m_handle) {
+            DWORD r = WaitForSingleObject(m_handle, 5000);
+            m_locked = (r == WAIT_OBJECT_0 || r == WAIT_ABANDONED);
+        }
+    }
+    ~RecentFileLock() {
+        if (m_locked) ReleaseMutex(m_handle);
+        if (m_handle) CloseHandle(m_handle);
+    }
+private:
+    HANDLE m_handle = nullptr;
+    bool   m_locked = false;
+#else
+    RecentFileLock() {}
+#endif
+};
+
+} // namespace
+
+bool Config::readRecentList(std::vector<std::string> &out) {
+    std::vector<std::string> parsed;
+
+    std::ifstream in(m_recentFilePath);
+    if (!in.is_open()) {
+        std::error_code ec;
+        if (!fs::exists(m_recentFilePath, ec)) {
+            out.clear();    // No file yet: an empty list, not an error.
+            return true;
+        }
+        return false;       // Exists but unreadable (lock/permissions).
     }
 
-    char line[FL_PATH_MAX + 64];
-    bool malformed = false;
-    while (fgets(line, sizeof(line), fp)) {
-        size_t len = strlen(line);
-        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) {
-            line[--len] = 0;
+    std::string line;
+    bool firstLine = true;
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (firstLine) {
+            firstLine = false;
+            if (line.size() >= 3 &&
+                (unsigned char)line[0] == 0xEF &&
+                (unsigned char)line[1] == 0xBB &&
+                (unsigned char)line[2] == 0xBF) {
+                line.erase(0, 3);   // UTF-8 BOM from a hand-edited file
+            }
         }
 
-        if (len == 0) continue;
+        if (line.empty()) continue;
 
-        const char *p = line;
+        const char *p = line.c_str();
         while (*p == ' ' || *p == '\t') ++p;
         if (*p == '#') continue;
 
-        if (strncmp(p, "File", 4) != 0) { malformed = true; break; }
+        if (strncmp(p, "File", 4) != 0) continue;
         p += 4;
 
         const char *digitStart = p;
         while (*p >= '0' && *p <= '9') ++p;
-        if (p == digitStart) { malformed = true; break; }
-
-        if (*p != '=') { malformed = true; break; }
+        if (p == digitStart || *p != '=') continue;
         ++p;
 
-        if (*p) {
-            m_recentFiles.push_back(std::string(p));
-        }
-    }
-    fclose(fp);
-
-    if (malformed) {
-        fl_unlink(m_recentFilePath.string().c_str());
-        m_recentFiles.clear();
-        recentSave();
-        return;
+        if (*p) parsed.push_back(std::string(p));
     }
 
-    if ((int)m_recentFiles.size() > MAX_RECENT) {
-        m_recentFiles.resize(MAX_RECENT);
-    }
+    if (in.bad()) return false;
+
+    if ((int)parsed.size() > MAX_RECENT) parsed.resize(MAX_RECENT);
+    out = std::move(parsed);
+    return true;
+}
+
+void Config::recentLoad() {
+    // Never create the file here: several Pecia processes start at the same
+    // time (one per opened file), and an eager empty write would race with
+    // and erase a list another process just saved. recentSave() creates it
+    // on the first add instead.
+    if (!readRecentList(m_recentFiles)) m_recentFiles.clear();
 }
 
 void Config::recentSave() {
-    FILE *fp = fl_fopen(m_recentFilePath.string().c_str(), "w");
-    if (!fp) return;
-    for (size_t i = 0; i < m_recentFiles.size(); ++i) {
-        fprintf(fp, "File%d=%s\n", (int)(i + 1), m_recentFiles[i].c_str());
+    // Atomic replace: other Pecia windows may be reading the list right now.
+    // Write a uniquely named temp file first, then rename over the real one
+    // so a reader never sees a half-written list.
+    static std::atomic<unsigned long> s_recentSaveSeq{0};
+    unsigned long pid = 0;
+#if defined(_WIN32)
+    pid = (unsigned long)GetCurrentProcessId();
+#endif
+    fs::path tmp = m_recentFilePath;
+    tmp += ".tmp." + std::to_string(pid) + "." +
+           std::to_string(++s_recentSaveSeq);
+
+    {
+        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        if (!out.is_open()) return;
+        for (size_t i = 0; i < m_recentFiles.size(); ++i) {
+            out << "File" << (int)(i + 1) << "=" << m_recentFiles[i] << "\n";
+        }
+        out.flush();
+        if (!out.good()) {
+            out.close();
+            std::error_code rmEc;
+            fs::remove(tmp, rmEc);
+            return;
+        }
     }
-    fclose(fp);
+
+    std::error_code ec;
+    fs::rename(tmp, m_recentFilePath, ec);
+    if (ec) {
+        // Replace refused (e.g. another process holds the target without
+        // FILE_SHARE_DELETE): fall back to an in-place write.
+        std::ofstream direct(m_recentFilePath,
+                            std::ios::binary | std::ios::trunc);
+        if (direct.is_open()) {
+            for (size_t i = 0; i < m_recentFiles.size(); ++i) {
+                direct << "File" << (int)(i + 1) << "="
+                       << m_recentFiles[i] << "\n";
+            }
+            direct.flush();
+            direct.close();
+        }
+        std::error_code rmEc;
+        fs::remove(tmp, rmEc);
+    }
 }
 
 int Config::recentCount() {
@@ -1128,23 +1213,44 @@ void Config::recentGet(int index, char *buf, int len) {
 void Config::recentAdd(const char *path) {
     if (!path || !path[0]) return;
 
-    for (auto it = m_recentFiles.begin(); it != m_recentFiles.end(); ) {
-        if (*it == path) it = m_recentFiles.erase(it);
-        else ++it;
+    RecentFileLock lock;
+
+    // Rebase on the on-disk list: another Pecia window may have added
+    // entries since this process started (see the block comment above).
+    // If the file cannot be read, fall back to this process's view so an
+    // I/O hiccup does not drop what is already known here.
+    std::vector<std::string> disk;
+    const std::vector<std::string> &base =
+        readRecentList(disk) ? disk : m_recentFiles;
+
+    std::vector<std::string> merged;
+    merged.reserve(base.size() + 1);
+    merged.push_back(std::string(path));
+    for (const auto &p : base) {
+        if (p == path) continue;
+        bool dup = false;
+        for (const auto &q : merged) {
+            if (q == p) { dup = true; break; }
+        }
+        if (!dup) merged.push_back(p);
     }
 
-    m_recentFiles.insert(m_recentFiles.begin(), std::string(path));
+    if ((int)merged.size() > MAX_RECENT) merged.resize(MAX_RECENT);
 
-    if ((int)m_recentFiles.size() > MAX_RECENT) {
-        m_recentFiles.resize(MAX_RECENT);
-    }
-
+    m_recentFiles = std::move(merged);
     recentSave();
 }
 
 void Config::recentClear() {
+    RecentFileLock lock;
     m_recentFiles.clear();
     recentSave();
+}
+
+void Config::recentSync() {
+    std::vector<std::string> disk;
+    if (!readRecentList(disk)) return;   // keep current cache on I/O error
+    m_recentFiles = std::move(disk);
 }
 
 // ---------------------------------------------------------------------------

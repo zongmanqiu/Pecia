@@ -174,6 +174,89 @@ static void test_recent_files() {
     CHECK(buf[0] == '\0');
 }
 
+// Two Config objects model two Pecia windows (single-tab mode starts one
+// process per opened file). recentAdd must merge with what is already on
+// disk - the old code wrote this process's startup snapshot back and erased
+// entries other windows had just added.
+static void test_recent_files_multi_process() {
+    {
+        Config a(g_scratch);
+        a.recentClear();
+        Config b(g_scratch);                 // both saw an empty list
+        a.recentAdd("C:\\work\\a.txt");
+        b.recentAdd("C:\\work\\b.txt");
+        Config c(g_scratch);
+        c.recentAdd("C:\\work\\c.txt");
+    }
+    Config c(g_scratch);
+    char buf[FL_PATH_MAX];
+    c.recentGet(0, buf, sizeof(buf));
+    CHECK(strcmp(buf, "C:\\work\\c.txt") == 0);
+    c.recentGet(1, buf, sizeof(buf));
+    CHECK(strcmp(buf, "C:\\work\\b.txt") == 0);
+    c.recentGet(2, buf, sizeof(buf));
+    CHECK(strcmp(buf, "C:\\work\\a.txt") == 0);
+}
+
+// A malformed line must not wipe the whole history (the old parser deleted
+// "recent file.ini" on the first unrecognised line).
+static void test_recent_files_tolerant_parse() {
+    {
+        Config c(g_scratch);
+        c.recentClear();
+        c.recentAdd("C:\\work\\keep.txt");
+    }
+    const fs::path p = g_scratch / "recent file.ini";
+    {
+        std::ofstream out(p, std::ios::binary | std::ios::app);
+        out << "not a recent-file line\n";
+        out << "File2=\n";
+    }
+    Config c(g_scratch);
+    char buf[FL_PATH_MAX];
+    CHECK_EQ(c.recentCount(), 1);
+    c.recentGet(0, buf, sizeof(buf));
+    CHECK(strcmp(buf, "C:\\work\\keep.txt") == 0);
+    CHECK(fs::exists(p));                    // not deleted
+}
+
+// Non-ASCII config directory: fl_fopen(path::string()) treated the ANSI
+// bytes as UTF-8 and failed silently, so the list file was never created.
+static void test_recent_files_unicode_dir() {
+    const fs::path dir = g_scratch / fs::path(L"\u6D4B\u8BD5\u76EE\u5F55");
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    {
+        Config c(dir);
+        c.recentClear();
+        c.recentAdd("C:\\work\\a.txt");
+        c.recentAdd("C:\\work\\b.txt");
+    }
+    Config c2(dir);
+    char buf[FL_PATH_MAX];
+    CHECK_EQ(c2.recentCount(), 2);
+    c2.recentGet(0, buf, sizeof(buf));
+    CHECK(strcmp(buf, "C:\\work\\b.txt") == 0);
+    CHECK(fs::exists(dir / "recent file.ini"));
+}
+
+// recentSync() lets a window pick up entries another window wrote while it
+// was already running.
+static void test_recent_sync() {
+    Config stale(g_scratch);                 // startup snapshot
+    {
+        Config other(g_scratch);
+        other.recentClear();
+        other.recentAdd("C:\\work\\new.txt");
+    }
+    char buf[FL_PATH_MAX];
+    stale.recentGet(0, buf, sizeof(buf));    // cache is still the old one
+    CHECK(strcmp(buf, "C:\\work\\new.txt") != 0);
+    stale.recentSync();
+    stale.recentGet(0, buf, sizeof(buf));
+    CHECK(strcmp(buf, "C:\\work\\new.txt") == 0);
+}
+
 // ---------------------------------------------------------------------------
 // Write whitelist: a restricted Config may only persist its allowed keys
 // ---------------------------------------------------------------------------
@@ -249,6 +332,10 @@ static void run_all() {
     test_lang_persists_non_whitelisted_code();
     test_invalid_repair();
     test_recent_files();
+    test_recent_files_multi_process();
+    test_recent_files_tolerant_parse();
+    test_recent_files_unicode_dir();
+    test_recent_sync();
     test_value_trim();
     test_write_whitelist();
     test_merge_preserves_disk();

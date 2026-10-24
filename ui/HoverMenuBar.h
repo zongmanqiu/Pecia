@@ -26,6 +26,9 @@
 
 #include <FL/Fl_Menu_Bar.H>
 
+#include <functional>
+#include <utility>
+
 class HoverMenuBar : public Fl_Menu_Bar {
 public:
     HoverMenuBar(int X, int Y, int W, int H, const char *l = nullptr)
@@ -33,6 +36,13 @@ public:
 
     // Pressed-state fill (theme highlight2). 0 = derive via fl_darker().
     void setPressColor(Fl_Color c) { m_pressColor = c; }
+
+    // Called right before the first (leftmost) top-level menu pops up, so
+    // owners can rebuild dynamic submenus from current data. The array being
+    // rebuilt must not be this bar's own top-level menu.
+    void setBeforeFirstMenuPopup(std::function<void()> cb) {
+        m_beforeFirstPopup = std::move(cb);
+    }
 
     void draw() override {
         draw_box();
@@ -103,6 +113,10 @@ public:
             const Fl_Menu_Item *v = itemAt(Fl::event_x(), Fl::event_y());
             if (v) {
                 m_highlight = itemIndexAt(Fl::event_x(), Fl::event_y());
+                // The File menu owns the dynamic Recent Files submenu: refresh
+                // it from disk before FLTK reads its item array. m_highlight 0
+                // is the leftmost top-level item ("File" in the main bar).
+                if (m_highlight == 0 && m_beforeFirstPopup) m_beforeFirstPopup();
                 m_menuOpen = true;
                 redraw();   // paint the pressed highlight immediately
                 // While the pulldown's modal grab is active this widget gets
@@ -186,4 +200,5 @@ private:
     int  m_highlight = -1;   // item index highlighted while a menu is open
     bool m_menuOpen = false;
     Fl_Color m_pressColor = 0;   // pressed fill (theme highlight2); 0=derive
+    std::function<void()> m_beforeFirstPopup;
 };

@@ -3775,8 +3775,10 @@ static int pecia_cjk_no_break_before(unsigned int c) {
 }
 
 static int pecia_cjk_no_break_after(unsigned int c) {
-  return (c==0x300C || c==0x300E || c==0x3010 || c==0x3014 || c==0xFF08 ||
-          c==0xFF3B || c==0xFF5B || c==0xFF62 || c==0x2018 || c==0x201C);
+  return (c==0x3008 || c==0x300A || c==0x300C || c==0x300E || c==0x3010 ||
+          c==0x3014 || c==0x3016 || c==0x3018 || c==0x301A || c==0x301D ||
+          c==0xFF08 || c==0xFF3B || c==0xFF5B || c==0xFF62 ||
+          c==0x2018 || c==0x201C);
 }
 
 static int pecia_cjk_char(unsigned int c) {
@@ -3790,6 +3792,34 @@ static int pecia_cjk_char(unsigned int c) {
          (c>=0x20000 && c<=0x2FFFD) || // CJK ext B..D
          (c>=0x30000 && c<=0x3FFFD);   // CJK ext E..F
 }
+
+// PECIA PATCH (2026-10-24): extra break opportunities for mixed text.
+// A Latin/digit run is an unbreakable token, but it may break away from an
+// adjacent CJK glyph (UAX #14 allows it). Without this, "中文English" is one
+// unbreakable run and the line fills badly.
+static int pecia_latin_word_char(unsigned int c) {
+  return (c>='0' && c<='9') || (c>='A' && c<='Z') || (c>='a' && c<='z') ||
+         c=='\'' || c=='_';
+}
+
+static int pecia_break_between(unsigned int prev, unsigned int cc) {
+  if (!prev) return 0;
+  if (prev=='\t' || prev==' ' || cc=='\t' || cc==' ') return 0;
+  if (!(pecia_cjk_char(prev) || pecia_cjk_char(cc))) return 0;
+  if (pecia_cjk_no_break_after(prev) || pecia_cjk_no_break_before(cc)) return 0;
+  if (pecia_cjk_char(prev) && pecia_cjk_char(cc)) return 1;
+  if (pecia_cjk_char(prev) && pecia_latin_word_char(cc)) return 1;
+  if (pecia_latin_word_char(prev) && pecia_cjk_char(cc)) return 1;
+  return 0;
+}
+
+// Weak break: after a URL/path delimiter. Used only when a single token is
+// wider than the whole line, so normal words (TCP/IP, state-of-the-art) are
+// still kept together by the strong-break rules above.
+static int pecia_weak_break_after(unsigned int c) {
+  return c=='/' || c=='\\' || c=='-' || c=='_' ||
+         c=='?' || c=='&' || c=='=' || c=='#';
+}
 // -----------------------------------------------------------------------
 
 void Fl_Text_Display::wrapped_line_counter(Fl_Text_Buffer *buf, int startPos,
@@ -3800,7 +3830,7 @@ void Fl_Text_Display::wrapped_line_counter(Fl_Text_Buffer *buf, int startPos,
   IS_UTF8_ALIGNED2(buf, maxPos)
 
   int lineStart, newLineStart = 0, b, p, colNum, wrapMarginPix;
-  int i, foundBreak;
+  int i, foundBreak, skipBreakChar, weakScanPos;
   double width;
   int nLines = 0;
   unsigned int c;
@@ -3809,13 +3839,12 @@ void Fl_Text_Display::wrapped_line_counter(Fl_Text_Buffer *buf, int startPos,
   if (mWrapMarginPix != 0) {
     wrapMarginPix = mWrapMarginPix;
   } else {
-    /* PECIA PATCH: reserve roughly one character of slack (font size in
-       px ~= one CJK glyph width) before the right text edge. The layout
-       counter accumulates per-character widths while the draw path
-       measures text in runs (kerning/hinting differences accumulate over
-       a line), so a line counted as exactly fitting could still let its
-       last glyph poke a few px past the clip edge and be cut in half. */
-    wrapMarginPix = text_area.w - textsize();
+    /* PECIA PATCH: keep a small drift guard before the right text edge.
+       The old code reserved one full character of slack, but the CJK
+       retPos off-by-one used to consume it on the next line, so every
+       wrapped CJK line looked one glyph short. The off-by-one is fixed
+       now, so a third of an em is enough and lines fill the width again. */
+    wrapMarginPix = text_area.w - textsize() / 3;
     if (wrapMarginPix < text_area.w * 3 / 4)
       wrapMarginPix = text_area.w * 3 / 4;
   }
@@ -3871,69 +3900,174 @@ void Fl_Text_Display::wrapped_line_counter(Fl_Text_Buffer *buf, int startPos,
     /* If character exceeded wrap margin, find the break point and wrap there */
     if (width > wrapMarginPix) {
       foundBreak = false;
+      skipBreakChar = 0;
+      weakScanPos = -1;
       b = lineStart;   // PECIA PATCH: fallback uses `b` below (STR #2730)
-      /* PECIA PATCH: scan forward once and remember the last break
-         opportunity: after ASCII whitespace, or at a CJK boundary
-         (prev is CJK, next is CJK, respecting punctuation rules). The
-         latest opportunity wins; ties favor whitespace. If no opportunity
-         exists (e.g. a long Latin word) fall through to the break-at-
-         margin fallback below, as before. */
+      /* PECIA PATCH: scan forward once and remember the last strong break
+         opportunity: after ASCII whitespace, at a CJK boundary, or at a
+         CJK<->Latin/digit boundary. The latest opportunity wins; ties favor
+         whitespace. If none exists (e.g. a long Latin word or URL) fall
+         through to the URL/path delimiter and break-at-margin fallbacks. */
       {
-        int lastWs = -1, lastCjk = -1;
+        int lastWs = -1, lastStrong = -1, lastWeak = -1;
         unsigned int prev = 0;
         for (int q=lineStart; q<=p; q=buf->next_char(q)) {
           unsigned int cc = buf->char_at(q);
           if (cc == '\t' || cc == ' ') {
             lastWs = q;
-          } else if (prev && pecia_cjk_char(prev) && pecia_cjk_char(cc) &&
-                     !pecia_cjk_no_break_after(prev) &&
-                     !pecia_cjk_no_break_before(cc)) {
-            lastCjk = q;   // break opportunity BEFORE q
+          } else if (pecia_break_between(prev, cc)) {
+            lastStrong = q;   // break opportunity BEFORE q
           }
+          if (q < p && pecia_weak_break_after(cc))
+            lastWeak = buf->next_char(q);   // break opportunity AFTER q
           prev = cc;
         }
-        if (lastWs >= 0 && (lastCjk < 0 || lastWs > lastCjk)) {
-          b = lastWs;
-          newLineStart = buf->next_char(b);
-          colNum = 0;
-          width = 0;
-          int iMax = buf->next_char(p);
-          for (i=buf->next_char(b); i<iMax; i = buf->next_char(i)) {
-            width += measure_proportional_character(buf->address(i), (int)width,
-                                                    i+styleBufOffset);
-            colNum++;
+        weakScanPos = lastWeak;
+
+        int newStart = -1;
+        int breakPos = -1;
+        if (lastWs >= 0 && (lastStrong < 0 || lastWs > lastStrong)) {
+          breakPos = lastWs;
+          newStart = buf->next_char(lastWs);
+          skipBreakChar = 1;   // the space itself is not part of either line
+        } else if (lastStrong >= 0) {
+          breakPos = lastStrong;
+          newStart = lastStrong;
+        }
+
+        if (newStart >= 0) {
+          /* PECIA PATCH (oversized-token lookahead): if the token after the
+             break is itself wider than a whole line (URL, long path, long
+             run without spaces), moving it down whole leaves the current
+             line mostly empty. Start filling the current line inside it. */
+          double prefixW = 0;
+          for (i=lineStart; i<newStart; i=buf->next_char(i)) {
+            prefixW += measure_proportional_character(buf->address(i), (int)prefixW,
+                                                      i+styleBufOffset);
           }
-          foundBreak = true;
-        } else if (lastCjk >= 0) {
-          b = lastCjk;               // break BEFORE b
-          newLineStart = b;
-          colNum = 0;
-          width = 0;
-          int iMax = buf->next_char(p);
-          for (i=b; i<iMax; i = buf->next_char(i)) {
-            width += measure_proportional_character(buf->address(i), (int)width,
-                                                    i+styleBufOffset);
-            colNum++;
+
+          bool oversized = false;
+          double tokenW = 0;
+          unsigned int prev2 = 0;
+          for (int q=newStart; q<buf->length(); q=buf->next_char(q)) {
+            unsigned int cc = buf->char_at(q);
+            if (cc == '\n') break;
+            if (q > newStart && (cc == ' ' || cc == '\t' ||
+                                 pecia_break_between(prev2, cc))) break;
+            tokenW += measure_proportional_character(buf->address(q), (int)tokenW,
+                                                     q+styleBufOffset);
+            if (tokenW > wrapMarginPix) { oversized = true; break; }
+            prev2 = cc;
           }
-          foundBreak = true;
+
+          double remaining = wrapMarginPix - prefixW;
+          if (oversized && remaining > 0) {
+            int split = newStart;
+            double used = 0;
+            int lastWeak = -1;
+            double lastWeakUsed = 0;
+            for (int q=newStart; q<=p; q=buf->next_char(q)) {
+              double cw = measure_proportional_character(buf->address(q), (int)used,
+                                                         q+styleBufOffset);
+              if (used + cw > remaining) break;
+              used += cw;
+              split = buf->next_char(q);
+              if (pecia_weak_break_after(buf->char_at(q))) {
+                lastWeak = split;
+                lastWeakUsed = used;
+              }
+            }
+            if (lastWeak > newStart && lastWeakUsed >= remaining * 0.9) {
+              split = lastWeak;   // snap to a delimiter only when it barely loses space
+            }
+            if (split > p) split = newStart;   // measurement guard
+            if (split > newStart) {
+              b = split;
+              newLineStart = split;
+              colNum = 0;
+              width = 0;
+              for (i=newLineStart; i<=p; i=buf->next_char(i)) {
+                width += measure_proportional_character(buf->address(i), (int)width,
+                                                        i+styleBufOffset);
+                colNum++;
+              }
+              foundBreak = true;
+            }
+          }
+
+          if (!foundBreak) {   // normal break at the strong opportunity
+            b = breakPos;
+            newLineStart = newStart;
+            colNum = 0;
+            width = 0;
+            for (i=newLineStart; i<=p; i=buf->next_char(i)) {
+              width += measure_proportional_character(buf->address(i), (int)width,
+                                                      i+styleBufOffset);
+              colNum++;
+            }
+            foundBreak = true;
+          }
         }
         if (b < lineStart) b = lineStart;
       }
-      if (!foundBreak) { /* no whitespace, just break at margin */
+      if (!foundBreak) {
+        /* PECIA PATCH: no strong break in this line. Prefer a URL/path
+           delimiter before the margin (break AFTER it) over a raw char cut,
+           but only when it costs almost nothing in fill. The candidate was
+           collected by the strong-break scan above (char_at only, no width
+           measuring), so the pathological one-long-line case stays cheap. */
+        if (weakScanPos > lineStart) {
+          double weakW = 0;
+          for (i=lineStart; i<weakScanPos; i=buf->next_char(i)) {
+            weakW += measure_proportional_character(buf->address(i), (int)weakW,
+                                                    i+styleBufOffset);
+          }
+          if (weakW >= wrapMarginPix * 0.9) {
+            b = weakScanPos;
+            newLineStart = weakScanPos;
+            colNum = 0;
+            width = 0;
+            for (i=newLineStart; i<=p; i=buf->next_char(i)) {
+              width += measure_proportional_character(buf->address(i), (int)width,
+                                                      i+styleBufOffset);
+              colNum++;
+            }
+            foundBreak = true;
+          }
+        }
+      }
+      if (!foundBreak) { /* no break opportunity, just break at margin */
         /* PECIA PATCH: break BEFORE the overflowing character instead of
            after it, so an unbreakable run (long Latin word, path, URL)
            wraps char-by-char and never leaves its last glyph half-clipped
            by the right text edge. Keep the stock guard for the degenerate
-           case where a single character is wider than the whole area. */
-        newLineStart = (p > lineStart) ? p : buf->next_char(lineStart);
-        colNum++;
-        if (b >= buf->length()) { // STR #2730
-          width = 0;
-        } else {
-          const char *s = buf->address(b);
-          width = measure_proportional_character(s, 0, p+styleBufOffset);
+           case where a single character is wider than the whole area.
+           Back off when the break would start the next line with a closing
+           punctuation mark (simple kinsoku guard). */
+        int bp = p;
+        while (bp > lineStart &&
+               (pecia_cjk_no_break_before(buf->char_at(bp)) ||
+                pecia_cjk_no_break_after(buf->char_at(buf->prev_char(bp))))) {
+          bp = buf->prev_char(bp);
         }
+        if (bp > lineStart) {
+          newLineStart = bp;
+        } else {
+          // Degenerate: one character is wider than the whole area; keep it
+          // on this line and start the next one after it.
+          newLineStart = buf->next_char(lineStart);
+        }
+        b = newLineStart;
+        colNum = 0;
+        width = 0;
+        for (i=newLineStart; i<=p; i=buf->next_char(i)) {
+          width += measure_proportional_character(buf->address(i), (int)width,
+                                                  i+styleBufOffset);
+          colNum++;
+        }
+        foundBreak = true;
       }
+
       if (p >= maxPos) {
         *retPos = maxPos;
         *retLines = maxPos < newLineStart ? nLines : nLines + 1;
@@ -3943,10 +4077,10 @@ void Fl_Text_Display::wrapped_line_counter(Fl_Text_Buffer *buf, int startPos,
       }
       nLines++;
       if (nLines >= maxLines) {
-        *retPos = foundBreak ? buf->next_char(b) : max(p, buf->next_char(lineStart));
+        *retPos = newLineStart;
         *retLines = nLines;
         *retLineStart = lineStart;
-        *retLineEnd = foundBreak ? b : p;
+        *retLineEnd = skipBreakChar ? b : newLineStart;
         return;
       }
       lineStart = newLineStart;

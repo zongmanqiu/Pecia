@@ -27,7 +27,7 @@
 
 1. **全量构建**：双击 `build/full.bat`（或 `5_build_pecia.bat`）；
 2. **26 个 ctest 全绿**（构建链内置，红灯即中止）；
-3. **文档门禁**：`build/test_docs.exe` 输出 `33 checks, 0 failures`
+3. **文档门禁**：`build/test_docs.exe` 输出 `168 checks, 0 failures`
    （改过任何文档/API/目录后必跑）；
 4. **零 C 警告**（`/W4 /WX` 级别，构建日志无 `warning C`）；
 5. **压力测试**：按 `docs/STRESS_TEST_PLAN.md` 跑完 A–H 用例并填写记录表，

@@ -1,5 +1,21 @@
 cmake_minimum_required(VERSION 3.16)
-project(Pecia VERSION 1.1.0 LANGUAGES C CXX)
+
+# ── Header dependency scanning for Makefile generators ─────────────────────
+# Do NOT use cl.exe's /showIncludes here. On a non-English Windows the prefix
+# is localized, cl emits it as UTF-8 (the project compiles with /utf-8), but
+# CMake writes the NMake makefiles in the ANSI code page. The generated
+# `cmake_cl_compile_depends --filter-prefix` therefore never matches, every
+# .obj.d stays empty, and header edits silently leave stale objects behind
+# (a stale HoverMenuBar layout crashed Pecia with 0xC0000005 on 2026-10-24).
+#
+# CMAKE_DEPENDS_USE_COMPILER=FALSE restores CMake's own include scanner for
+# Makefile generators. It is encoding-independent and rebuilds only the TUs
+# that actually include a changed header. (Ninja keeps compiler deps.)
+if(CMAKE_GENERATOR MATCHES "Makefiles")
+    set(CMAKE_DEPENDS_USE_COMPILER FALSE)
+endif()
+
+project(Pecia VERSION 1.1.1 LANGUAGES C CXX)
 
 # ── Supported target is strictly Windows x64 (64-bit) only. ────────────────
 # The project is deliberately single-platform / single-arch: it uses Windows
@@ -34,13 +50,6 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/../build")
 # ("overriding /W4 with /W1") per file -- ~100 lines of pure noise per build.
 if(MSVC)
     add_compile_options(/utf-8 /permissive- /Zc:preprocessor /MD)
-    # CRITICAL: CMake localizes the /showIncludes output prefix to the
-    # system language (e.g. Chinese), but cl.exe always emits the English
-    # "Note: including file:". A mismatched prefix makes Ninja fail to
-    # parse any dependency info, so header changes never trigger rebuilds
-    # and stale .obj files corrupt the layout - causing crashes at
-    # runtime. Force the English prefix.
-    set(CMAKE_MSVC_DEPS_PREFIX "Note: including file:")
 endif()
 
 # FLTK is built out-of-tree under ../.thirdparty/fltk-1.4.5/build/.

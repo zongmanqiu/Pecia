@@ -229,8 +229,14 @@ MainWindow::MainWindow(int w, int h, const char *title)
     m_menu->textcolor(m_theme.colors().text1);
     m_menu->selection_color(m_theme.colors().highlight1);
     m_menu->check_color(m_theme.colors().highlight2);
-    if (auto *hb = dynamic_cast<HoverMenuBar *>(m_menu))
+    if (auto *hb = dynamic_cast<HoverMenuBar *>(m_menu)) {
         hb->setPressColor(m_theme.colors().highlight2);
+        // File > Recent Files is a dynamic FL_SUBMENU_POINTER array that only
+        // this process rebuilds on open/save. Refresh it from disk right
+        // before the File menu pops up so entries added by other Pecia
+        // windows (single-tab mode = one process per file) show up too.
+        hb->setBeforeFirstMenuPopup([this]() { refreshRecentMenu(); });
+    }
     m_menu->copy(g_menu, this);
     m_menu->textsize(m_cfg->getUiFontSize());
 
