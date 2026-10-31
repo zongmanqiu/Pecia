@@ -76,7 +76,16 @@ private:
     static std::string readLuaApiHelp();
     void sendTo(const std::string &pipe, const char *failKey);
     void setStatus(const char *);   // shows a status message in the chat pane
-    void appendTurn(const char *roleLabel, const std::string &text);
+    // ts 为空 = 用当前时间；恢复历史时传文件里存的时间戳。
+    void appendTurn(const char *roleLabel, const std::string &text,
+                    const std::string &ts = {});
+
+    // --- 历史落盘（照 Lua 控制台 script.last.txt 的模式）------------------
+    // exe 同级 ai_chat.txt，追加式日志：每条消息发送/收到时立即落盘，
+    // "清除"才清空——不点清除就不消失。格式与解析见 AIChat/AiChatLog.h。
+    static std::wstring chatLogPath();
+    void appendChatFile(const char *role, const std::string &text);
+    void loadChatLog();
 
     // Title bar text: the window title, plus a "(12s)" elapsed-time suffix
     // while waiting for the AI reply (secs < 0 = plain title, no suffix).
@@ -89,12 +98,17 @@ private:
     static void cursorBlinkCb(void *data);
     bool m_cursorVisible = true;
 
-    // Push-channel polling: the main process pushes text ("Send to AI").
-    static void pushPollCb(void *data);
-    void pollPushPipe();
-    void handlePushMessage(const std::string &text);
-    void *m_pushPipe = nullptr;     // push-pipe handle (nullptr = not connected)
-    std::string m_pushName;
+    // 文件轮询：日志文件是对话的**唯一状态源**。主窗口"发送到 AI"把选中
+    // 文本作为 user 记录直接追加进文件；这里每 0.15s 看一眼文件大小，变了
+    // 就重载显示；若尾部是一条尚未回复的 user 记录且当前空闲，就自动发起
+    // 请求（窗口关闭期间主窗口追加的推送，会在下次启动加载时以同样的规则
+    // 补发——不需要任何窗口间推送管道）。
+    static void logPollCb(void *data);
+    void pollChatLog();
+    // 以 m_history（= 文件缓存，最近 100 条）为上下文发起一次请求。
+    // doSend()（输入框路径）在追加完 user 记录后也走到这里。
+    void startRequest();
+    long long m_logSize = -1;   // 上次已知的日志文件字节数（-1 = 尚未统计）
 
     struct Result {
         AIChatWindow *owner;

@@ -2,6 +2,7 @@
 // Same custom title bar / theme as the main window (border(0) + TitleBar).
 #include "AIChatWindow.h"
 #include "AIChatSettingsDialog.h"
+#include "AiChatLog.h"
 
 #include <windows.h>   // push-pipe polling (CreateFileA/PeekNamedPipe)
 
@@ -169,20 +170,20 @@ AIChatWindow::AIChatWindow(Config *appCfg,
     finalizeShell();
     callback(cbClose, this);        // Alt+F4 / WM_CLOSE
 
+    // Restore the persisted conversation (ai_chat.txt): rebuilds
+    // m_history and replays the last turns into the chat pane, each with
+    // its original date-time from the log.
+    loadChatLog();
+
     // Start the cursor blink timer (same cadence as the main window).
     Fl::add_timeout(0.5, cursorBlinkCb, this);
 
-    // Push-channel poll timer: the main window can send text here (e.g.
-    // "Send to AI" from the editor's context menu). Derive the push pipe
-    // name from the lua pipe argument ("pecia-lua-" -> "pecia-ai-push-");
-    // when started without a pipe argument (manual launch) this stays
-    // empty and the poll is a no-op.
-    size_t pos = m_peciaPipe.find("pecia-lua-");
-    if (pos != std::string::npos) {
-        m_pushName = m_peciaPipe;
-        m_pushName.replace(pos, 10, "pecia-ai-push-");
-    }
-    Fl::add_timeout(0.15, pushPollCb, this);
+    // Log-file poll timer: the log file is the single source of truth for
+    // the conversation. The main window appends "Send to AI" selections as
+    // user turns; this timer notices the file growing, reloads the display
+    // and auto-sends a trailing unanswered user turn. No window-to-window
+    // push pipe is involved (see pollChatLog()).
+    Fl::add_timeout(0.15, logPollCb, this);
 }
 
 // Re-read I18n strings after the settings.ini watcher detects a language
@@ -300,7 +301,7 @@ void AIChatWindow::resize(int X, int Y, int W, int H) {
 
 AIChatWindow::~AIChatWindow() {
     Fl::remove_timeout(cursorBlinkCb, this);
-    Fl::remove_timeout(pushPollCb, this);   // cancel the pending push poll (dangling this otherwise)
+    Fl::remove_timeout(logPollCb, this);    // cancel the log poll (dangling this otherwise)
     Fl::remove_timeout(s_timerCb, this);    // cancel the elapsed-time timer (dangling this otherwise)
     if (s_active.load() == this) s_active.store(nullptr);
 }
@@ -384,77 +385,26 @@ void AIChatWindow::minimizeWindow() {
 // until it exists), then drain 4-byte-length-prefixed frames. A frame
 // is sent as an AI message immediately (auto-send) and the main window's
 // selection is cleared so a later reply insertion replaces nothing.
-void AIChatWindow::pushPollCb(void *data) {
+void AIChatWindow::logPollCb(void *data) {
     auto *self = static_cast<AIChatWindow *>(data);
-    if (self) self->pollPushPipe();
-    Fl::add_timeout(0.15, pushPollCb, data);
+    if (self) self->pollChatLog();
+    Fl::add_timeout(0.15, logPollCb, data);
 }
 
-void AIChatWindow::pollPushPipe() {
-    if (m_pushName.empty()) return;
-    if (m_pushPipe == nullptr) {
-        HANDLE h = CreateFileA(m_pushName.c_str(),
-                               GENERIC_READ | GENERIC_WRITE,
-                               0, nullptr, OPEN_EXISTING, 0, nullptr);
-        if (h == INVALID_HANDLE_VALUE) return;   // server not up yet
-        m_pushPipe = h;
-    }
-    DWORD avail = 0;
-    if (!PeekNamedPipe(static_cast<HANDLE>(m_pushPipe), nullptr, 0, nullptr, &avail, nullptr)) {
-        CloseHandle(static_cast<HANDLE>(m_pushPipe));   // disconnected: reconnect next poll
-        m_pushPipe = nullptr;
-        return;
-    }
-    if (avail < 4) return;
-    // Read the 4-byte LE length, looping over partial reads rather than
-    // treating a short single read as a disconnect.
-    unsigned char lenBytes[4];
-    {
-        size_t got = 0;
-        while (got < 4) {
-            DWORD n = 0;
-            if (!ReadFile(static_cast<HANDLE>(m_pushPipe), lenBytes + got, 4 - (DWORD)got,
-                          &n, nullptr) || n == 0) {
-                CloseHandle(static_cast<HANDLE>(m_pushPipe));   // peer gone
-                m_pushPipe = nullptr;
-                return;
-            }
-            got += n;
-        }
-    }
-    DWORD len = ((DWORD)lenBytes[0]) | ((DWORD)lenBytes[1] << 8) |
-                ((DWORD)lenBytes[2] << 16) | ((DWORD)lenBytes[3] << 24);
-    if (len == 0 || len > (16 << 20)) {
-        // Invalid frame length, and the 4-byte header is already consumed:
-        // the push stream is permanently desynchronized. Drop the connection
-        // and reconnect on the next poll - previously this just returned,
-        // which misaligned every later frame (garbage / dropped pushes).
-        CloseHandle(static_cast<HANDLE>(m_pushPipe));
-        m_pushPipe = nullptr;
-        return;
-    }
-    std::string msg(len, '\0');
-    char *p = &msg[0];
-    DWORD remaining = len;
-    while (remaining > 0) {
-        DWORD n = 0;
-        if (!ReadFile(static_cast<HANDLE>(m_pushPipe), p, remaining, &n, nullptr) || n == 0) break;
-        p += n;
-        remaining -= n;
-    }
-    if (remaining > 0) {
-        CloseHandle(static_cast<HANDLE>(m_pushPipe));
-        m_pushPipe = nullptr;
-        return;
-    }
-    handlePushMessage(msg);
-}
-
-void AIChatWindow::handlePushMessage(const std::string &text) {
-    if (text.empty() || !m_inputBuf) return;
-    m_inputBuf->text(text.c_str());
-    doSend();                       // auto-send; no-op when busy or unconfigured
-    pipeSend(m_peciaPipe, PIPE_TAG_CLRSEL, "");   // clear selection, keep text
+void AIChatWindow::pollChatLog() {
+    // 文件大小变了 = 有人追加了记录（主窗口的"发送到 AI"，或本窗口自己——
+    // 自己的追加已经在写入时更新过 m_logSize，不会走到这里）。重载与
+    // "尾部未回复 user 记录 → 自动发送"的检查都在 loadChatLog() 里
+    // （构造启动加载也走它：主窗口先追加、后拉起本窗口的场景里，启动读到
+    // 的大小就是终值，轮询永远看不到"变化"——检查必须挂在加载上而不是
+    // 变化上，否则窗口关闭期间的推送永远无人补发）。
+    WIN32_FILE_ATTRIBUTE_DATA fa;
+    if (!GetFileAttributesExW(ai_chat_log::defaultLogPath().c_str(),
+                              GetFileExInfoStandard, &fa))
+        return;   // 文件还不存在：没有历史，也没有待发记录
+    long long size = ((long long)fa.nFileSizeHigh << 32) | fa.nFileSizeLow;
+    if (m_logSize >= 0 && size == m_logSize) return;
+    loadChatLog();
 }
 
 void AIChatWindow::cursorBlinkCb(void *data) {
@@ -504,15 +454,22 @@ void AIChatWindow::setStatus(const char *text) {
     m_chatDisp->show_insert_position();
 }
 
-void AIChatWindow::appendTurn(const char *roleLabel, const std::string &text) {
+void AIChatWindow::appendTurn(const char *roleLabel, const std::string &text,
+                              const std::string &ts) {
     if (!m_chatBuf) return;
     // One-line header: "── hh:mm:ss role ──" (time + role merged,
-    // double-dash kept as the visual message boundary).
-    char ts[32];
-    SYSTEMTIME st;
-    GetLocalTime(&st);
-    snprintf(ts, sizeof(ts), "%02d:%02d:%02d", st.wHour, st.wMinute, st.wSecond);
-    std::string block = std::string("── ") + ts + " " + roleLabel +
+    // double-dash kept as the visual message boundary). Restored history
+    // entries carry their original date-time from the log file instead.
+    char tsbuf[48];
+    if (!ts.empty()) {
+        snprintf(tsbuf, sizeof(tsbuf), "%s", ts.c_str());
+    } else {
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        snprintf(tsbuf, sizeof(tsbuf), "%02d:%02d:%02d",
+                 st.wHour, st.wMinute, st.wSecond);
+    }
+    std::string block = std::string("── ") + tsbuf + " " + roleLabel +
                         " ──\n" + text + "\n\n";
     int pos = m_chatBuf->length();
     m_chatBuf->insert(pos, block.c_str(), (int)block.size());
@@ -645,6 +602,11 @@ void AIChatWindow::cbClear(Fl_Widget *, void *data) {
 
     self->m_history.clear();
     self->m_chatBuf->text("");
+    // 历史日志跟着清空：文件是唯一持久层，内存清了文件不清，
+    // 下次启动又全回来了（"不点清除就不消失"的反面——点了清除就消失）。
+    FILE *f = _wfopen(chatLogPath().c_str(), L"wb");
+    if (f) fclose(f);
+    self->m_logSize = 0;   // 记账归零，轮询不会把"刚清空"当成外部追加
 }
 void AIChatWindow::cbSettings(Fl_Widget *, void *data) {
     AIChatWindow *self = static_cast<AIChatWindow *>(data);
@@ -691,22 +653,11 @@ std::string AIChatWindow::readLuaApiHelp() {
 }
 
 void AIChatWindow::doSend() {
+    // 输入框路径：用户在窗口里手动发送。校验输入 → 把 user 记录追加进
+    // 日志文件（+内存缓存+对话窗格）→ startRequest() 完成实际请求。
+    // key/endpoint 的校验在 startRequest() 里做（两条路径共用）。
     if (m_busy) return;
-    char keyBuf[512], modelBuf[256], endpointBuf[512];
-    if (m_appCfg) {
-        m_appCfg->getAiKey(keyBuf, sizeof(keyBuf), "");
-        m_appCfg->getAiModel(modelBuf, sizeof(modelBuf), "glm-4-flash");
-        m_appCfg->getAiEndpoint(endpointBuf, sizeof(endpointBuf),
-            "https://open.bigmodel.cn/api/paas/v4/chat/completions");
-    } else {
-        keyBuf[0] = modelBuf[0] = endpointBuf[0] = 0;
-    }
-    const char *key = keyBuf;
-    const char *model = modelBuf;
-    const char *endpoint = endpointBuf;
     const char *prompt = m_inputBuf->text();
-    if (!key || !*key) { free((void *)prompt); setStatus(I18n::get("ai.keyhint")); return; }
-    if (!model || !*model || !endpoint || !*endpoint) { free((void *)prompt); setStatus(I18n::get("ai.error")); return; }
     if (!prompt || !*prompt) { free((void *)prompt); setStatus(I18n::get("ai.noprompt")); return; }
 
     std::string message = prompt;
@@ -733,7 +684,31 @@ void AIChatWindow::doSend() {
 
     m_history.push_back({"user", message});
     appendTurn(I18n::get("chat.you"), message);
+    appendChatFile("user", message);   // 发送即落盘：崩溃也不丢这条输入
     m_inputBuf->text("");
+
+    startRequest();
+}
+
+// 以 m_history（= 日志文件缓存）为上下文发起一次请求。两条路径汇合点：
+// 输入框手动发送（doSend 追加完 user 记录）、文件轮询发现主窗口追加的
+// 推送记录、回复落盘后发现仍有未回复的 user 记录（排队）。
+void AIChatWindow::startRequest() {
+    if (m_busy || m_history.empty()) return;
+    char keyBuf[512], modelBuf[256], endpointBuf[512];
+    if (m_appCfg) {
+        m_appCfg->getAiKey(keyBuf, sizeof(keyBuf), "");
+        m_appCfg->getAiModel(modelBuf, sizeof(modelBuf), "glm-4-flash");
+        m_appCfg->getAiEndpoint(endpointBuf, sizeof(endpointBuf),
+            "https://open.bigmodel.cn/api/paas/v4/chat/completions");
+    } else {
+        keyBuf[0] = modelBuf[0] = endpointBuf[0] = 0;
+    }
+    const char *key = keyBuf;
+    const char *model = modelBuf;
+    const char *endpoint = endpointBuf;
+    if (!key || !*key) { setStatus(I18n::get("ai.keyhint")); return; }
+    if (!model || !*model || !endpoint || !*endpoint) { setStatus(I18n::get("ai.error")); return; }
 
     std::vector<AiChatMessage> msgs;
     std::string sysPrompt = kSystemPrompt;
@@ -826,9 +801,21 @@ void AIChatWindow::s_handleResult(void *data) {
             self->m_lastReply = r->content;
             self->m_history.push_back({"assistant", r->content});
             self->appendTurn(I18n::get("chat.ai"), r->content);
+            self->appendChatFile("assistant", r->content);
             // No "Sent" status line - it would just pollute the chat pane.
         } else {
             self->setStatus(r->error.empty() ? I18n::get("ai.error") : r->error.c_str());
+        }
+        // 排队检查：请求进行中主窗口又追加了 user 记录（连续"发送到 AI"）
+        // → 回复落盘后还有未回答的 user 轮次，立即接着发。判据用 user/
+        // assistant 计数而不是看尾部（回复追加后尾部是 assistant，新推送
+        // 夹在中间）。只在本请求**成功**时排队：失败的请求（网络/Key 问题）
+        // 不自动重试，避免错误风暴；恢复手段是用户看到错误提示后手动重发。
+        if (r->ok) {
+            size_t users = 0, assistants = 0;
+            for (const auto &t : self->m_history)
+                (t.first == "user" ? users : assistants)++;
+            if (users > assistants) self->startRequest();
         }
     }
     delete r;
@@ -854,4 +841,73 @@ void AIChatWindow::s_timerCb(void *data) {
     // the button width stays constant for the whole request).
     self->showTitleElapsed((long long)(time(nullptr) - self->m_sendTime));
     Fl::repeat_timeout(1.0, s_timerCb, data);
+}
+
+// ---------------------------------------------------------------------------
+// 历史落盘（照 Lua 控制台 script.last.txt 的模式）：
+//   · 文件 = exe 同级 ai_chat.txt（宽字符路径，兼容中文安装目录）
+//   · 追加式日志：每条消息发送/收到时立即落盘，"清除"才清空——不点清除
+//     就不消失。不需要"窗口关闭时保存"：没有未落盘的窗口期。
+//   · 格式与容错解析见 AIChat/AiChatLog.h（有独立门禁 test_ai_chat_log）。
+// ---------------------------------------------------------------------------
+std::wstring AIChatWindow::chatLogPath() {
+    return ai_chat_log::defaultLogPath();   // 与主窗口共用（见 AiChatLog.h）
+}
+
+void AIChatWindow::appendChatFile(const char *role, const std::string &text) {
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    char ts[40];
+    snprintf(ts, sizeof(ts), "%04u-%02u-%02u %02u:%02u:%02u",
+             st.wYear, st.wMonth, st.wDay,
+             st.wHour, st.wMinute, st.wSecond);
+    std::string block = ai_chat_log::serializeTurn(role, ts, text);
+    FILE *f = _wfopen(chatLogPath().c_str(), L"ab");
+    if (!f) return;   // 磁盘只读等场景静默放弃：聊天功能本身不受影响
+    fwrite(block.data(), 1, block.size(), f);
+    fclose(f);
+    // 自己的追加不需要等轮询发现：直接记账，pollChatLog() 比较大小时
+    // 就不会把这条当成"外部写入"而多做一次全量重载。
+    m_logSize += (long long)block.size();
+}
+
+void AIChatWindow::loadChatLog() {
+    // 读全文件（宽路径打开，兼容中文安装目录；64MB sanity 同 loadScript）。
+    FILE *f = _wfopen(chatLogPath().c_str(), L"rb");
+    if (!f) { m_logSize = -1; return; }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (size <= 0 || size >= (64 << 20)) { fclose(f); m_logSize = size; return; }
+    std::string buf((size_t)size, '\0');
+    bool ok = fread(&buf[0], 1, (size_t)size, f) == (size_t)size;
+    fclose(f);
+    if (!ok) return;
+
+    // 文件是唯一状态源：重载 = 清空内存缓存与对话窗格后整体回放。轮询发现
+    // 外部追加（主窗口"发送到 AI"）时走同一条路。
+    m_history.clear();
+    if (m_chatBuf) m_chatBuf->text("");
+
+    std::vector<ai_chat_log::Entry> entries = ai_chat_log::parseChatLog(buf);
+    // UI/内存只回放最近 100 条：更早的仍留在文件里（"不点清除就不消失"），
+    // 但对话窗格与发送上下文（最近 50 轮）不需要无限增长。
+    const size_t total = entries.size();
+    const size_t skip = total > 100 ? total - 100 : 0;
+    for (size_t i = skip; i < total; ++i) {
+        const ai_chat_log::Entry &e = entries[i];
+        m_history.push_back({e.role, e.content});
+        appendTurn(e.role == "user" ? I18n::get("chat.you") : I18n::get("chat.ai"),
+                   e.content, e.time);
+    }
+    m_logSize = size;   // 记账到当前读取位置，pollChatLog 以此判断外部追加
+
+    // ★ 尾部是一条尚未回复的 user 记录（主窗口追加的推送；或上次窗口关闭
+    //   时请求被打断）→ 自动发起请求。检查必须在这里而不是 pollChatLog：
+    //   "主窗口先追加、后拉起窗口"的启动场景里，启动读到的就是终值大小，
+    //   轮询永远看不到变化。忙时跳过（回复落盘后 s_handleResult 会按
+    //   user/assistant 计数再次检查，形成自然的排队）；文件加载本身不改
+    //   文件大小，这里不会自己触发自己造成循环。
+    if (!m_history.empty() && m_history.back().first == "user" && !m_busy)
+        startRequest();
 }

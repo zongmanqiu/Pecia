@@ -242,6 +242,12 @@ int MainWindow::addTab(Document *doc, const char * /*label*/) {
     // Set the correct line number width based on the buffer's line count
     updateLinenumberWidth();
 
+    // 新文档出现（新建/打开/拖放都会走到这里）：若此前处于"仅预览"而新标签
+    // 是空的，normalizePreviewState() 会整个关闭预览回纯编辑——否则用户眼前
+    // 还是满屏预览，编辑区被藏起来，看不出"文档已经换人"（2026-10-31 用户
+    // 实测 File > New 后界面不动）。
+    normalizePreviewState();
+
     return (int)m_tabsList.size() - 1;
 }
 

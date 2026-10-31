@@ -56,6 +56,11 @@ void MainWindow::statusUpdateCb(void *data) {
     auto *self = static_cast<MainWindow *>(data);
     if (!self) return;
     self->updateStatusBar();
+    // 预览状态归一化（兜"分屏下把内容删空"的输入路径）：空文档 + 仅预览 →
+    // 退回分屏；菜单"仅预览"的置灰跟着"当前文档是否为空"走——菜单项亮着但
+    // 点下去被拒绝时，界面上没有任何反馈，看起来就是坏了。每次按键后跑一次，
+    // 判空是 O(1) 短路（长度 0 / 超长不扫内容，见 hasPreviewContent）。
+    self->normalizePreviewState();
     // If line highlight is on, update it when cursor moves to a new line.
     // updateLineHighlight() is a no-op if the line hasn't changed.
     if (self->m_cfg->getHighlightCurrentLine()) {

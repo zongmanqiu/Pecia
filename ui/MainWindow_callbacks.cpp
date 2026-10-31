@@ -8,7 +8,7 @@
 #include "core/I18n.h"
 #include "core/Config.h"
 #include "core/EncodingCore.h"   // wideToUtf8（时间/日期插入用）
-#include "LuaTool/AiPushServer.h"
+#include "AIChat/AiChatLog.h"     // 文件即状态的对话日志（与 AI 窗口共用）
 #include "LuaTool/LuaPipeServer.h"
 #include "PipeProtocol.h"
 
@@ -240,7 +240,11 @@ void MainWindow::cbCopy(Fl_Widget * /*w*/, void *data) {
 void MainWindow::cbPaste(Fl_Widget * /*w*/, void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
     if (!self || !self->activeTab() || self->activeTab()->doc->isReadOnly()) return;
-    Fl_Text_Editor::kf_paste(0, self->activeTab()->editor);
+    Editor *ed = self->activeTab()->editor;
+    // 剪贴板里没有文本、只有图片/文件时，素材落盘 + 插入链接（选项默认关，
+    // 由 Editor::pasteMedia 自己判断）。有文本时它立刻返回 false，走默认粘贴。
+    if (ed && ed->pasteMedia()) return;
+    Fl_Text_Editor::kf_paste(0, ed);
 }
 
 void MainWindow::cbDelete(Fl_Widget * /*w*/, void *data) {
@@ -382,7 +386,7 @@ void MainWindow::cbSearchSelection(Fl_Widget * /*w*/, void *data) {
 
 // 选中内容直接发给 AI：自动确保 AI 窗口运行，通过推送管道把选中文本
 // 原样送达，AI 窗口收到后自动发送（并解除主窗口选中，内容不删除）。
-// 与“搜索选中内容”不同：不加工内容、不选搜索引擎——选中即消息。
+// 与"搜索选中内容"不同：不加工内容、不选搜索引擎——选中即消息。
 void MainWindow::cbSendToAi(Fl_Widget * /*w*/, void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
     if (!self) return;
@@ -390,33 +394,59 @@ void MainWindow::cbSendToAi(Fl_Widget * /*w*/, void *data) {
     if (!tab || !tab->doc) return;
     std::string sel = selected_trimmed(tab->doc->buffer());
     if (sel.empty()) return;
-    self->sendToAiChat(sel, nullptr);
+    if (self->sendToAiChat(sel, nullptr))
+        self->clearSelection(nullptr);   // 消息已入列：选区使命完成，清掉
 }
 
-// 把文本推送给 AI 窗口（自动确保运行）；AI 窗口收到后作为用户消息
-// 自动发送。菜单“发送给 AI”与 Lua 控制台的 SEND 管道请求共用。
+// 把文本交给 AI 窗口。**文件即状态**：直接把文本作为一条 user 记录追加进
+// 共享的对话日志（ai_chat.txt，与 AI 窗口同一个文件），然后确保 AI
+// 窗口在运行——窗口开着就由它的 0.15s 文件轮询发现并自动发送；窗口关着
+// 则重启它，启动加载时看到尾部未回复的 user 记录同样自动补发。
+// 不需要任何窗口间推送管道（原 AiPushServer 已删除）。
 bool MainWindow::sendToAiChat(const std::string &text, std::string *errMsg) {
     if (text.empty()) {
         if (errMsg) *errMsg = "empty text";
         return false;
     }
     opLog("sendtoai: %zu bytes", text.size());
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    char ts[40];
+    snprintf(ts, sizeof(ts), "%04u-%02u-%02u %02u:%02u:%02u",
+             st.wYear, st.wMonth, st.wDay,
+             st.wHour, st.wMinute, st.wSecond);
+    std::string block = ai_chat_log::serializeTurn("user", ts, text);
+    FILE *f = _wfopen(ai_chat_log::defaultLogPath().c_str(), L"ab");
+    if (!f) {
+        if (errMsg) *errMsg = "cannot open chat log";
+        opLog("sendtoai: log append FAILED");
+        return false;
+    }
+    fwrite(block.data(), 1, block.size(), f);
+    fclose(f);
+    opLog("sendtoai: appended to chat log");
+
     // AI 窗口通过 lua 管道连回主进程：先确保 server 存在。
     if (!m_luaPipe) m_luaPipe = new LuaPipeServer(this);
     // AI 窗口必须正在运行（未运行则启动，带管道名参数才能连回主进程）。
     ensureAiChatRunning();
-    // 推送（无连接时排队，AI 窗口连上后送达）。
-    if (!m_aiPush) m_aiPush = new AiPushServer();
-    m_aiPush->push(text);
-    opLog("sendtoai: pushed");
     return true;
 }
 
 bool MainWindow::ensureAiChatRunning() {
-    HANDLE hMutex = CreateMutexA(nullptr, FALSE, MUTEX_AI_CHAT);
-    bool already = (GetLastError() == ERROR_ALREADY_EXISTS);
-    CloseHandle(hMutex);
-    if (already) return true;
+    // ★ 不能只查一次互斥量：AI 窗口关闭 = 进程退出，但内核回收互斥量晚于
+    //   窗口销毁。用户"刚关窗就发送"时，单次查询误判"已在运行"，既不重启
+    //   也不激活，推送进队列后无人接收 —— 界面上就是"点了没反应"
+    //   （2026-10-31 用户实测）。与 launchTool 同一套轮询：激活得到窗口 =
+    //   真在运行；激活不到 = 退出路上，等互斥量释放后走正常启动。
+    for (int i = 0; i < 20; ++i) {
+        HANDLE hMutex = CreateMutexA(nullptr, FALSE, MUTEX_AI_CHAT);
+        bool already = (GetLastError() == ERROR_ALREADY_EXISTS);
+        CloseHandle(hMutex);
+        if (!already) break;
+        if (activateByTitle(I18n::get("chat.title"))) return true;
+        Sleep(100);
+    }
 
     // 启动 PeciaAIChat.exe（与当前 exe 同目录），带 lua 管道名与语言参数。
     // 宽字符路径：中文安装目录下 GetModuleFileNameA/CreateProcessA 失效。

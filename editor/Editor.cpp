@@ -7,7 +7,11 @@
 #include "core/Config.h"
 #include "core/I18n.h"
 #include "core/OpLog.h"
+#include "ImageAttach.h"      // 粘贴图片/文件 → 落盘 + Markdown 链接
 #include "ui/MainWindow.h"   // 右键菜单回调（Edit 子菜单项）
+
+#include <filesystem>
+#include <ctime>
 
 #include <FL/fl_draw.H>
 #include <FL/Fl_Window.H>
@@ -1064,6 +1068,11 @@ int Editor::handle(int event) {
     if (event == FL_UNFOCUS) ImeInPlace::detach(this);
 #endif
 
+    // 菜单 Edit > Paste 走 Fl_Text_Editor::kf_paste → Fl::paste → 这里收到
+    // FL_PASTE。剪贴板里只有位图/文件时 FLTK 什么都不会贴，由 pasteMedia()
+    // 接管；有文本时它在第一行就返回 false，照常走下面的默认粘贴。
+    if (event == FL_PASTE && pasteMedia()) return 1;
+
     // Hover over a URL: switch its style to the hover colour. While
     // Ctrl is held over a link, also show a hand cursor so the user
     // knows the click logic changed (Ctrl+Click opens the link).
@@ -1273,6 +1282,14 @@ int Editor::handle(int event) {
                 return 1;
             }
         }
+
+        // Ctrl+V：剪贴板里没有文本、只有位图或文件 → 素材落盘 + 插链接
+        // （Options > Editing，默认关）。必须抢在 FLTK 的 kf_paste 之前判断：
+        // 剪贴板只有位图时 FLTK 根本不会派发 FL_PASTE，等事件到了再处理是
+        // 永远等不到的。
+        if (key == 'v' && (state & FL_CTRL) && !(state & FL_ALT)) {
+            if (pasteMedia()) return 1;
+        }
     }
 
     int oldPos = insert_position();
@@ -1284,6 +1301,196 @@ int Editor::handle(int event) {
     // the URL hover state so no stale hover colour remains.
     if (event == FL_MOUSEWHEEL) checkUrlHover();
     return ret;
+}
+
+// ---- 粘贴素材（图片/文件）的落盘辅助 ----------------------------------
+
+// 超过这个体积的素材不复制进文档目录：把几百 MB 的视频/压缩包悄悄搬一份，
+// 用户第二天只会发现盘满了。超限时只插一条指向原位置的链接。
+static const unsigned long long kMaxCopyBytes = 20ull << 20;   // 20 MB
+
+// 目录里已有同名文件时的去重：同大小视为同一份素材（同一张图粘两次），
+// 直接复用；否则依次试 name-1 / name-2 …。返回空串 = 100 个都撞上了。
+static std::string uniqueCopyName(const std::string &dir, const std::string &base,
+                                  const std::string &ext, const std::wstring &src) {
+    const std::wstring wdir = image_attach::widen(dir);
+    for (int seq = 0; seq < 100; ++seq) {
+        const std::string cand =
+            seq == 0 ? base + ext : base + "-" + std::to_string(seq) + ext;
+        const std::wstring wp = wdir + L"\\" + image_attach::widen(cand);
+        if (GetFileAttributesW(wp.c_str()) == INVALID_FILE_ATTRIBUTES) return cand;
+
+        HANDLE a = CreateFileW(wp.c_str(), GENERIC_READ,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        HANDLE b = CreateFileW(src.c_str(), GENERIC_READ,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        bool sameSize = false;
+        if (a != INVALID_HANDLE_VALUE && b != INVALID_HANDLE_VALUE) {
+            LARGE_INTEGER sa{}, sb{};
+            if (GetFileSizeEx(a, &sa) && GetFileSizeEx(b, &sb))
+                sameSize = sa.QuadPart == sb.QuadPart;
+        }
+        if (a != INVALID_HANDLE_VALUE) CloseHandle(a);
+        if (b != INVALID_HANDLE_VALUE) CloseHandle(b);
+        if (sameSize) return cand;
+    }
+    return std::string();
+}
+
+// 该不该只"引用"而不复制：目录、超过 20MB、或本来就在素材目录里。
+static bool shouldLinkOnly(const std::wstring &src, const std::string &targetDir) {
+    WIN32_FILE_ATTRIBUTE_DATA fa;
+    if (!GetFileAttributesExW(src.c_str(), GetFileExInfoStandard, &fa)) return true;
+    if (fa.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) return true;
+    const unsigned long long size =
+        (static_cast<unsigned long long>(fa.nFileSizeHigh) << 32) | fa.nFileSizeLow;
+    if (size > kMaxCopyBytes) return true;
+    const std::wstring dir = image_attach::widen(targetDir) + L"\\";
+    if (src.size() <= dir.size()) return false;
+    return _wcsnicmp(src.c_str(), dir.c_str(), dir.size()) == 0;
+}
+
+// ---------------------------------------------------------------------------
+// 粘贴图片/文件 → 素材落盘 + Markdown 链接
+//
+// 只有「选项打开 + 剪贴板里没有文本 + 文档已保存 + 非只读」四条同时成立才动手，
+// 任何一条不成立都返回 false，让 FLTK 的默认文本粘贴照常跑。
+//
+// 落盘位置：<文档目录>\<素材目录>\，素材目录默认取文档名去后缀
+// （bba.txt → bba\），同一目录下多个文档各有各的图，拷走一篇文档连同它的
+// 目录就是一个完整单元。链接一律相对文档目录，因为应用内预览以 doc_dir 为
+// 基准解析、浏览器预览与 HTML 导出以 build_dir 为基准拷贝 —— 绝对路径在
+// 浏览器里必断（见 mdview/preprocess.cpp 第 7 步）。
+// ---------------------------------------------------------------------------
+bool Editor::pasteMedia() {
+    if (!m_settings || !m_settings->getPasteMediaPath()) return false;
+    if (!m_doc || m_doc->isReadOnly()) return false;
+    if (image_attach::clipboardHasText()) return false;   // 文本优先，绝不抢
+
+    // 剪贴板里的两种形态：文件（资源管理器复制）优先，没有文件才取位图
+    // （截图工具 / 浏览器右键复制图片，只有像素、没有文件）。
+    std::vector<std::wstring> files = image_attach::clipboardReadFiles();
+    std::vector<unsigned char> bgra;
+    int imgW = 0, imgH = 0;
+    const bool hasBitmap =
+        files.empty() && image_attach::clipboardReadImage(bgra, imgW, imgH);
+    if (files.empty() && !hasBitmap) return false;
+
+    const char *docPathRaw = m_doc->filePath();
+    if (!docPathRaw || !*docPathRaw) {
+        // 未保存的新文档没有"旁边"可放。不偷偷写 exe 目录：那会把同一篇文档
+        // 的图分散到两处，用户再也找不齐。
+        opLog("paste-media: doc has no path, skipped");
+        return false;
+    }
+    const std::string docPath(docPathRaw);
+    std::string docDir = docPath;
+    const size_t sep = docDir.find_last_of("\\/");
+    if (sep == std::string::npos) return false;
+    docDir.resize(sep);
+
+    // 素材目录名 = 文档名去后缀（bba.txt → bba）。不提供"自定义目录名"选项：
+    // 一旦让多篇文档共用一个目录，就退回到"图混在一起、拷走一篇带不走图"的
+    // 老问题上了，那个选项只会把人往坑里带（2026-10-31 定）。
+    const std::string dirName = image_attach::defaultDirNameForDoc(docPath);
+    const std::string targetDir = docDir + "\\" + dirName;
+    std::error_code ec;
+    std::filesystem::create_directories(
+        std::filesystem::path(image_attach::widen(targetDir)), ec);
+    if (ec) {
+        opLog("paste-media: mkdir failed: %s", targetDir.c_str());
+        return false;
+    }
+
+    const std::string prefix = dirName + "/";   // 链接里的相对目录（'/' 分隔）
+    std::string insertText;
+    auto appendLine = [&insertText](const std::string &line) {
+        if (!insertText.empty()) insertText += "\n";
+        insertText += line;
+    };
+
+    if (hasBitmap) {
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        std::string name;
+        for (int seq = 0; seq < 100; ++seq) {
+            const std::string cand = image_attach::stampName(
+                st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
+                seq, ".png");
+            const std::wstring wp = image_attach::widen(targetDir + "\\" + cand);
+            if (GetFileAttributesW(wp.c_str()) == INVALID_FILE_ATTRIBUTES) {
+                name = cand;
+                break;
+            }
+        }
+        if (name.empty()) return false;
+        const std::wstring outPath = image_attach::widen(targetDir + "\\" + name);
+        if (!image_attach::writePngBgra(outPath, imgW, imgH, bgra.data())) {
+            opLog("paste-media: png write failed (%dx%d)", imgW, imgH);
+            return false;
+        }
+        appendLine(image_attach::imageLink(prefix + name));
+        opLog("paste-media: bitmap %dx%d -> %s", imgW, imgH, name.c_str());
+    } else {
+        for (const std::wstring &srcW : files) {
+            const std::string src = image_attach::narrow(srcW);
+            const size_t slash = src.find_last_of("\\/");
+            const std::string srcName =
+                slash == std::string::npos ? src : src.substr(slash + 1);
+            std::string stem = srcName, ext;
+            const size_t dot = stem.find_last_of('.');
+            if (dot != std::string::npos && dot > 0) {
+                ext = stem.substr(dot);
+                stem = stem.substr(0, dot);
+            }
+            // 文件名里的空格/括号会破坏 Markdown 链接；复制件的名字顺手消毒，
+            // 原文件不动。
+            const std::string base = image_attach::sanitizeDirName(stem);
+
+            if (shouldLinkOnly(srcW, targetDir)) {
+                appendLine(image_attach::isImageExt(ext)
+                               ? image_attach::imageLink(src)
+                               : image_attach::fileLink(src, srcName));
+                opLog("paste-media: link only (big/dir/inside): %s", src.c_str());
+                continue;
+            }
+
+            const std::string dstName = uniqueCopyName(targetDir, base, ext, srcW);
+            if (dstName.empty()) continue;
+            const std::wstring dst = image_attach::widen(targetDir + "\\" + dstName);
+            if (!CopyFileW(srcW.c_str(), dst.c_str(), FALSE)) {
+                opLog("paste-media: copy failed: %s", src.c_str());
+                continue;
+            }
+            const std::string rel = prefix + dstName;
+            appendLine(image_attach::isImageExt(ext) ? image_attach::imageLink(rel)
+                                                     : image_attach::fileLink(rel, dstName));
+            opLog("paste-media: copied %s -> %s", srcName.c_str(), dstName.c_str());
+        }
+    }
+
+    if (insertText.empty()) return false;
+
+    Fl_Text_Buffer *buf = buffer();
+    if (!buf) return false;
+    int selStart = 0, selEnd = 0;
+    if (buf->selection_position(&selStart, &selEnd)) {
+        buf->replace(selStart, selEnd, insertText.c_str());
+        insert_position(selStart + static_cast<int>(insertText.size()));
+    } else {
+        const int pos = insert_position();
+        buf->insert(pos, insertText.c_str());
+        insert_position(pos + static_cast<int>(insertText.size()));
+    }
+    show_insert_position();
+    set_changed();
+    if (when() & FL_WHEN_CHANGED) do_callback(FL_REASON_CHANGED);
+    notifyCursorMoved();
+    damage(FL_DAMAGE_ALL);
+    redraw();
+    return true;
 }
 
 // ---- Draw overrides ------------------------------------------------------

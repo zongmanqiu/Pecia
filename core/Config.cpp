@@ -126,6 +126,7 @@ static const char *configKeyDesc(const char *key) {
     if (strcmp(key,"btn_height")==0) return "按钮高度（像素）";
     if (strcmp(key,"cleanup_temp_old")==0) return "退出时清理 7 天前的临时文件 (1=是 0=否)";
     if (strcmp(key,"detect_urls")==0) return "是否自动识别并高亮网址 (1=是 0=否)";
+    if (strcmp(key,"paste_media_path")==0) return "粘贴图片/文件时插入路径并复制素材到文档目录 (1=是 0=否)";
     if (strcmp(key,"dialog_pad")==0) return "对话框内容边距（像素）";
     if (strcmp(key,"editor_font")==0) return "编辑器字体名";
     if (strcmp(key,"editor_zoom_size")==0) return "编辑区缩放字号（0=未缩放，跟随界面字号）";
@@ -425,6 +426,7 @@ void Config::initFromDisk() {
     needSave |= validateKey("expand_tabs_on_save", 0,      0,  1);
     needSave |= validateKey("auto_save_interval", 30,    0,  300);
     needSave |= validateKey("detect_urls",   1,          0,  1);
+    needSave |= validateKey("paste_media_path", 0,       0,  1);
     needSave |= validateKey("fixed_startup_doc", 0,      0,  1);
 
     // AI chat configuration (endpoint URL / model / API key) - ensure the
@@ -712,12 +714,21 @@ void Config::setMultiTab(bool on) {
     writeInt("multi_tab", on ? 1 : 0);
 }
 
-bool Config::getAutoPreviewMd() const {
-    return readInt("auto_preview_md", 0) != 0;
+int Config::getAutoPreviewMode() const {
+    // 新键优先（0/1/2）。旧键 auto_preview_md 是布尔，只读兜底：老用户的
+    // "开" 必须解释成 1（分屏预览），不能退回"无操作"。
+    if (hasKey("auto_preview_md_mode")) {
+        const int m = readInt("auto_preview_md_mode", 0);
+        return (m == 1 || m == 2) ? m : 0;
+    }
+    return readInt("auto_preview_md", 0) != 0 ? AutoPreviewSplit : AutoPreviewNone;
 }
 
-void Config::setAutoPreviewMd(bool on) {
-    writeInt("auto_preview_md", on ? 1 : 0);
+void Config::setAutoPreviewMode(int mode) {
+    if (mode != AutoPreviewSplit && mode != AutoPreviewOnly) mode = AutoPreviewNone;
+    writeInt("auto_preview_md_mode", mode);
+    // 同步旧布尔键：降级回 1.1.x 时至少还知道"要不要预览"
+    writeInt("auto_preview_md", mode != AutoPreviewNone ? 1 : 0);
 }
 
 bool Config::getSidePanel() const {
@@ -945,6 +956,15 @@ void Config::setPreviewScrollSync(bool on) {
 
 void Config::setDetectUrls(bool on) {
     writeInt("detect_urls", on ? 1 : 0);
+}
+
+// 粘贴图片/文件时插入路径：默认关（会真实建目录、写文件，见 Config.h）
+bool Config::getPasteMediaPath() const {
+    return readInt("paste_media_path", 0) != 0;   // default off
+}
+
+void Config::setPasteMediaPath(bool on) {
+    writeInt("paste_media_path", on ? 1 : 0);
 }
 
 void Config::getEditorFont(char *buf, int len, const char *fallback) const {

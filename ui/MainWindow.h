@@ -63,6 +63,10 @@ struct Fl_Menu_Item;
 // Main menu bar definition (defined in ui/MenuTable.cpp).
 extern Fl_Menu_Item g_menu[];
 
+// ui/MainWindow_lua.cpp —— 按标题找到工具窗口（PeciaLua/PeciaAIChat）并
+// 前置激活；Unicode 查找（中文标题）。找不到返回 false。
+bool activateByTitle(const char *title);
+
 // MainWindow
 //   Multi-tab text editor window. Each tab holds its own Document +
 //   Fl_Text_Editor. The find bar, menu bar and status bar are shared.
@@ -211,6 +215,10 @@ public:
 
     // View > Markdown Preview - toggle the two-pane preview layout.
     static void cbTogglePreview(Fl_Widget *w, void *data);
+    // Markdown > Preview Only - swap the two panes for a full-width
+    // preview (editor hidden). Turning the preview off and back on keeps
+    // whichever of the two layouts was last used.
+    static void cbTogglePreviewOnly(Fl_Widget *w, void *data);
     // Markdown menu: manual refresh / open HTML in browser / auto-refresh interval.
     static void cbRefreshPreview(Fl_Widget *w, void *data);
     static void cbOpenPreviewInBrowser(Fl_Widget *w, void *data);
@@ -234,6 +242,16 @@ public:
     // Active tab's full UTF-8 text (Markdown preview source); empty when
     // there is no active tab.
     std::string activeDocumentText() const;
+
+    // 当前标签有没有"可预览的内容"（去掉 BOM 后不全是空白）。
+    // 判据见 ui/PreviewMode.h；空文档不允许"仅预览"（否则编辑区被隐藏、
+    // 预览面板一片空白，用户无处输入也点不动，会以为窗口卡死）。
+    bool hasPreviewContent() const;
+
+    // 预览状态归一化（仅一条检查）：仅预览 + 空文档 → 整个关闭预览，回纯
+    // 编辑；菜单"仅预览"置灰状态同步。只在 addTab() / refreshPreview() /
+    // statusUpdateCb() 三个入口调用。
+    void normalizePreviewState();
 
     // Clear the active document's selection (used by the AI chat tool
     // after it consumed the selection for Append Selection - otherwise
@@ -351,7 +369,10 @@ private:
     std::vector<int>         m_outlineLines; // 源码侧标题行号（1-based），与 m_sidePanel 当前的大纲条目同序；
                                              // 预览那条路填不出来（保持空），点击时按需重提（见 jumpToHeadingLine）
     bool            m_previewActive = false;  // 预览模式是否开启
-    float           m_previewRatio = 0.5f;    // 左栏（编辑区）占比
+    // 纯预览：预览吃满整个内容区，编辑区（含标签页）与分隔条隐藏。与
+    // m_previewActive 正交——后者是"有没有预览"，这是"预览怎么排"。
+    bool            m_previewOnly = false;
+    float           m_previewRatio = 0.5f;    // 左栏（编辑区）占比（仅分屏时有效）
     bool            m_autoRefreshArmed = false; // 自动刷新循环定时器已挂起
     bool            m_previewDestroyPending = false; // 关闭预览的延迟销毁已排期
     // "内容变没变"判据（O(1)，见 mdview/preview_gate.h 的说明）：
@@ -389,9 +410,10 @@ private:
     void            stopScrollSync();
     static void     autoRefreshLoopCb(void *data); // 固定间隔循环：无条件按档位刷新
     static void     destroyPreviewCb(void *data);  // 关闭预览的延迟销毁（0.1s 后）
-    // 打开 .md/.markdown 后延后一帧开启预览（Options > auto preview md）。
+    // 打开 .md/.markdown 后延后一帧按配置开预览（Options > 打开 .md 文件时）。
     // 延后是为了不让同步渲染拖住"打开文件"这一步本身。
     static void     autoPreviewCb(void *data);
+    int             m_pendingAutoPreviewMode = 0;  // 待生效的 Config::AutoPreviewMode
     void            startAutoRefreshLoop();   // 按 m_autoRefreshMs 启动循环
     void            stopAutoRefreshLoop();
     // 立即用当前标签内容刷新。force=true 时无视"内容未变"判据重渲染
@@ -399,9 +421,16 @@ private:
     // 重跑一次，否则用户点了没反应。
     void            refreshPreview(bool force = false);
     void            togglePreview();            // 开/关预览模式
+    // 设定"是否仅预览"的目标状态（幂等，不翻面）——菜单是 toggle，
+    // "打开 .md 时"这句配置要的是"设成某个状态"。
+    void            setPreviewOnly(bool on);
+    void            togglePreviewOnly();        // 分屏 ⇄ 纯预览（预览全宽）
     // 两栏排布。contentH = 内容区全高（含 find/go-to 栏占位），tabsH = 扣掉
     // 栏位后的可视高度；侧栏/分隔条用 contentH（不被栏位挤短）。
     void            layoutPreviewPanes(int contentTop, int contentH, int tabsH);
+    // 同步 Markdown > Preview / Preview Only 两个勾选状态（语言切换后菜单项
+    // 标签被重写，所以两处查找：原始英文路径 + 翻译后路径）。
+    void            syncPreviewMenu();
     void            rebuildPreviewToc(const std::vector<PreviewHeading> &headings); // 重建目录数据
     void            showOutlineInSidePanel();   // 打开左侧面板并切到大纲页
     void            setAutoRefresh(int ms);     // 设置自动刷新间隔并持久化
@@ -422,8 +451,7 @@ public:
     // SEPARATE process (PeciaLua.exe) connected over a named pipe, so the
     // main window only hosts the Lua engine and the pipe server.
     class LuaEngine *m_luaEngine = nullptr;
-    class LuaPipeServer *m_luaPipe = nullptr;
-    class AiPushServer *m_aiPush = nullptr;   // push channel to the AI chat window
+    class LuaPipeServer *m_luaPipe = nullptr; // lua pipe: Lua 控制台/AI 窗口连回主进程
     void showLuaDialog();
     // Tools > AI Chat... - launches/activates the standalone AIChat tool.
     void showAIChat();

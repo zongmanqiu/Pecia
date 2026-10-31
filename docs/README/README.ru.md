@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ Скачать последнюю версию (1.1.1) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.1/Pecia_x64_1.1.1.zip)** ｜ **[⬇️ Скачать последнюю версию (1.1.1) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.1/Pecia_x64_1.1.1.zip)** ｜ [Репозиторий Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Зеркало GitHub](https://github.com/zongmanqiu/Pecia) | [Демо на Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ Скачать последнюю версию (1.1.2) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ **[⬇️ Скачать последнюю версию (1.1.2) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ [Репозиторий Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Зеркало GitHub](https://github.com/zongmanqiu/Pecia) | [Демо на Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 Легковесный текстовый редактор для Windows на базе C++17 + FLTK. Много вкладок, мгновенное открытие больших файлов, поддержка множества кодировок, расширение скриптами на Lua. Новое: боковая панель (дерево файлов/структура), диалог выбора шрифта, тени окон; предпросмотр Markdown рендерит очень большие документы по блокам.
 

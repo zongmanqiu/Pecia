@@ -380,26 +380,75 @@ static const int g_tabWidthCount = sizeof(g_tabWidths) / sizeof(g_tabWidths[0]);
 SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *theme,
                        int uiFontSize, int pad)
     : DialogBase(w, h + TITLE_H, title, theme, uiFontSize, ModalDialog), m_theme(theme), m_uiFontSize(uiFontSize), m_pad(pad) {
+    // ---- 宽度自适应（必须在 initShell 之前定下来）------------------------
+    // 两列各按当前语言实测最长的文案定宽，而不是写死数字：
+    //   · 标签列原来固定 110px，翻译后的法/德/意/俄标签（"À l'ouverture des
+    //     fichiers .md"）比它宽一倍多，直接被裁掉；
+    //   · 控件列原来固定 440px，是按法语复选框（"Nettoyer les fichiers
+    //     temporaires de plus de 7 jours"）配的，于是中文界面下"搜索引擎"
+    //     输入框也宽到 442px —— 用户 2026-10-31 反馈"太宽了"。
+    // 现在两列都按 fl_width 实测，中文界面自然收窄（约 490px），法/俄自动变宽。
+    // 注意：只能在这里改宽度，标题栏/按钮栏/滚动区都是按 w() 建的。
+    static const char *kLabelKeys[] = {
+        "settings.tabwidth", "settings.longline", "settings.searchurl",
+        "settings.autosave", "settings.autopreviewmd",
+    };
+    // 占据控件列的复选框文案（Fl_Check_Button 的标签不换行，宽度不够就被裁）
+    static const char *kCtrlKeys[] = {
+        "settings.autoindent",   "settings.detecturls",   "settings.cleanuptemp",
+        "settings.trimtrailing", "settings.trimleading",  "settings.trimending",
+        "settings.expandtabs",   "settings.multitab",     "settings.fixedstartupdoc",
+        "settings.newtxtdoc",    "settings.pastemedia",
+    };
+    fl_font(FL_HELVETICA, uiFontSize);
+    int labelNeed = 110;
+    for (const char *k : kLabelKeys) {
+        const int px = (int)(fl_width(I18n::get(k)) + 0.5f) + 12;
+        if (px > labelNeed) labelNeed = px;
+    }
+    if (labelNeed > 250) labelNeed = 250;   // 再长就截断，不无限撑窗
+
+    // 控件列：320 是输入框（搜索引擎 URL 模板）的可读下限；超过 520 就截断，
+    // 否则一个超长翻译会把整个对话框撑到屏幕外。
+    int ctrlNeed = 320;
+    for (const char *k : kCtrlKeys) {
+        const int px = (int)(fl_width(I18n::get(k)) + 0.5f) + 28;   // 复选框方块+间距
+        if (px > ctrlNeed) ctrlNeed = px;
+    }
+    if (ctrlNeed > 520) ctrlNeed = 520;
+
+    const int minW = 12 * 2 + labelNeed + 20 + ctrlNeed;
+    if (w < minW) {
+        w = minW;
+        size(w, h + TITLE_H);
+    }
+
     begin();
     initShell(title);
 
     int margin = 12;
     int rowH = 24;
 
-    // Size the dialog so every setting row fits without scrolling. Row
-    // counts must match the actual controls below (currently 15: edit 5,
+    // Height: row count decides the CONTENT height; the window is then capped
+    // (see kPrefH below) and anything past the cap scrolls.
+    // Row counts must match the actual controls below (currently 16: edit 6,
     // save&exit 6, interface&system 4 - one of them with a +4 gap),
     // plus 3 group titles and 2 half blank rows between groups.
-    int rowsH = 14 * (rowH + 6) + (rowH + 4) + 3 * (rowH - 2) + 2 * (rowH / 2);
+    int rowsH = 15 * (rowH + 6) + (rowH + 4) + 3 * (rowH - 2) + 2 * (rowH / 2);
     // Add m_pad top/bottom padding (outside the scroll) plus the
     // bottom button bar (gBarH).
     int needH = rowsH + 2 * m_pad + gBarH;
-    if (h < needH) {
-        h = needH;
+    // 高度不再硬撑到"一屏放下全部行"：那会算到 600px，在笔记本上快贴满屏。
+    // 现在封顶 450px（用户 2026-10-31 定的），放不下的行由滚动区自己滚 ——
+    // 设置本来就是低频操作，滚动比"顶天立地"对话框好受。
+    constexpr int kPrefH = 450;
+    const int wantH = (needH < kPrefH) ? needH : kPrefH;
+    if (h < wantH) {
+        h = wantH;
         size(w, h + TITLE_H);
     }
 
-    int labelW = 110;
+    int labelW = labelNeed;
     int ctrlW = w - margin * 2 - labelW - 20;
 
     int btnH = gBtnH;
@@ -473,6 +522,13 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
         I18n::get("settings.detecturls"));
     y += rowH + 6;
 
+    // --- 粘贴图片/文件时插入路径（唯一会建目录+写文件的编辑动作，默认关）---
+    // 素材目录名不设选项：它恒等于"文档名去后缀"（bba.txt → bba\），
+    // 一旦允许多篇文档共用一个目录，拷走一篇就带不走图了。
+    m_pasteMediaChk = new Fl_Check_Button(margin + labelW, y, ctrlW, rowH,
+        I18n::get("settings.pastemedia"));
+    y += rowH + 6;
+
     // --- Auto-save interval ---
     addGroupTitle(I18n::get("settings.group_save"));
     new Fl_Box(FL_NO_BOX, margin, y, labelW, rowH, I18n::get("settings.autosave"));
@@ -518,12 +574,16 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
                                                I18n::get("settings.fixedstartupdoc"));
     y += rowH + 6;
 
-    // --- 打开 .md/.markdown 时自动开预览 ---
-    // 只对"新打开的文件"生效（MainWindow::openFile 末尾），切标签页 / 另存为
-    // / 重新打开已开的文件都不触发。渲染延后一帧执行，避免大文档把"打开"
-    // 这一步本身拖成白屏无响应。
-    m_autoPreviewMdChk = new Fl_Check_Button(margin + labelW, y, ctrlW, rowH,
-                                             I18n::get("settings.autopreviewmd"));
+    // --- 打开 .md/.markdown 时做什么：无操作 / 分屏预览 / 仅预览 ---
+    // 三态而不是开关：选"仅预览"就等于把 Pecia 当 Markdown 阅读器用（没有
+    // 编辑区）。"无操作"保留原来的默认行为（不主动开预览）。
+    // 只对"新打开的文件"生效（MainWindow::openFile 末尾），切标签页 /
+    // 另存为 / 重新打开已开的文件都不触发。渲染延后一帧执行，避免大文档把
+    // "打开"这一步本身拖成白屏无响应。
+    new Fl_Box(FL_NO_BOX, margin, y, labelW, rowH,
+               I18n::get("settings.autopreviewmd"));
+    m_autoPreviewChoice = new SettingsChoice(margin + labelW, y, 160, rowH);
+    m_autoPreviewChoice->add(I18n::get("settings.autopreviewitems"));
     y += rowH + 6;
 
     // --- System Integration ---
@@ -584,13 +644,13 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
     styleChk(m_autoIndentChk);
     styleChk(m_multiTabChk);
     styleChk(m_fixedStartupDocChk);
-    styleChk(m_autoPreviewMdChk);
     styleChk(m_trimTrailingChk);
     styleChk(m_trimLeadingChk);
     styleChk(m_trimEndingChk);
     styleChk(m_expandTabsChk);
     styleChk(m_integNewTxt);
     styleChk(m_detectUrlsChk);
+    styleChk(m_pasteMediaChk);
     styleChk(m_cleanupTempChk);
 
     // "Add to file Open with menu" button - flat border, matching chrome color.
@@ -605,7 +665,7 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
     // Choice boxes: rectangular flat border
     Fl_Color choiceBg = theme ? theme->colors().background1 : FL_WHITE;
     Fl_Color choiceFg = theme ? theme->colors().text1 : FL_BLACK;
-    for (auto *ch : { m_tabWidthChoice, m_autoSaveChoice }) {
+    for (auto *ch : { m_tabWidthChoice, m_autoSaveChoice, m_autoPreviewChoice }) {
         ch->box(FL_BORDER_BOX);
         ch->down_box(FL_BORDER_BOX);
         ch->color(choiceBg);
@@ -687,7 +747,8 @@ void SettingsDialog::loadFrom(const Config &cfg) {
     m_autoIndentChk->value(const_cast<Config &>(cfg).getAutoIndent() ? 1 : 0);
     m_multiTabChk->value(const_cast<Config &>(cfg).getMultiTab() ? 1 : 0);
     m_fixedStartupDocChk->value(const_cast<Config &>(cfg).getFixedStartupDoc() ? 1 : 0);
-    m_autoPreviewMdChk->value(const_cast<Config &>(cfg).getAutoPreviewMd() ? 1 : 0);
+    // 打开 .md 时做什么：0=无操作 1=分屏预览 2=仅预览（枚举下标与选项同序）
+    m_autoPreviewChoice->value(const_cast<Config &>(cfg).getAutoPreviewMode());
     m_trimTrailingChk->value(const_cast<Config &>(cfg).getTrimTrailingWhitespace() ? 1 : 0);
     m_trimLeadingChk->value(const_cast<Config &>(cfg).getTrimLeadingBlank() ? 1 : 0);
     m_trimEndingChk->value(const_cast<Config &>(cfg).getTrimEndingBlank() ? 1 : 0);
@@ -717,6 +778,7 @@ void SettingsDialog::loadFrom(const Config &cfg) {
     m_openWithExts.clear();
 
     m_detectUrlsChk->value(const_cast<Config &>(cfg).getDetectUrls() ? 1 : 0);
+    m_pasteMediaChk->value(const_cast<Config &>(cfg).getPasteMediaPath() ? 1 : 0);
     m_cleanupTempChk->value(const_cast<Config &>(cfg).getCleanupTempOld() ? 1 : 0);
 
     char urlBuf[512];
@@ -765,10 +827,12 @@ bool SettingsDialog::saveTo(Config &cfg) const {
         changed = true;
     }
 
-    // 打开 .md/.markdown 自动预览：纯持久化，实际生效在下次打开文件时。
-    bool apm = m_autoPreviewMdChk->value() != 0;
-    if (cfg.getAutoPreviewMd() != apm) {
-        cfg.setAutoPreviewMd(apm);
+    // 打开 .md/.markdown 时做什么：纯持久化，实际生效在下次打开文件时。
+    int apm = m_autoPreviewChoice->value();
+    if (apm < Config::AutoPreviewNone || apm > Config::AutoPreviewOnly)
+        apm = Config::AutoPreviewNone;
+    if (cfg.getAutoPreviewMode() != apm) {
+        cfg.setAutoPreviewMode(apm);
         changed = true;
     }
 
@@ -826,6 +890,13 @@ bool SettingsDialog::saveTo(Config &cfg) const {
     bool du = m_detectUrlsChk->value() != 0;
     if (cfg.getDetectUrls() != du) {
         cfg.setDetectUrls(du);
+        changed = true;
+    }
+
+    // 粘贴图片/文件时插入路径（素材目录恒为"文档名去后缀"，无可配置项）
+    bool pm = m_pasteMediaChk->value() != 0;
+    if (cfg.getPasteMediaPath() != pm) {
+        cfg.setPasteMediaPath(pm);
         changed = true;
     }
 

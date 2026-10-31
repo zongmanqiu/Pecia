@@ -18,6 +18,11 @@ public:
     virtual bool getAutoIndent() const = 0;
     virtual bool getDetectUrls() const = 0;
 
+    // 粘贴图片/文件时插入路径（Options > Editing）。默认实现返回"关"，
+    // 让测试里的假 provider 不必跟着实现；Config 覆盖成真实配置。
+    // 素材目录名不在这里：它恒等于"文档名去后缀"，没有可配置项。
+    virtual bool getPasteMediaPath() const { return false; }
+
     // Font
     virtual void getFont(int &font, int &size) const = 0;
 

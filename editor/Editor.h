@@ -168,6 +168,13 @@ public:
     // Re-apply highlight_data() after theme or font change.
     void reapplyHighlightData();
 
+    // 粘贴图片/文件：剪贴板里没有文本、只有位图或文件时，把素材落到
+    // <文档目录>\<素材目录>\ 并插入 Markdown 链接。返回 true = 已消费。
+    // public：Ctrl+V（Editor::handle）、Edit > Paste（MainWindow::cbPaste）
+    // 与 FL_PASTE 三条入口都走这里，保证菜单和快捷键行为一致。
+    // 详见 editor/ImageAttach.h。
+    bool pasteMedia();
+
 private:
     // Draw a custom scrollbar over the given Fl_Scrollbar area.
     void drawCustomScrollbar(Fl_Scrollbar *sb, bool horizontal);

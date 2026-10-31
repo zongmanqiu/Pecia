@@ -109,14 +109,23 @@ Config();
     bool getMultiTab() const;
     void setMultiTab(bool on);
 
-    // Options > Interface & System > "Open .md files with preview".
-    // When on, opening a Markdown file (.md/.markdown, any case) turns the
-    // preview on automatically. Only fires for a freshly opened file -- see
-    // MainWindow::openFile(). Default off: previewing is opt-in, and a large
-    // document would otherwise start a synchronous render the user never
-    // asked for.
-    bool getAutoPreviewMd() const;
-    void setAutoPreviewMd(bool on);
+    // Options > Interface & System > "Open .md files": what to do when a
+    // Markdown file (.md/.markdown, any case) is opened.
+    //   0 = nothing, 1 = split preview, 2 = preview only
+    // Only fires for a freshly opened file -- see MainWindow::openFile().
+    // Default 0: previewing is opt-in, and a large document would otherwise
+    // start a synchronous render the user never asked for.
+    //
+    // Stored as `auto_preview_md_mode`. The 1.1.x boolean `auto_preview_md`
+    // is still honoured when the new key is absent (true -> 1 = split
+    // preview) and stays in sync on write, so downgrading keeps working.
+    enum AutoPreviewMode {
+        AutoPreviewNone  = 0,
+        AutoPreviewSplit = 1,
+        AutoPreviewOnly  = 2,
+    };
+    int  getAutoPreviewMode() const;
+    void setAutoPreviewMode(int mode);
 
     // View > Always on Top - keep the window above other windows.
     bool getAlwaysOnTop() const;
@@ -201,6 +210,15 @@ Config();
     // View > Detect URLs - highlight clickable URLs with underline.
     bool getDetectUrls() const;
     void setDetectUrls(bool on);
+
+    // 粘贴图片/文件时插入路径（Options > Editing，默认关）。打开后 Ctrl+V 若
+    // 发现剪贴板里没有文本、只有位图或文件，就把素材落到
+    // <文档目录>\<素材目录>\ 并插入 Markdown 链接（见 editor/ImageAttach.h）。
+    // 默认关的理由：这是唯一会真实建目录、写文件的编辑动作，属于有副作用的
+    // 行为，保守默认比"装上就动人家的磁盘"更合适。
+    bool getPasteMediaPath() const;
+    void setPasteMediaPath(bool on);
+
     // 退出时清理 7 天前的临时文件（build/temp 残留）
     bool getCleanupTempOld() const;
     void setCleanupTempOld(bool on);

@@ -1720,6 +1720,20 @@ void ViewWidget::draw()
             int cy = y() + h() / 2;
             fl_draw(msg, cx - (int)fl_width(msg) / 2, cy);
         }
+        else {
+            // 空文档：给一句提示，别留纯底色。纯底色的面板无法区分"文档是空的"
+            // 和"渲染坏了"—— 尤其"仅预览"下编辑区被隐藏时，用户会以为窗口卡死
+            // （用户 2026-10-31 报的场景）。空文档正常情况下都会退回分屏，这句
+            // 提示配合左侧空编辑区一起看，语义才完整。
+            const char* msg = I18n::get("preview.empty");
+            if (msg && msg[0]) {
+                fl_font(FL_HELVETICA, 15);
+                fl_color(fl_rgb_color(160, 160, 160));
+                int cx = x() + w() / 2;
+                int cy = y() + h() / 2;
+                fl_draw(msg, cx - (int)fl_width(msg) / 2, cy);
+            }
+        }
     }
 }
 

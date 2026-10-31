@@ -51,6 +51,56 @@ bool dwmCornersActive();
 // DPI-scaled corner radius used by the Win10 region fallback.
 int roundedCornerRadiusPx(const Fl_Window *win);
 
+// The whole rounded-corner state machine, as one pure rule: a window that
+// covers its monitor's work area is square whatever the preference says.
+//
+//   wantsRound     - the USER PREFERENCE (View > Rounded Corners, persisted)
+//   coversWorkArea - the window currently fills the work area (maximized)
+//   returns        - whether the window is rounded RIGHT NOW
+//
+// A free function, and unit-tested (test/test_rounded_corners.cpp), because
+// getting it wrong is invisible until one exact sequence happens: entering the
+// maximized state must square the window WITHOUT overwriting the preference.
+// Storing the *effective* state is what caused the bug fixed 2026-10-31 - a
+// window that STARTS maximized wrote "square" once, and every later refresh
+// (resize / restore) read that back and kept it square; only a settings
+// refresh, which re-injects the Config value, recovered the rounding.
+inline bool effectiveRounded(bool wantsRound, bool coversWorkArea) {
+    return wantsRound && !coversWorkArea;
+}
+
+#if defined(_WIN32)
+// Pure geometry half of windowCoversWorkArea(): does the window rect cover the
+// monitor work rect? Split out so the unit test can exercise the "covers"
+// branch without really maximizing a window (which would flash on screen
+// during ctest).
+//
+// tol absorbs the NC_PAD overhang our maximized geometry keeps on the resize
+// edges - "covers", not "equals", is the right test.
+inline bool rectCoversWork(const RECT &win, const RECT &work, int tol = 2) {
+    return win.left   <= work.left   + tol &&
+           win.top    <= work.top    + tol &&
+           win.right  >= work.right  - tol &&
+           win.bottom >= work.bottom - tol;
+}
+
+// --- The same state machine, driven by a plain HWND ----------------------
+//
+// The Fl_Window entry points below also touch the window region and assume a
+// live FLTK window. The state machine itself needs neither, so it lives here
+// where test/test_rounded_corners.cpp can drive it with a throwaway hidden
+// HWND.
+//
+// The stored property is the USER PREFERENCE, never the effective state -
+// see the note on effectiveRounded().
+void setRoundedPreference(HWND hwnd, bool on);
+bool roundedPreference(HWND hwnd);
+
+// "Is this window rounded RIGHT NOW" = preference AND not covering the work
+// area. The one question every painter and hit-test asks.
+bool roundedNow(HWND hwnd);
+#endif
+
 // Apply to one top-level window. `borderColor` is an Fl_Color; on Win11 it is
 // also used for the DWM 1px border so the rounded arc gets the same outline
 // colour as the straight edges. Safe to call before show (no-op without HWND)
@@ -260,7 +310,13 @@ public:
     // how near the window edge a point must be to become HTLEFT / HTRIGHT /
     // HTBOTTOM / HTTOP. Returning those codes from the client area is how the
     // top edge has always worked here, so it is well-trodden ground.
-    enum { NC_PAD = 1, RESIZE_ZONE = 6 };
+    //
+    // RESIZE_ZONE_OVER_SCROLLBAR is the same grip over a scrollbar, where a
+    // full 6px would swallow most of a 10px scrollbar. It must stay well
+    // above NC_PAD (1px): the editor's and the preview's vertical scrollbars
+    // are flush with the window's right edge, so NC_PAD there meant the most
+    // used resize edge had a single pixel of grip (fixed 2026-10-31).
+    enum { NC_PAD = 1, RESIZE_ZONE = 6, RESIZE_ZONE_OVER_SCROLLBAR = 3 };
 
     // Maximize / restore state
     bool isMaximized() const { return m_maximized; }

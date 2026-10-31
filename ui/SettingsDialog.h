@@ -63,7 +63,7 @@ private:
 
     Fl_Check_Button *m_multiTabChk;
     Fl_Check_Button *m_fixedStartupDocChk;  // 固定启动文档（无其它 Pecia 时打开 Test.txt）
-    Fl_Check_Button *m_autoPreviewMdChk;    // 打开 .md/.markdown 时自动开预览
+    Fl_Choice       *m_autoPreviewChoice;   // 打开 .md 时：无操作/分屏预览/仅预览
     Fl_Check_Button *m_trimTrailingChk;
     Fl_Check_Button *m_trimLeadingChk;
     Fl_Check_Button *m_trimEndingChk;
@@ -73,6 +73,7 @@ private:
     bool             m_initialNewTxt = false;  // registry state when the dialog opened
     Fl_Button       *m_chooseExtsBtn;    // Opens ExtensionsDialog (add to "Open with")
     Fl_Check_Button *m_detectUrlsChk;    // Editor: URL detection
+    Fl_Check_Button *m_pasteMediaChk;    // 粘贴图片/文件时插入路径（默认关）
     Fl_Check_Button *m_cleanupTempChk;   // Exit: clean 7-day-old temp files
     Fl_Int_Input    *m_longLineInput;    // 0 = off, >0 = column
     Fl_Input        *m_searchUrlInput;   // 搜索引擎 URL 模板（%s = 选中内容）

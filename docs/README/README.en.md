@@ -4,7 +4,7 @@
 
 # Pecia — Minimalist Text Editor
 
-**[⬇️ Download Latest (1.1.1) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.1/Pecia_x64_1.1.1.zip)** ｜ **[⬇️ Download Latest (1.1.1) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.1/Pecia_x64_1.1.1.zip)** ｜ [Gitee Repo](https://gitee.com/qiuzongman/pecia) ｜ [GitHub Mirror](https://github.com/zongmanqiu/Pecia) | [Bilibili Demo](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ Download Latest (1.1.2) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ **[⬇️ Download Latest (1.1.2) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ [Gitee Repo](https://gitee.com/qiuzongman/pecia) ｜ [GitHub Mirror](https://github.com/zongmanqiu/Pecia) | [Bilibili Demo](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 A lightweight text editor for Windows built with C++17 + FLTK. Multi-tab, instant opening of large files, multiple encoding support, Lua scripting extensions. New: side panel (file tree / outline), font picker dialog, window shadows; chunked Markdown preview for very large documents.
 

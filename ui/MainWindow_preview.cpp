@@ -11,6 +11,7 @@
 #include "mdview/image_export.h"
 #include "mdview/preview_panel.h"
 #include "ui/Layout.h"   // MENU_H（仅注释引用；按钮栏删除后本文件不再用它）
+#include "ui/PreviewMode.h"   // 空文档判据（仅预览的准入条件）
 #include "ui/SidePanel.h"     // 左侧面板（layoutPreviewPanes 需要完整类型）
 #include <FL/Fl.H>
 #include <FL/Fl_Menu_Bar.H>
@@ -162,12 +163,90 @@ std::string MainWindow::activeDocumentText() const
     return s;
 }
 
+// 当前标签有没有"可预览的内容"。
+//
+// ★ 这段判据的存在理由（不能直接用 text.empty()）：空文档不允许进入"仅预览"。
+//   用户 2026-10-31 的场景是"开着仅预览 → 新建文件"——编辑区被 m_tabs->hide()
+//   藏掉，预览面板因为内容为空走进 clear()，于是整块内容区是一片纯底色：没有
+//   光标、没有标签页、滚轮不动、点什么都没反应，新手只会认为窗口卡死了。
+//
+// ★ 开销约束：本函数跑在自动刷新的每个 tick 上（refreshPreview 入口），所以
+//   长度 0 与超长都走 O(1) 短路，只有"短且可能全空白"的文档才真的取全文。
+bool MainWindow::hasPreviewContent() const
+{
+    if (m_tabsList.empty()) return false;
+    int idx = activeTabIndex();
+    if (idx < 0 || idx >= (int)m_tabsList.size()) return false;
+    const Tab &t = m_tabsList[idx];
+    if (!t.doc || !t.doc->buffer()) return false;
+    const int len = t.doc->buffer()->length();
+    if (len <= 0) return false;                                  // 新建/清空
+    if ((size_t)len > preview_mode::kBlankScanCap) return true;   // 不必看内容
+    const char *text = t.doc->buffer()->text();
+    if (!text) return false;
+    const bool blank = preview_mode::isBlank(text, (size_t)len);
+    free((void *)text);
+    return !blank;
+}
+
+namespace {
+// Look up a Markdown-menu item: by its original English path first (the menu
+// array is built from g_menu), then by the translated path - after a language
+// switch applyLanguageToMenu() has rewritten the labels, so the English path
+// no longer matches.
+Fl_Menu_Item *markdownMenuItem(Fl_Menu_Bar *menu, const char *engPath,
+                               const char *i18nKey)
+{
+    if (!menu) return nullptr;
+    std::string p = std::string(I18n::get("menu.markdown")) + "/" +
+                    I18n::get(i18nKey);
+    Fl_Menu_Item *item = (Fl_Menu_Item *)menu->find_item(engPath);
+    if (!item) item = (Fl_Menu_Item *)menu->find_item(p.c_str());
+    return item;
+}
+}  // namespace
+
+// Keep the two Markdown-menu check marks in sync with the state.
+//   Split Preview = preview shown beside the editor
+//   Preview Only  = preview covers the whole content area
+//
+// ★ 两者**互斥**，同一时刻最多勾一个（用户 2026-10-31 反馈两个能同时选中）：
+//   早先的语义是"有没有预览"和"预览怎么排"两条正交的轴，所以仅预览时两个都
+//   会打勾；现在把它们当成三选一里的两个互斥模式 —— 没预览时两个都不勾。
+//
+// ★ 空文档时"仅预览"必须**置灰**。只做"进入后自动降级"会留下一个更糟的观感：
+//   用户在空文档上点它 → setPreviewOnly() 拒绝 → 停在分屏 → 看起来是"点了没
+//   反应"。入口直接不可用，才是和"空文档不存在仅预览这个状态"自洽的呈现。
+void MainWindow::syncPreviewMenu()
+{
+    if (!m_menu) return;
+    if (Fl_Menu_Item *it = markdownMenuItem(
+            m_menu, "Markdown/Preview", "menu.markdown.preview")) {
+        if (m_previewActive && !m_previewOnly) it->set(); else it->clear();
+    }
+    if (Fl_Menu_Item *it = markdownMenuItem(
+            m_menu, "Markdown/Preview Only", "menu.markdown.previewonly")) {
+        if (m_previewActive && m_previewOnly) it->set(); else it->clear();
+        if (hasPreviewContent()) it->activate(); else it->deactivate();
+    }
+    m_menu->redraw();
+}
+
 void MainWindow::togglePreview()
 {
     if (m_previewActive) {
+        // 当前是"仅预览"：菜单里的"分屏预览"要表达的是"切回分屏"，不是关预览。
+        // 两项互斥，所以点另一项 = 切换模式，而不是把预览整个关掉。
+        if (m_previewOnly) {
+            setPreviewOnly(false);
+            return;
+        }
         // 关闭：先隐藏并转移焦点（避免 delete 时 FLTK 焦点/鼠标指针悬垂崩溃），
         // 面板延迟到下一事件循环销毁（届时无排队事件引用它）
         m_previewActive = false;
+        // 模式一并复位：下次打开回到"分屏预览"，不要记住"仅预览"（否则
+        // 用户下次开预览会莫名其妙地满屏，而菜单项又都不勾）
+        m_previewOnly = false;
         stopAutoRefreshLoop();
         stopScrollSync();
         if (m_preview) {
@@ -183,14 +262,7 @@ void MainWindow::togglePreview()
             m_previewDestroyPending = true;
             Fl::add_timeout(0.1, destroyPreviewCb, this);
         }
-        // 更新菜单勾选（英文/翻译双语路径——启动时序 label 可能未翻译）
-        if (m_menu) {
-            std::string p = std::string(I18n::get("menu.markdown")) + "/" + I18n::get("menu.markdown.preview");
-            const Fl_Menu_Item *item = m_menu->find_item("Markdown/Preview");
-            if (!item) item = m_menu->find_item(p.c_str());
-            if (item) ((Fl_Menu_Item *)item)->clear();
-            m_menu->redraw();
-        }
+        syncPreviewMenu();
         return;
     }
 
@@ -260,19 +332,67 @@ void MainWindow::togglePreview()
     startAutoRefreshLoop();
     startScrollSync();
 
-    if (m_menu) {
-        std::string p = std::string(I18n::get("menu.markdown")) + "/" + I18n::get("menu.markdown.preview");
-        const Fl_Menu_Item *item = m_menu->find_item("Markdown/Preview");
-        if (!item) item = m_menu->find_item(p.c_str());
-        if (item) ((Fl_Menu_Item *)item)->set();
-        m_menu->redraw();
-    }
+    syncPreviewMenu();
 }
 
 void MainWindow::cbTogglePreview(Fl_Widget *w, void *data)
 {
     auto *win = static_cast<MainWindow *>(data ? data : w->window());
     if (win) win->togglePreview();
+}
+
+// Markdown > Preview Only：预览吃满整个内容区（编辑区隐藏）。
+// 与"分屏预览"互斥（用户 2026-10-31 定调）：
+//   · 没预览        → 直接以"仅预览"打开
+//   · 分屏预览中    → 切到仅预览
+//   · 已经是仅预览  → 取消勾选 = 关掉预览（与分屏预览那个开关对称）
+void MainWindow::togglePreviewOnly()
+{
+    if (!m_previewActive) {
+        setPreviewOnly(true);
+        return;
+    }
+    if (m_previewOnly) {
+        // 先把模式退回复位，否则 togglePreview() 会把它当成"切回分屏"而不是关闭
+        m_previewOnly = false;
+        togglePreview();
+        return;
+    }
+    setPreviewOnly(true);
+}
+
+// 设定"仅预览"的目标状态（幂等）。菜单要的是翻面，而"打开 .md 文件时 =
+// 仅预览"这类配置要的是"设成某个状态"——两者共用这一处实现。
+void MainWindow::setPreviewOnly(bool on)
+{
+    // ★ 空文档不允许"仅预览"（三条规则之二）：想开就直接不开——"打开 .md =
+    //   仅预览"遇空文件会落到纯编辑；已在仅预览而文档变空的由
+    //   normalizePreviewState() 兜住（它整个关闭预览）。菜单侧还有置灰兜底。
+    if (on && !hasPreviewContent()) return;
+    if (!m_previewActive) {
+        // 没有预览时先开：togglePreview() 会读 m_previewOnly 决定排布
+        m_previewOnly = on;
+        togglePreview();
+        syncPreviewMenu();
+        return;
+    }
+    if (m_previewOnly == on) return;
+    m_previewOnly = on;
+    layoutTabs();
+    // 焦点必须跟着走：进入纯预览时编辑区不可见，焦点留在那儿会让用户把字
+    // 打进看不见的文档；退出时要把焦点还给编辑器，否则没法继续输入。
+    if (m_previewOnly) {
+        if (m_preview && m_preview->view()) Fl::focus(m_preview->view());
+    } else if (Tab *t = activeTab()) {
+        Fl::focus(t->editor);
+    }
+    syncPreviewMenu();
+}
+
+void MainWindow::cbTogglePreviewOnly(Fl_Widget *w, void *data)
+{
+    auto *win = static_cast<MainWindow *>(data ? data : w->window());
+    if (win) win->togglePreviewOnly();
 }
 
 // 关闭预览的延迟销毁：事件队列清空后再删除面板（避免 FLTK 悬垂指针崩溃）
@@ -305,6 +425,33 @@ void MainWindow::cbRefreshPreview(Fl_Widget *w, void *data)
             win->refreshOutline();
     }
     win->refreshPreview(true);   // 手动刷新：无条件重渲染
+}
+
+// "当前标签可能换人/换内容"的时机统一做一次预览状态归一化：
+//   ① 空文档 + 仅预览 → 退回分屏（否则编辑区被藏、预览空白，用户无处输入
+//      也点不动，会以为窗口卡死 —— 2026-10-31 用户报的场景）；
+//   ② 菜单"仅预览"的置灰状态跟着"当前文档是否为空"走（空文档时置灰，否则
+//      用户点下去 setPreviewOnly() 会拒绝，看起来是"点了没反应"）。
+//
+// ★ 语义（用户 2026-10-31 定调的三条规则）：发现"仅预览 + 空文档"就**整个
+//   关闭预览**，回纯编辑状态——不降级分屏、不清残影。降级分屏那版要额外
+//   强刷预览清掉上一个文档的残影，多一套状态；直接关闭则面板整个销毁，
+//   什么残留都没有，逻辑只剩这一条检查。
+//
+// ★ 调用点只有两处入口：addTab()（新建/打开/拖放，新文档出现的必经之路）和
+//   refreshPreview()（切标签/手动刷新）。注意不要试图往 newFile/openFile/
+//   switchToTab 里塞 —— newFile 单标签替换路径不经过 switchToTab，各写一份
+//   迟早漏掉一条；statusUpdateCb 里也调它，兜住"分屏下把内容删空"的输入路径。
+void MainWindow::normalizePreviewState()
+{
+    if (m_previewActive && m_previewOnly && !hasPreviewContent()) {
+        // m_previewOnly 先复位：togglePreview() 读它区分"切回分屏"和"关闭"，
+        // 这里要的是关闭。关闭分支自己会把焦点还给编辑器并 syncPreviewMenu。
+        m_previewOnly = false;
+        togglePreview();
+    }
+    else if (m_previewActive)
+        syncPreviewMenu();
 }
 
 void MainWindow::setAutoRefresh(int ms)
@@ -396,7 +543,10 @@ void MainWindow::autoRefreshLoopCb(void *data)
     HWND hwnd = fl_xid(win);
     minimized = hwnd && IsIconic(hwnd);
 #endif
-    if (win->m_previewActive && win->m_preview &&
+    // 仅预览（纯阅读）状态不自动刷新：编辑区不可见，用户既读不到也改不了
+    // 源码，定时重渲染纯属白烧 CPU（大文档尤其明显）。这是全局唯一的例外
+    // ——分屏预览下仍照常按档位刷新。手动 Ctrl+R 不受影响。
+    if (win->m_previewActive && !win->m_previewOnly && win->m_preview &&
         win->m_preview->view()->visible() && !minimized) {
         win->refreshPreview();
     }
@@ -407,6 +557,14 @@ void MainWindow::autoRefreshLoopCb(void *data)
 
 void MainWindow::refreshPreview(bool force)
 {
+    if (!m_preview || !m_previewActive) return;
+    // ★ 空文档一律退回分屏。当前标签变空的路有四条：新建文件、打开一个空
+    //   文件、切到空标签、外部重载。归一化统一收进 normalizePreviewState()
+    //   （addTab 也调用它），这里不重复写条件，也不要去 newFile/openFile/
+    //   switchToTab 各写一份。必须在 gate 之前：shouldRender() 可能提前
+    //   return，状态就没人纠正，用户会停在"编辑区消失 + 预览空白"的死局里。
+    normalizePreviewState();
+    // normalize 可能整个关闭了预览（仅预览 + 空文档），不能再往下渲染。
     if (!m_preview || !m_previewActive) return;
     // 内容变化判据：O(1) 的 (文档, 版本号)。切标签页 → 指针不同 → 必渲染；
     // 同一文档内编辑 → contentRev 变 → 必渲染；都没变 → 跳过，
@@ -813,6 +971,18 @@ void MainWindow::layoutPreviewPanes(int contentTop, int contentH, int tabsH)
     if (contentW < 1) contentW = 1;
 
     if (m_previewActive && m_preview && m_previewDivider) {
+        if (m_previewOnly) {
+            // 纯预览：没有第二栏，编辑区（含标签页）与分隔条一并隐藏，
+            // 预览吃满整个内容区。m_previewRatio 在这里不参与排布，
+            // 保留原值——退出纯预览时按它还原分屏。
+            m_tabs->hide();
+            m_previewDivider->hide();
+            m_preview->view()->resize(contentX, contentTop, contentW, tabsH);
+            m_preview->view()->show();
+            return;
+        }
+        // 分屏：编辑区 | 分隔条 | 预览
+        m_tabs->show();
         int editorW = (int)(contentW * m_previewRatio);
         if (editorW < (int)(contentW * 0.20f)) editorW = (int)(contentW * 0.20f);
         if (editorW > (int)(contentW * 0.80f)) editorW = (int)(contentW * 0.80f);
@@ -830,6 +1000,7 @@ void MainWindow::layoutPreviewPanes(int contentTop, int contentH, int tabsH)
         m_previewDivider->show();
         m_previewDivider->redraw();
     } else {
+        m_tabs->show();
         m_tabs->resize(contentX, contentTop, contentW, tabsH);
         if (m_previewDivider) m_previewDivider->hide();
         if (m_preview) m_preview->view()->hide();

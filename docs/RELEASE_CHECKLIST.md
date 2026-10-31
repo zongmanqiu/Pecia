@@ -10,7 +10,7 @@
 
 | 位置 | 改什么 | 说明 |
 |---|---|---|
-| `main/CMakeLists.txt` 第 2 行 | `project(Pecia VERSION x.y.z ...)` | **唯一权威来源**。`PECIA_VERSION` 宏由此注入（见同文件 `target_compile_definitions`），关于页与更新检查自动跟随 |
+| `main/CMakeLists.txt` | `project(Pecia VERSION x.y.z ...)` | **唯一权威来源**。`PECIA_VERSION` 宏由此注入（见同文件 `target_compile_definitions`），关于页与更新检查自动跟随 |
 | `main/README.md` + `main/docs/README/README.<lang>.md` ×15 | 下载链接与版本表述：`releases/download/<ver>/Pecia_x64_<ver>.zip`（Gitee + GitHub 各一条） | 16 份文件**必须同步**（根与 docs/README 内各 2 处下载行） |
 | `main/example/ex1.markdown/ex1.md` | 版本表 `Pecia \| x.y.z` | 示例文档中的版本引用 |
 | `main/HISTORY.md` | 在文件**顶部**追加新版本小节（日期 + 新增/修复/变更） | **增量原则：只追加，旧内容一律保持原样**，不修改不删除 |
@@ -18,7 +18,7 @@
 > **Windows 文件属性（VERSIONINFO）自动跟随，不算手工同步项**：三份 exe 的
 > 「属性 → 详细信息」版本由 `main/build/version_info.rc.in` 在 CMake 配置阶段
 > 经 `configure_file` 注入 `PROJECT_VERSION` 生成（见 CMakeLists 的
-> 「Windows VERSIONINFO resources」段）。改完 CMakeLists 第 2 行重新构建即可，
+> 「Windows VERSIONINFO resources」段）。改完 CMakeLists 里的版本号重新构建即可，
 > **不要手工改任何 `.rc`**。
 
 改完用 `grep -rn "旧版本号" main/` 复核零残留（注意排除 `.thirdparty/`）。

@@ -5,17 +5,22 @@
 #include <FL/fl_draw.H>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <functional>
+#include <utility>   // std::pair（大纲折叠的祖先栈）
 
 #include "core/I18n.h"
 #include "core/PathUtils.h"
+#include "ui/Layout.h"         // MENU_H：工具条高度与菜单栏一致
+#include "ui/OutlineRows.h"
 #include "ui/ThemeWidgets.h"   // styleToolScrollbar/drawToolScrollbar：滚动条与主编辑器同款
 
 namespace {
 
 constexpr int kIndent   = 14;   // 每级缩进
+constexpr int kChevronW = 14;   // 行首箭头列宽（所有行恒定占位，见 rowTextLeft）
 constexpr int kPadX     = 8;    // 行首内边距
 constexpr int kMaxDepth = 6;    // 目录递归深度上限
 constexpr int kMaxNodes = 800;  // 扫描条目总上限（防止 giant 目录卡死 UI）
@@ -55,18 +60,108 @@ void drawChevron(int cx, int cy, bool expanded, Fl_Color c) {
     }
 }
 
+// 工具条图标：两个三角（朝下 = 展开全部，朝上 = 折叠全部）。
+// 和箭头一样用手画，不用字符：字体覆盖不全时 U+25BC / U+21BB 会变成方块，
+// 本项目已经在 U+2026 上踩过一次（见 drawEllipsisDots 的注释）。
+void drawToolChevrons(int cx, int cy, bool down, Fl_Color c) {
+    fl_color(c);
+    // 描边人字而不是实心三角：20px 按钮里两个实心三角会挤成一坨，两道折线
+    // 才看得出是"两下"。
+    //
+    // ★ 线宽 1px，与标题栏四个按钮的描边对齐（TitleBar::drawButton 全是
+    //   1px 描边）。早先这里是 2px，同一窗口里侧栏图标明显比标题栏重
+    //   （用户 2026-10-31 反馈"线条宽度更宽"）。
+    fl_line_style(FL_SOLID, 1);
+    for (int k = 0; k < 2; ++k) {
+        const int yy = cy + (k == 0 ? -4 : 2);
+        fl_begin_line();
+        if (down) {
+            fl_vertex(cx - 4, yy);
+            fl_vertex(cx, yy + 3);
+            fl_vertex(cx + 4, yy);
+        } else {
+            fl_vertex(cx - 4, yy + 3);
+            fl_vertex(cx, yy);
+            fl_vertex(cx + 4, yy + 3);
+        }
+        fl_end_line();
+    }
+    fl_line_style(0);
+}
+
+// ---- 工具条图标：刷新 -----------------------------------------------------
+//
+// 一个圆弧 + 末端的实心箭头。手画，不用字体字形（缺字会画成方块，U+2026
+// 已经踩过）。之前试过双弧、方角矩形等画法，20px 下都不如这一版干净：
+// 元素越少，锯齿越少。
+//
+// ★ fl_arc(x,y,w,h,a1,a2) 的 a2 是**终止角**，不是跨度，且要求 a2 >= a1。
+//   改弧长只动 a2，别把跨度当 a2 传。
+//
+// ★ 缺口的两个端点定在**正右（0°/3 点钟）和正下（270°/6 点钟）**，弧从
+//   0° 逆时针绕 270° 到 270°，缺口 90° 落在右下象限（用户 2026-10-31 的
+//   定案画法："从正下方开始，顺时针，到正右方，留出 90 度的缺口"）。
+//
+//   这样摆的好处是**箭头必然是正的**：端点落在 0° 的坐标轴上，该处切线
+//   是纯垂直的 (0,1)，三角形的对称轴也就垂直、底边水平，四个顶点全落在
+//   整数或半整数像素上（底边 ±2.5 → ±3，尖 +4.33 → +4），不会出现斜边
+//   在像素格子里左右各偏一半、看起来"被拧了"的问题。
+//
+// ★ 箭头挂在 0° 端（缺口上端），方向取"角度减小"一侧的切线 = 屏幕正下，
+//   也就是顺着顺时针方向转入缺口 —— 和整枚图标表达的"顺时针刷新"一致。
+//
+// ★ 线宽 1px：与标题栏按钮的描边同档（用户 2026-10-31 反馈 2px 太宽）。
+void drawToolRefresh(int cxIn, int cy, Fl_Color c) {
+    constexpr int r = 6;
+    constexpr double a1 = 0.0;     // 起始角：正右，箭头挂在这里
+    constexpr double a2 = 270.0;   // 终止角：正下，缺口 = 90°（右下）
+    // 光学居中：箭头朝右侧展开，包围盒比圆环宽，不左移一格整体会偏右。
+    const int cx = cxIn - 1;
+
+    fl_color(c);
+    fl_line_style(FL_SOLID, 1);
+    fl_begin_line();
+    fl_arc(cx - r, cy - r, 2 * r, 2 * r, a1, a2);
+    fl_end_line();
+    fl_line_style(0);
+
+    // 箭头挂在弧端点上，三角形必须**关于端点严格左右对称**。
+    //
+    // ★ 全部用整数坐标算，不碰三角函数：a1=0 时端点就是 (cx + r, cy)，本来就
+    //   是整数；底边两端取 ex ± kHalf，kHalf 是整数，尖取 (ex, ey + kLen)。
+    //   这样弧端点的水平坐标 = 三角形竖直中线的水平坐标 = 尖端水平坐标，
+    //   三个数一致，肉眼看到的才是"弧插在底边正中间"。
+    //
+    // ★ 之前翻车的原因就在这里：kHalf 取 2.5（半像素），两端是 px±2.5，
+    //   lround 会把两个半像素**同时朝正方向**取整，底边整体右移半格，弧端点
+    //   于是从"底边中点"滑到了偏左 —— 用户 2026-10-31："三角形要往左一点，
+    //   让圆弧刚好插入三角形那条边的中间"。半像素在 5px 的底边上就是 20%。
+    //
+    // ★ 等边约束：高 = 边长·√3/2。底边 2·kHalf = 6px → 高 5.2，像素上取 5。
+    //   kHalf 取 2 时底边只有 4px，三角形缩成一个看不出方向的小楔子，所以
+    //   取 3；再宽就会盖住缺口。
+    // ★ 整枚三角形再左移 1px（`- 1`）：数学上底边中点就在圆周 (cx+r) 上，
+    //   但 1px 线宽的弧在右端占的是 cx+r-1 ~ cx+r 两个像素列，视觉重心偏左
+    //   半格，三角形贴在圆周上时看上去仍偏右（用户 2026-10-31："还要往左
+    //   1px"）。左移一格后三角形中线压住弧的末端像素列，才对得上。
+    const int ex = cx + r - 1;
+    const int ey = cy;
+    constexpr int kHalf = 3;             // 底边半宽（整数，保证严格对称）
+    constexpr int kLen  = 5;             // 高：6 × √3/2 ≈ 5.2，像素上取 5
+    fl_polygon(ex, ey + kLen,            // 尖（正下方）
+               ex + kHalf, ey,           // 底边右端
+               ex - kHalf, ey);          // 底边左端
+}
+
 std::string toLowerCopy(const std::string &s) {
     std::string t = s;
     for (char &c : t) if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
     return t;
 }
 
-// 画省略号：三个 2×2 的方点。
-//
-// 为什么不用 U+2026（"…"）：本机实测这个字形被 FLTK/GDI 画成 5×1 的死点
-// （还带 ClearType 彩边），看起来像一条下划线 —— 用户直接反馈"没用省略号"。
+// 画省略号：三个 2x2 的方点。为什么不用 U+2026（"…"）：本机实测这个字形被
+// FLTK/GDI 画成 5x1 的死点（还带 ClearType 彩边），看起来像一条下划线。
 // 手画方点在任何字体、任何 DPI 下都一致，也不受字体回退影响。
-// cy 取基线（方点压在基线上，与西文句点的位置一致）。
 void drawEllipsisDots(int x, int cy, Fl_Color c) {
     fl_color(c);
     fl_rectf(x,     cy - 1, 2, 2);
@@ -243,18 +338,23 @@ void SideTree::draw() {
         }
 
         const int left = x() + kPadX + r.depth * kIndent;
-        if (r.isDir) {
+        // 目录行与「有子标题」的大纲行都画箭头（大纲折叠，2026-10-31）。
+        if (r.isDir || r.hasChildren) {
             drawChevron(left + 5, ry + rowH / 2, r.expanded,
                         tc.text2);
         }
         const int textLeft = o->rowTextLeft(r);
         const int avail = o->rowTextAvail(r);
 
-        const bool bold = r.isHeading && r.level == 1;
+        // 大纲标题一律不加粗（2026-10-31 用户）：H1 单独加粗在列表里像"选中
+        // 态"，而且别的编辑器的大纲也都不加粗。层级已经由缩进表达，够用。
+        const bool bold = false;
         fl_font(bold ? FL_HELVETICA_BOLD : FL_HELVETICA, o->m_uiFontSize);
         Fl_Color fg = tc.text1;
         if (r.isDir) fg = tc.text1;
         else if (r.isHeading && r.level >= 3) fg = tc.text2;
+        // 二进制文件：灰显（点了也不打开，见 rowClicked）
+        else if (!r.openable) fg = tc.text2;
         if (selected || hovered) fg = fl_contrast(fg, selected ? tc.highlight2 : tc.highlight1);
         fl_color(fg);
         // 超宽行截断 + 手画省略号；全名见 tooltip（updateRowTooltip）。
@@ -331,7 +431,7 @@ int SideTree::handle(int event) {
     case FL_PUSH:
         if (Fl::event_button() == FL_LEFT_MOUSE) {
             int row = o->rowAt(Fl::event_y());
-            if (row >= 0) o->rowClicked(row);
+            if (row >= 0) o->rowClicked(row, Fl::event_x());
             return 1;
         }
         break;
@@ -349,7 +449,11 @@ SidePanel::SidePanel(int x, int y, int w, int h)
     : Fl_Group(x, y, w, h)
 {
     box(FL_NO_BOX);
-    m_scroll = new Fl_Scroll(x, y + m_tabH, w, h - m_tabH);
+    // 面板顶部两条横栏（Tab 条、工具条）与菜单栏/状态栏同高：gTextBarH 是
+    // 全程序"无边框文本条"的统一高度，三者一致才不会显得 Tab 条突兀。
+    m_tabH = MENU_H;
+    m_toolH = MENU_H;
+    m_scroll = new Fl_Scroll(x, y + m_tabH + m_toolH, w, h - m_tabH - m_toolH);
     m_scroll->type(Fl_Scroll::VERTICAL);
     m_scroll->box(FL_NO_BOX);
     // 滚动条与主编辑器同款：10px、扁平、轨道 background1、滑块 background2
@@ -359,7 +463,7 @@ SidePanel::SidePanel(int x, int y, int w, int h)
     styleToolScrollbar(&m_scroll->scrollbar, FL_VERT_SLIDER, m_tc);
     m_scroll->color(m_tc.background1);
     add(m_scroll);
-    m_tree = new SideTree(x, y + m_tabH, w - 2, 1, this);
+    m_tree = new SideTree(x, y + m_tabH + m_toolH, w - 2, 1, this);
     m_scroll->add(m_tree);
     m_scroll->end();
     end();
@@ -372,7 +476,8 @@ void SidePanel::setColors(const ThemeColors &tc, int uiFontSize) {
     if (fs != m_uiFontSize) {
         m_uiFontSize = fs;
         m_rowH = fs + 10;
-        m_tabH = fs + 14;
+        // Tab 条高度不在这里算：它和工具条一样跟菜单栏等高（见 relayout），
+        // 三条横栏统一高度才不会"文件/大纲比别的栏高一截"。
     }
     if (m_scroll) {
         m_scroll->color(m_tc.background1);
@@ -401,6 +506,9 @@ void SidePanel::setRoot(const std::string &dir) {
     m_root = FsNode();
     m_hasRoot = !dir.empty();
     m_error.clear();
+    // 换了文档：上一个文件的折叠状态在这里作废。不清的话标题链 key 会在
+    // 两个文档之间撞车（同名章节），折叠状态串到别的文件上。
+    m_outlineCollapsed.clear();
     if (!m_hasRoot) {
         // Do NOT cache a translated string here: the row label must follow
         // runtime language switches (rebuildRows resolves it live).
@@ -457,13 +565,14 @@ void SidePanel::scanInto(FsNode &parent, int depth, int &budget) {
         if (isDir && skipDirectory(name)) continue;
 
         std::string full = entry.path().u8string();
-        // 只列文本类文件（见 isPanelTextFile 的三档判断）
-        if (!isDir && !isPanelTextFile(full)) continue;
 
         FsNode n;
         n.name = name;
         n.path = full;
         n.isDir = isDir;
+        // 二进制文件也列出来（用户 2026-10-31：图片全不见了，看着像"文件列表缺失"），
+        // 但标成不可打开 —— 点开会在编辑器里显示乱码。灰显 + 不响应点击。
+        if (!isDir) n.openable = isPanelTextFile(full);
         (isDir ? dirs : files).push_back(std::move(n));
         --budget;
     }
@@ -494,12 +603,43 @@ void SidePanel::setOutline(const std::vector<std::string> &labels,
 }
 
 void SidePanel::setCurrentPath(const std::string &path) {
+    // 换了文档：上一个文件的折叠状态在这里作废。setRoot() 那边也清一次，但
+    // 它按"目录没变"短路——同目录里换文件（最常见的场景）根本走不到。
+    // key 虽然是标题链文本，两篇文档出现同名章节时仍会串状态。
+    if (path != m_currentPath) m_outlineCollapsed.clear();
     m_currentPath = path;
     m_selected = -1;
     for (int i = 0; i < static_cast<int>(m_rows.size()); ++i) {
         if (!m_rows[i].path.empty() && m_rows[i].path == path) { m_selected = i; break; }
     }
     if (m_tree) m_tree->redraw();
+}
+
+// --- 大纲折叠 --------------------------------------------------------------
+//
+// 可见行计算本身在 ui/OutlineRows.cpp（纯函数、可单测）。这里只做两件事：
+// 把结果灌进 m_rows；把"箭头挡在文字前面"的命中判断与折叠集合的增删。
+
+// 箭头画在「行文字左缘往左 14px」这一格（对应 rowTextLeft 的 14 预留），
+// 命中区就取这一整格：点箭头 = 折叠/展开，点文字 = 跳转。
+//
+// ★ 必须分热区：把「点行任意位置=折叠」和「点标题=跳转」叠在同一行上，
+//   两者是互斥的——只能二选一。所以箭头单独占一格，而不是整行响应。
+bool SidePanel::chevronHit(const SideRow &r, int px) const {
+    if (!r.isDir && !r.hasChildren) return false;
+    const int left = rowTextLeft(r) - kChevronW;
+    return px >= left && px < left + kChevronW;
+}
+
+void SidePanel::toggleHeadingCollapse(const SideRow &r) {
+    if (r.key.empty()) return;
+    auto it = m_outlineCollapsed.find(r.key);
+    if (it != m_outlineCollapsed.end())
+        m_outlineCollapsed.erase(it);
+    else
+        m_outlineCollapsed.insert(r.key);
+    rebuildRows();
+    redraw();
 }
 
 void SidePanel::rebuildRows() {
@@ -520,6 +660,7 @@ void SidePanel::rebuildRows() {
                     r.path = n.path;
                     r.depth = depth;
                     r.isDir = n.isDir;
+                    r.openable = n.openable;
                     if (n.isDir) {
                         r.hasChildren = !n.children.empty();
                         r.expanded = m_expanded.count(n.path) > 0;
@@ -537,21 +678,14 @@ void SidePanel::rebuildRows() {
             }
         }
     } else {
-        if (m_outlineLabels.empty()) {
+        // 大纲：标题数据 + 折叠集合 → 可见行（纯计算，见 ui/OutlineRows.cpp）
+        m_rows = outline_rows::build(m_outlineLabels, m_outlineLevels,
+                                     m_outlineIds, m_outlineCollapsed);
+        if (m_rows.empty()) {
+            // 合成行要查 I18n（纯函数刻意不碰全局状态，见 OutlineRows.h）
             SideRow r;
             r.label = I18n::get("preview.toc.empty");
             m_rows.push_back(r);
-        } else {
-            for (size_t i = 0; i < m_outlineLabels.size(); ++i) {
-                SideRow r;
-                r.label = m_outlineLabels[i];
-                r.isHeading = true;
-                r.level = (i < m_outlineLevels.size() && m_outlineLevels[i] > 0)
-                              ? m_outlineLevels[i] : 1;
-                r.depth = std::min(r.level - 1, 4);
-                r.anchor = (i < m_outlineIds.size()) ? m_outlineIds[i] : std::string();
-                m_rows.push_back(r);
-            }
         }
     }
 
@@ -584,17 +718,166 @@ void SidePanel::syncTreeGeometry() {
 
 void SidePanel::relayout() {
     if (!m_scroll || !m_tree) return;
-    // 内容区 = 面板高 - 顶部 Tab 条
-    const int bodyH = std::max(1, h() - m_tabH);
-    m_scroll->resize(x(), y() + m_tabH, w(), bodyH);
+    // 顶部两条横栏与菜单栏/状态栏统一高度（gTextBarH）。MENU_H 随"文本条
+    // 高度"设置变，所以每次重排都同步，不能只在构造里取。
+    m_tabH = MENU_H;
+    m_toolH = MENU_H;
+    // 内容区 = 面板高 - 顶部 Tab 条 - 工具条（工具条贴在 Tab 条下面）
+    const int bodyH = std::max(1, h() - m_tabH - m_toolH);
+    m_scroll->resize(x(), y() + m_tabH + m_toolH, w(), bodyH);
     // 宽度变了，行的截断状态可能翻转（截断↔完整），tooltip 需重新判定
     m_tooltipRow = -1;
     m_tree->tooltip(nullptr);
     syncTreeGeometry();
 }
 
+// ---------------------------------------------------------------------------
+// 工具条（Tab 条下面一行图标按钮：全部展开/折叠 · 刷新）
+// ---------------------------------------------------------------------------
+//
+// 配色与交互全部套菜单栏的参数（用户 2026-10-31 指定）：底色 background3、
+// 图标色 text1、悬停 highlight1（= 菜单栏 selection_color）、按下 highlight2
+// （= HoverMenuBar pressColor）。高度也跟 MENU_H 一致，看上去是同一套控件。
+
+void SidePanel::toolRects(int rx[kToolSlots], int rw[kToolSlots], int &ry, int &rh) const {
+    // 按钮 = 铺满工具条高度的方格，右对齐（刷新最右，展开/折叠在它左边）。
+    //
+    // 高度取整条 m_toolH 而不是"高度 - 4"：菜单栏的悬停高亮是铺满整条高度
+    // 的，工具条若画成 20×20 悬浮方块，同一窗口里就有两套悬停观感。铺满之后
+    // 两者是同一套规则，顺带把点击区从 20×20 放大到 24×24（用户 2026-10-31
+    // 问"要不要和标题栏按钮统一宽度"——标题栏那 32×24 是窗口外观件，不必照
+    // 抄宽度；该统一的是这条"色块铺满条高"的规则）。
+    //
+    // 预览格（i >= 2）往左排，与功能格紧邻且同样铺满条高，看起来是同一排。
+    const int bs = std::max(16, m_toolH);
+    rh = bs;
+    ry = y() + m_tabH;
+    const int xr = x() + w() - 4 - bs;
+    rx[1] = xr;
+    rw[1] = bs;
+    rx[0] = xr - bs;   // 两格紧邻，中间不留缝（菜单项也是紧邻的）
+    rw[0] = bs;
+}
+
+void SidePanel::drawToolBar() {
+    const int ty = y() + m_tabH;
+    // 只有这一块 background3，下缘不再画任何分隔线：用户 2026-10-31 明确
+    // 反馈"工具条底部留了一条和文件/大纲同色的细线，不能接受"。分层靠
+    // background3 与内容区 background1 的明度差本身，够了。
+    fl_color(m_tc.background3);                 // 与菜单栏同一个主题参数
+    fl_rectf(x(), ty, w(), m_toolH);
+
+    int rx[kToolSlots], rw[kToolSlots], ry, rh;
+    toolRects(rx, rw, ry, rh);
+
+    for (int i = 0; i < kToolSlots; ++i) {
+        const int cx = rx[i] + rw[i] / 2;
+        const int cy = ry + rh / 2;
+        Fl_Color bg = m_tc.background3;
+        if (m_toolPressed == i)      bg = m_tc.highlight2;
+        else if (m_toolHover == i)   bg = m_tc.highlight1;
+        if (bg != m_tc.background3) {
+            fl_color(bg);
+            fl_rectf(rx[i], ry, rw[i], rh);
+        }
+        // 按钮表示"下一步做什么"：已全展开 → 画向上（折叠）；否则画向下（展开）
+        if (i == 0) drawToolChevrons(cx, cy, !allExpanded(), m_tc.text1);
+        else        drawToolRefresh(cx, cy, m_tc.text1);
+    }
+}
+
+int SidePanel::toolAt(int px, int py) const {
+    if (py < y() + m_tabH || py >= y() + m_tabH + m_toolH) return -1;
+    int rx[kToolSlots], rw[kToolSlots], ry, rh;
+    toolRects(rx, rw, ry, rh);
+    // 只认前 2 格（功能格）：预览格如果以后再加，不能参与命中
+    for (int i = 0; i < kToolSlots; ++i)
+        if (px >= rx[i] && px < rx[i] + rw[i] && py >= ry && py < ry + rh)
+            return i;
+    return -1;
+}
+
+void SidePanel::triggerTool(int which) {
+    if (which == 0) {
+        if (allExpanded()) collapseAll();
+        else               expandAll();
+        return;
+    }
+    if (which != 1) return;
+    // 刷新必须走 MainWindow 注入的那条路：大纲数据在窗口那边（预览开/关
+    // 两条来源），面板自己重排是刷新不出新标题的。
+    if (m_refresh) m_refresh();
+    else if (m_tab == Files) rescan();
+}
+
+// 文件页：以「非空目录（含根目录自己）全部展开」为全展开。
+//
+// ★ 必须把"自己"算进来：文件树的第一行就是根目录（见 rebuildRows 的
+//   walk(m_root, 0)），而 setRoot 初始就把根目录塞进 m_expanded。早先这里
+//   只看子目录，于是 collapseAll 把根目录也塌掉之后再点"全部展开"，
+//   子目录全插回去了、根目录却还塌着 → 面板只剩一行，看起来"展开无效"。
+bool SidePanel::dirsAllExpanded(const FsNode &n) const {
+    if (!n.children.empty() && m_expanded.count(n.path) == 0) return false;
+    for (const auto &c : n.children) {
+        if (!c.isDir) continue;
+        if (!dirsAllExpanded(c)) return false;
+    }
+    return true;
+}
+
+void SidePanel::expandAllDirs(const FsNode &n) {
+    if (!n.children.empty()) m_expanded.insert(n.path);   // 自己也展开
+    for (const auto &c : n.children) {
+        if (!c.isDir) continue;
+        expandAllDirs(c);
+    }
+}
+
+std::set<std::string> SidePanel::allOutlineCollapseKeys() const {
+    std::set<std::string> keys;
+    // 空折叠集合下构建一次 = 拿到全文所有标题的 key，挑出"有子标题"的那些。
+    for (const auto &r : outline_rows::build(m_outlineLabels, m_outlineLevels,
+                                             m_outlineIds, {}))
+        if (r.hasChildren) keys.insert(r.key);
+    return keys;
+}
+
+bool SidePanel::allExpanded() const {
+    if (m_tab == Files)
+        return !m_hasRoot || dirsAllExpanded(m_root);
+    for (const auto &r : outline_rows::build(m_outlineLabels, m_outlineLevels,
+                                             m_outlineIds, {}))
+        if (r.hasChildren && m_outlineCollapsed.count(r.key)) return false;
+    return true;
+}
+
+void SidePanel::expandAll() {
+    if (m_tab == Files) {
+        if (m_hasRoot) expandAllDirs(m_root);
+    } else {
+        m_outlineCollapsed.clear();
+    }
+    rebuildRows();
+    redraw();
+}
+
+void SidePanel::collapseAll() {
+    if (m_tab == Files)
+        m_expanded.clear();
+    else
+        m_outlineCollapsed = allOutlineCollapseKeys();
+    rebuildRows();
+    redraw();
+}
+
 int SidePanel::rowAt(int py) const {
     if (!m_tree) return -1;
+    // py 是窗口坐标；m_tree->y() 与它在同一条坐标轴上（= 面板顶 + Tab 高，
+    // Fl_Scroll 滚动时随 scroll_to 一起平移），所以直接相减就够。
+    // ★ 实测数据（2026-10-31，探针记录）：未滚动时 tree.y=102，滚 80px 后
+    //   tree.y=22，滚 306px 后 tree.y=-204 —— 三者与行绘制用的 y() 完全一致。
+    //   不要"顺手"再减一次 m_scroll->yposition()：那样会重复计算，点击整体
+    //   错位若干行，表现正是"点了 A 却折叠了上面的 B"。
     const int rel = py - m_tree->y();
     if (rel < 0) return -1;
     const int row = rel / m_rowH;
@@ -602,10 +885,15 @@ int SidePanel::rowAt(int py) const {
     return row;
 }
 
-void SidePanel::rowClicked(int row) {
+void SidePanel::rowClicked(int row, int px) {
     if (row < 0 || row >= static_cast<int>(m_rows.size())) return;
     const SideRow &r = m_rows[row];
     if (r.isHeading) {
+        // 箭头热区 → 折叠/展开本节；否则 → 跳到该标题。
+        if (r.hasChildren && chevronHit(r, px)) {
+            toggleHeadingCollapse(r);
+            return;
+        }
         if (!r.anchor.empty() && m_pickHeading) m_pickHeading(r.anchor);
         m_selected = row;
         if (m_tree) m_tree->redraw();
@@ -619,6 +907,8 @@ void SidePanel::rowClicked(int row) {
         redraw();
         return;
     }
+    // 二进制文件只做展示：点开会在编辑器里显示乱码（Document 不做二进制识别）
+    if (!r.openable) return;
     if (m_pickFile) m_pickFile(r.path);
 }
 
@@ -634,16 +924,18 @@ void SidePanel::draw() {
         m_tabX[i] = x() + gap + i * (tabW + gap);
         m_tabW[i] = tabW;
         const bool active = (static_cast<int>(m_tab) == i);
+        // 高度统一成 MENU_H（24）后内缩从 3 收到 2，否则 16px 字只剩 18px
+        // 可用高，CJK 会被切掉一点点。
         if (active) {
             fl_color(m_tc.highlight1);
-            fl_rectf(m_tabX[i], y() + 3, tabW, m_tabH - 6);
+            fl_rectf(m_tabX[i], y() + 2, tabW, m_tabH - 4);
         }
         // 两个 Tab 都用主文字色：选中态已经有 highlight1 底色区分，未选中项
         // 再用注释色就像"禁用"，与状态栏/工具栏的用色规则也不一致。
         fl_color(active ? fl_contrast(m_tc.text1, m_tc.highlight1) : m_tc.text1);
         const char *label = (i == 0) ? I18n::get("panel.files")
                                      : I18n::get("panel.outline");
-        fl_draw(label, m_tabX[i], y() + 3, tabW, m_tabH - 6,
+        fl_draw(label, m_tabX[i], y() + 2, tabW, m_tabH - 4,
                 FL_ALIGN_CENTER);
     }
 
@@ -652,6 +944,9 @@ void SidePanel::draw() {
     // （用户 2026-10-20 反馈）。分层交给 divider 一件事就够了。
 
     Fl_Group::draw();
+
+    // 工具条（Tab 条下面一行图标按钮）：自绘，不是子控件
+    drawToolBar();
 
     // 滚动条最后画：Fl_Scroll 已按 FL_FLAT_BOX + 主题色画过一次，这里用与
     // 主编辑器逐像素相同的画法（ThemeWidgets.h drawToolScrollbar）覆盖，
@@ -664,7 +959,15 @@ bool SidePanel::bandColourAt(int x, int y, unsigned int *colour) const {
     // our x()/y()). Only the Tab strip is answered here: below it the content
     // is SideTree's background1, which the normal widget-tree walk already
     // resolves through the window colour.
-    if (!colour || y < 0 || y >= m_tabH) return false;
+    if (!colour || y < 0 || y >= m_tabH) {
+        // 工具条同理：它是自绘的 background3 色带，也要如实回答，
+        // 否则窗口边条在那一行会退回窗口底色。
+        if (colour && y >= m_tabH && y < m_tabH + m_toolH) {
+            *colour = m_tc.background3;
+            return true;
+        }
+        return false;
+    }
     // Recompute the tab geometry with the same formula draw() uses. m_tabX /
     // m_tabW are absolute and only valid after a paint, so they cannot be
     // used from here.
@@ -683,7 +986,15 @@ bool SidePanel::bandColourAt(int x, int y, unsigned int *colour) const {
 
 int SidePanel::rowTextLeft(const SideRow &r) const {
     const int base = m_tree ? m_tree->x() : x();
-    return base + kPadX + r.depth * kIndent + (r.isDir ? 14 : 0);
+    // 行首固定预留一格箭头位，有没有箭头都一样。
+    //
+    // ★ 这里曾经是"有子项才留 14px"，后果是灾难性的（2026-10-31 用户实测）：
+    //   缩进步长 kIndent 也是 14px，于是"父行(有箭头) +14" 与 "子行(无箭头)
+    //   +0" 正好抵消 —— 子行和父行左缘完全重合，看起来毫无层级（目录里的
+    //   文件与目录同级）；更糟的是同级里"后面还有子标题的那一行"比"最后一
+    //   行"右移 14px，出现"六级标题比五级标题更靠左"这种倒挂。
+    //   箭头列必须对所有行恒定占位，缩进才是真的每级 +14。
+    return base + kPadX + kChevronW + r.depth * kIndent;
 }
 
 int SidePanel::rowTextAvail(const SideRow &r) const {
@@ -710,7 +1021,9 @@ void SidePanel::updateRowTooltip(int row) {
     m_tooltipRow = row;
 
     const SideRow &r = m_rows[row];
-    const bool bold = (r.isHeading && r.level == 1);
+    // 与 draw() 一致：标题不再加粗（见 draw 里的说明），否则 tooltip 的
+    // 截断判定会用较粗的字体量宽度，和实际画出来的不一致。
+    const bool bold = false;
     fl_font(bold ? FL_HELVETICA_BOLD : FL_HELVETICA, m_uiFontSize);
     // 与绘制同一条缓存：鼠标划过时不再重复做一遍文本测量
     bool elided = false;
@@ -737,6 +1050,14 @@ int SidePanel::handle(int event) {
     switch (event) {
     case FL_PUSH:
         if (Fl::event_button() == FL_LEFT_MOUSE) {
+            const int tb = toolAt(Fl::event_x(), Fl::event_y());
+            if (tb >= 0) {
+                // 按下先换色（highlight2，与菜单栏按下一色），等抬起再执行；
+                // 抬起位置已经移出按钮就取消——这是按钮的常规手感。
+                m_toolPressed = tb;
+                redraw();
+                return 1;
+            }
             if (Fl::event_y() < y() + m_tabH) {
                 const int ex = Fl::event_x();
                 for (int i = 0; i < 2; ++i) {
@@ -749,9 +1070,44 @@ int SidePanel::handle(int event) {
             }
         }
         break;
+    case FL_RELEASE:
+        if (m_toolPressed >= 0) {
+            const int which = m_toolPressed;
+            m_toolPressed = -1;
+            m_toolHover = toolAt(Fl::event_x(), Fl::event_y());
+            redraw();
+            if (m_toolHover == which) triggerTool(which);
+            return 1;
+        }
+        break;
+    case FL_ENTER:
+    case FL_MOVE: {
+        // 工具条是自绘的，没有子控件去接 FL_ENTER/FL_MOVE，悬停与 tooltip
+        // 都只能在这里更新。
+        const int tb = toolAt(Fl::event_x(), Fl::event_y());
+        if (tb != m_toolHover) {
+            m_toolHover = tb;
+            // 图标没有文字，靠 tooltip 说清它是干什么的
+            if (tb == 0)
+                copy_tooltip(I18n::get(allExpanded() ? "panel.collapseall"
+                                                     : "panel.expandall"));
+            else if (tb == 1)
+                copy_tooltip(I18n::get("panel.refresh"));
+            else
+                copy_tooltip(nullptr);
+            redraw();
+        }
+        break;
+    }
     case FL_LEAVE:
         // 落在 Tab 条上时让树的 hover 失效
         if (m_hover != -1) { m_hover = -1; if (m_tree) m_tree->redraw(); }
+        if (m_toolHover != -1 || m_toolPressed != -1) {
+            m_toolHover = -1;
+            if (m_toolPressed >= 0) m_toolPressed = -1;
+            copy_tooltip(nullptr);
+            redraw();
+        }
         break;
     default:
         break;

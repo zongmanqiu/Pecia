@@ -20,8 +20,8 @@
 
 ---
 
-**[⬇️ 下载最新版 (1.1.1) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.1/Pecia_x64_1.1.1.zip)**
- ｜ **[⬇️ 下载最新版 (1.1.1) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.1/Pecia_x64_1.1.1.zip)**
+**[⬇️ 下载最新版 (1.1.2) (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)**
+ ｜ **[⬇️ 下载最新版 (1.1.2) (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)**
  ｜ [Gitee主仓](https://gitee.com/qiuzongman/pecia)
  ｜ [GitHub镜像](https://github.com/zongmanqiu/Pecia)
  ｜ [B站视频演示](https://www.bilibili.com/video/BV144Yo6oEz9/)

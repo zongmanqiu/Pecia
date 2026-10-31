@@ -40,25 +40,21 @@ static fs::path exe_dir()
 
 int main()
 {
-    // exe 在 build/ 下，故 exe_dir/.. 即仓库根。样例文档按候选列表找：
-    // 历史上它落在 build/ex1.markdown/（打包测试素材时铺开的），但这种
-    // 位置随打包方式变动，所以不写死单一路径。
+    // exe 在 build/ 下，故 exe_dir/.. 即仓库根，源码树在 repoRoot/main/。
+    // 路径一律从 exe 位置推导，不出现绝对路径字面量。
+    //
+    // ★ 样例必须取**源码树里**的 main/example/ex1.markdown/ex1.md（用户
+    //   2026-10-31："测试要严谨，最好使用源码里面的文件"）。早先候选表里写的是
+    //   `repoRoot/example/...`，少了一层 main/，永远命不中，实际一直悄悄跑
+    //   build/ 下那份打包副本 —— 那份谁都能改、也可能过期，拿它当断言的基准
+    //   等于没有基准；而且找不到时会打 SKIP 直接 return 0，测试永远绿。
     const fs::path repoRoot = fs::weakly_canonical(exe_dir() / L"..");
     const fs::path outDir  = repoRoot / L"temp" / L"exp_out";
 
-    const fs::path candidates[] = {
-        repoRoot / L"build"   / L"ex1.markdown" / L"ex1.md",
-        repoRoot / L"example" / L"ex1.markdown" / L"ex1.md",
-        repoRoot / L"example" / L"ex1.md",
-    };
-    fs::path mdPath;
-    for (const auto& c : candidates) {
-        if (fs::exists(c)) { mdPath = c; break; }
-    }
-    if (mdPath.empty()) {
-        std::printf("SKIP: 找不到样例文档（已试 %zu 个候选位置）\n",
-                    sizeof(candidates) / sizeof(candidates[0]));
-        return 0;   // 样例缺失不算失败：仓库裁剪版不该红
+    const fs::path mdPath = repoRoot / L"main" / L"example" / L"ex1.markdown" / L"ex1.md";
+    if (!fs::exists(mdPath)) {
+        std::printf("FAIL: 源码样例缺失（应在 main/example/ex1.markdown/ex1.md）\n");
+        return 1;
     }
 
     std::error_code ec;

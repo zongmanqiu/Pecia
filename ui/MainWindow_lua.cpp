@@ -38,19 +38,8 @@
 // (mutex), bring its window to the front instead of launching a second one.
 // ---------------------------------------------------------------------------
 
-namespace {
-
-// UTF-8 -> UTF-16（宽字符 Win32 API 入参；中文安装目录下 ANSI 版失效）
-static std::wstring widen(const std::string &utf8) {
-    if (utf8.empty()) return std::wstring();
-    int n = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
-    if (n <= 0) return std::wstring();
-    std::wstring w(n, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, &w[0], n);
-    while (!w.empty() && w.back() == L'\0') w.pop_back();
-    return w;
-}
-
+// 声明在 ui/MainWindow.h（MainWindow_callbacks.cpp 的 ensureAiChatRunning
+// 也要用）：按标题找到工具窗口并前置；Unicode 查找，中文标题可用。
 bool activateByTitle(const char *title) {
     // 窗口标题可能是中文（I18n）：FLTK 用 Unicode 设置标题，须用
     // FindWindowW + UTF-8 转宽，FindWindowA 在非 ANSI 标题下匹配不到。
@@ -67,21 +56,22 @@ bool activateByTitle(const char *title) {
     return false;
 }
 
-bool launchTool(const char *exeName, const char *mutexName,
-                const char *windowTitle, const char *pipeName, const char *langCode) {
-    // Transient single-instance check: release the handle immediately so
-    // the TOOL process owns the mutex (otherwise the tool's own check
-    // would see our handle and wrongly exit as a duplicate).
-    HANDLE hMutex = CreateMutexA(nullptr, FALSE, mutexName);
-    bool alreadyRunning = (GetLastError() == ERROR_ALREADY_EXISTS);
-    CloseHandle(hMutex);
-    if (alreadyRunning) {
-        if (activateByTitle(windowTitle)) return true;
-        Sleep(300);                       // tool may still be starting up
-        activateByTitle(windowTitle);
-        return true;
-    }
+namespace {
 
+// UTF-8 -> UTF-16（宽字符 Win32 API 入参；中文安装目录下 ANSI 版失效）
+static std::wstring widen(const std::string &utf8) {
+    if (utf8.empty()) return std::wstring();
+    int n = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
+    if (n <= 0) return std::wstring();
+    std::wstring w(n, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, &w[0], n);
+    while (!w.empty() && w.back() == L'\0') w.pop_back();
+    return w;
+}
+
+// Spawn the tool process (exe lives next to the main exe). Split out of
+// launchTool() so the single-instance poll loop can retry it.
+static bool spawnTool(const char *exeName, const char *pipeName, const char *langCode) {
     // 宽字符路径：exe 位于中文目录时 GetModuleFileNameA/CreateProcessA 失效。
     // toolPathU8 仅用于提示消息（FLTK 按 UTF-8 显示）。
     wchar_t exeDirW[MAX_PATH];
@@ -118,6 +108,26 @@ bool launchTool(const char *exeName, const char *mutexName,
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
     return true;
+}
+
+bool launchTool(const char *exeName, const char *mutexName,
+                const char *windowTitle, const char *pipeName, const char *langCode) {
+    // ★ 单实例检查必须容忍"正在退出的实例"。工具窗口关闭 = hide() →
+    //   Fl::run() 返回 → 进程退出，但内核回收互斥量晚于窗口销毁：那几百
+    //   毫秒里单次查询会误判"已在运行"，而激活又找不到窗口（HWND 已销毁）
+    //   → 旧代码 return true，用户什么都没看见（2026-10-31 实测：关掉
+    //   AI 窗口后立即"发送到 AI"，界面毫无反应）。所以轮询至多 2s：
+    //   激活成功 = 真在运行（含"正在启动、窗口未建"的情形）；激活不到 =
+    //   退出路上，等互斥量释放后走正常启动。
+    for (int i = 0; i < 20; ++i) {
+        HANDLE hMutex = CreateMutexA(nullptr, FALSE, mutexName);
+        bool alreadyRunning = (GetLastError() == ERROR_ALREADY_EXISTS);
+        CloseHandle(hMutex);
+        if (!alreadyRunning) return spawnTool(exeName, pipeName, langCode);
+        if (activateByTitle(windowTitle)) return true;
+        Sleep(100);
+    }
+    return false;   // 2s 后仍有互斥量却没有窗口：异常状态，放弃
 }
 
 } // namespace

@@ -105,6 +105,11 @@ int MainWindow::handle(int event) {
         int dy = Fl::event_dy();
         // 鼠标在预览区：普通滚轮滚动预览；Ctrl+滚轮在预览区不缩放（预览无缩放功能）
         if (m_previewActive) {
+            // 纯预览：整块内容区都是预览，没有分界点，任何位置都滚预览。
+            if (m_previewOnly) {
+                if (!ctrl) scrollPreview(dy * 40);
+                return 1;
+            }
             // 内容区可能被左侧面板挤窄：分界点 = 侧栏宽 + 内容区内编辑区宽
             const int cl = contentLeft();
             const int divX = cl + (int)((w() - cl) * m_previewRatio);
@@ -414,13 +419,18 @@ static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
             return HTCLIENT;  // no resize when maximized
 
         // The grip is RESIZE_ZONE px inside the window edge (the 1px band is
-        // part of it). A scrollbar that touches the edge keeps its clicks -
-        // otherwise the outer 5px of a 10px scrollbar would resize the window
-        // instead of dragging the thumb - so there the grip shrinks back to
-        // the 1px band.
+        // part of it). A scrollbar that touches the edge keeps most of its
+        // clicks - otherwise the outer 6px of a 10px scrollbar would resize
+        // the window instead of dragging the thumb - so there the grip
+        // shrinks to RESIZE_ZONE_OVER_SCROLLBAR.
+        //
+        // That floor used to be NC_PAD (1px), which is what made the right
+        // edge feel un-grabbable (raised 2026-10-31): the editor's and the
+        // preview's vertical scrollbars sit FLUSH against the window's right
+        // edge, so the edge people resize by most only had 1px of grip.
         const int grip = windowChrome::pointOverScrollbar(
                              fl_find(hwnd), pt.x - rc.left, pt.y - rc.top)
-                         ? WindowFrame::NC_PAD
+                         ? WindowFrame::RESIZE_ZONE_OVER_SCROLLBAR
                          : WindowFrame::RESIZE_ZONE;
 
         bool onTop    = pt.y <  rc.top    + grip;

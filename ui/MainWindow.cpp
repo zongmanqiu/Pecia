@@ -13,7 +13,6 @@
 
 #include "script/LuaEngine.h"
 #include "LuaTool/LuaPipeServer.h"
-#include "LuaTool/AiPushServer.h"
 #include "core/Config.h"
 #include "core/Theme.h"
 #include "core/FileManager.h"
@@ -699,10 +698,6 @@ MainWindow::~MainWindow() {
     m_luaPipe = nullptr;
     delete m_luaEngine;
     m_luaEngine = nullptr;
-
-    // AI push channel (owns a listener thread that we join in its dtor).
-    delete m_aiPush;
-    m_aiPush = nullptr;
 
     delete m_cfg;
 

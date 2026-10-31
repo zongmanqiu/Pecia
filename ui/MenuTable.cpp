@@ -139,6 +139,7 @@ Fl_Menu_Item g_menu[] = {
     // Markdown（样式与 Settings/Language 一致：无分割线）
     { "Markdown", 0, nullptr, nullptr, FL_SUBMENU },
     { "Preview",              FL_COMMAND | 'p', MainWindow::cbTogglePreview,        nullptr, FL_MENU_TOGGLE },
+    { "Preview Only",         FL_COMMAND | FL_ALT | 'p', MainWindow::cbTogglePreviewOnly, nullptr, FL_MENU_TOGGLE },
     { "Scroll Sync",          0,                MainWindow::cbToggleScrollSync,      nullptr, FL_MENU_TOGGLE },
     // Label must stay identical to the side-panel tab (panel.outline):
     // buildMenuKeys() maps this item to the very same i18n key.

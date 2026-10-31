@@ -27,9 +27,10 @@ WindowFrame::WindowFrame() {
 }
 
 #if defined(_WIN32)
-bool windowCoversWorkArea(const Fl_Window *win) {
-    if (!win) return false;
-    HWND hwnd = fl_xid(win);
+namespace {
+// Geometry test only - kept separate from the Fl_Window wrapper so the HWND
+// state machine below (and its unit test) can share it.
+bool hwndCoversWorkArea(HWND hwnd) {
     if (!hwnd) return false;
 
     RECT rc;
@@ -42,11 +43,13 @@ bool windowCoversWorkArea(const Fl_Window *win) {
     // Our maximized geometry intentionally overhangs the work area by NC_PAD
     // on the resize edges, so "covers" (not "equals") is the right test.
     const RECT &work = mi.rcWork;
-    const int tol = 2;
-    return rc.left   <= work.left   + tol &&
-           rc.top    <= work.top    + tol &&
-           rc.right  >= work.right  - tol &&
-           rc.bottom >= work.bottom - tol;
+    return windowChrome::rectCoversWork(rc, work);
+}
+}  // namespace
+
+bool windowCoversWorkArea(const Fl_Window *win) {
+    if (!win) return false;
+    return hwndCoversWorkArea(fl_xid(win));
 }
 #else
 bool windowCoversWorkArea(const Fl_Window *) { return false; }
@@ -124,6 +127,24 @@ void setWindowRegion(HWND hwnd, bool round) {
 
 namespace windowChrome {
 
+#if defined(_WIN32)
+void setRoundedPreference(HWND hwnd, bool on) {
+    if (!hwnd) return;
+    // Non-null even when off: SetPropW(..., 0) would REMOVE the property and
+    // make the window look "unmanaged" to refresh/reapply.
+    SetPropW(hwnd, kRoundedProp, (HANDLE)(INT_PTR)(on ? 2 : 1));
+}
+
+bool roundedPreference(HWND hwnd) {
+    if (!hwnd) return false;
+    return GetPropW(hwnd, kRoundedProp) == (HANDLE)(INT_PTR)2;
+}
+
+bool roundedNow(HWND hwnd) {
+    return effectiveRounded(roundedPreference(hwnd), hwndCoversWorkArea(hwnd));
+}
+#endif
+
 void setRoundedCornersEnabled(bool on) {
 #if defined(_WIN32)
     s_cornersEnabled = on;
@@ -145,10 +166,9 @@ bool roundedCornersActive(const Fl_Window *win) {
     if (!win) return false;
     HWND hwnd = fl_xid(win);
     if (!hwnd) return false;
-    if (GetPropW(hwnd, kRoundedProp) != (HANDLE)(INT_PTR)2) return false;
-    // Maximized / work-area-covering windows are square even though the user
-    // setting (stored property) is still "rounded".
-    return !windowCoversWorkArea(win);
+    // Maximized / work-area-covering windows are square even though the stored
+    // property (the user preference) still says "rounded".
+    return roundedNow(hwnd);
 #else
     (void)win;
     return false;
@@ -184,11 +204,11 @@ void applyRoundedCorners(Fl_Window *win, bool on, unsigned int borderColor) {
     HWND hwnd = fl_xid(win);
     if (!hwnd) return;
 
-    // Maximized / work-area-covering windows stay square (Windows norm).
-    const bool round = on && !windowCoversWorkArea(win);
-    // Non-null even when off: SetPropW(..., 0) would remove the property and
-    // make the window look "unmanaged" to refresh/reapply.
-    SetPropW(hwnd, kRoundedProp, (HANDLE)(INT_PTR)(round ? 2 : 1));
+    // Store the PREFERENCE, then ask the state machine what that means for
+    // the current geometry. Writing the effective state here instead was the
+    // bug fixed 2026-10-31 - see effectiveRounded() in the header.
+    setRoundedPreference(hwnd, on);
+    const bool round = roundedNow(hwnd);
     SetPropW(hwnd, kBorderProp,
              (HANDLE)(INT_PTR)(borderColor + 1));   // 0 is a valid Fl_Color
 
@@ -206,9 +226,10 @@ void refreshRoundedCorners(Fl_Window *win) {
     if (!hwnd) return;
     HANDLE p = GetPropW(hwnd, kRoundedProp);
     if (!p) return;   // window never opted in
-    const bool wasRound = ((INT_PTR)p) == 2;
-    const bool round = wasRound && !windowCoversWorkArea(win);
-    setWindowRegion(hwnd, round);
+    // Re-derive the effective state from the stored preference + the CURRENT
+    // geometry. This is the call that used to read the effective state back
+    // and thereby made a restored window stay square forever.
+    setWindowRegion(hwnd, roundedNow(hwnd));
 #else
     (void)win;
 #endif

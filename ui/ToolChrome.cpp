@@ -158,12 +158,13 @@ static LRESULT WINAPI toolSubclassProc(HWND hwnd, UINT msg,
         if (windowCoversWorkArea(fl_find(hwnd)))
             return HTCLIENT;
 
-        // Scrollbars that touch the edge keep their clicks (see
+        // Scrollbars that touch the edge keep most of their clicks (see
         // windowChrome::pointOverScrollbar); everywhere else the grip is the
-        // full RESIZE_ZONE.
+        // full RESIZE_ZONE. The floor is RESIZE_ZONE_OVER_SCROLLBAR, not
+        // NC_PAD (1px) - see the note in WindowFrame.h.
         const int grip = windowChrome::pointOverScrollbar(
                              fl_find(hwnd), pt.x - rc.left, pt.y - rc.top)
-                         ? WindowFrame::NC_PAD
+                         ? WindowFrame::RESIZE_ZONE_OVER_SCROLLBAR
                          : WindowFrame::RESIZE_ZONE;
 
         bool onTop    = pt.y <  rc.top    + grip;

@@ -190,15 +190,19 @@ bool MainWindow::spawnWindowWithFile(const char *path) {
 }
 
 // --------------------------------------------------------------------------
-// "Open .md files with preview" (Options > Interface & System)
+// "打开 .md 文件时：无操作 / 分屏预览 / 仅预览" (Options > Interface & System)
 // --------------------------------------------------------------------------
 
 void MainWindow::autoPreviewCb(void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
     if (!self) return;
     // 延后一帧期间用户可能已经自己开了（或关了）预览、甚至关了窗口，
-    // 所以这里再判一次；togglePreview() 是幂等的一侧开关，重复调用会变成关闭。
-    if (!self->m_previewActive) self->togglePreview();
+    // 所以这里再判一次；setPreviewOnly() 是幂等的"设定目标状态"，
+    // 不会把用户手动开的预览又翻回去。
+    const int mode = self->m_pendingAutoPreviewMode;
+    self->m_pendingAutoPreviewMode = Config::AutoPreviewNone;
+    if (mode == Config::AutoPreviewNone) return;
+    self->setPreviewOnly(mode == Config::AutoPreviewOnly);
 }
 
 void MainWindow::openFile(const char *path) {
@@ -300,15 +304,19 @@ void MainWindow::openFile(const char *path) {
     // 左侧面板：新文件的目录/路径变了，重建文件树并高亮当前文件
     syncSidePanel();
 
-    // 打开 .md/.markdown 时自动开启预览（Options > Interface & System）。
+    // 打开 .md/.markdown 时按配置开预览（Options > Interface & System）。
     // 只有走到这里才算"新打开了一个文件" —— 已经打开过的走 switchToTab()、
     // 加载失败、以及用户在保存确认框点了取消，都在上面提前 return 了。
     // 所以切标签页和另存为都不会触发这里（另存为根本不经过 openFile）。
     // 延后一帧：refreshPreview() 是同步渲染，大文档会把"打开"这一步本身
     // 拖成白屏无响应；延后一帧则窗口先画出来、文件先显示，之后才渲染。
-    if (!m_previewActive && m_cfg && m_cfg->getAutoPreviewMd() && path &&
-        pathutil::isMarkdownPath(path)) {
-        Fl::add_timeout(0.0, autoPreviewCb, this);
+    // 预览已经开着时不再改动排布（用户手动选的布局优先）。
+    if (!m_previewActive && m_cfg && path && pathutil::isMarkdownPath(path)) {
+        const int mode = m_cfg->getAutoPreviewMode();
+        if (mode != Config::AutoPreviewNone) {
+            m_pendingAutoPreviewMode = mode;
+            Fl::add_timeout(0.0, autoPreviewCb, this);
+        }
     }
 }
 
@@ -551,8 +559,13 @@ void MainWindow::updateStatusBar() {
     // Read-only notice (large files open read-only) appears only when
     // needed, appended after Size - keeping the normal layout untouched
     // so the enc/Size spacing stays single when not read-only.
+    //
+    // Position is shown as bare "line:column" with no label: the previous
+    // "Ln 12 / Col 5" was hardcoded English in an otherwise fully
+    // translated UI, and the two numbers are the ones everybody reads
+    // first, so the shortest form wins (2026-10-31).
     snprintf(buf2, sizeof(buf2),
-             "Ln %d     Col %d     %d%%     %s     Size %s%s",
+             "%d:%d     %d%%     %s     Size %s%s",
              line, col, pct, enc, sizeStr,
              t->doc->isReadOnly() ? "     Read-only" : "");
     m_status->value(buf2);

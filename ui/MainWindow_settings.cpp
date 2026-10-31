@@ -94,6 +94,7 @@ void MainWindow::buildMenuKeys() {
 
         { "Markdown",                      "menu.markdown" },
         { "Markdown/Preview",              "menu.markdown.preview" },
+        { "Markdown/Preview Only",         "menu.markdown.previewonly" },
         { "Markdown/Scroll Sync",          "menu.markdown.scrollsync" },
         // 与侧面板「大纲」页签共用同一个 i18n key，保证两处文案永远一致。
         { "Markdown/Outline",              "panel.outline" },

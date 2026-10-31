@@ -95,6 +95,9 @@ void MainWindow::toggleSidePanel()
             if (m_preview) m_preview->scrollToAnchor(anchor);
             jumpToHeadingLine(anchor);
         });
+        // 底部工具条的「刷新」＝菜单 Markdown > Refresh（Ctrl+R）：同一个入口，
+        // 文件页重扫磁盘、大纲页回这里重提标题（标题数据在窗口这边）。
+        m_sidePanel->setRefresh([this]() { cbRefreshPreview(nullptr, this); });
         add(m_sidePanel);
         m_sidePanel->hide();
     }

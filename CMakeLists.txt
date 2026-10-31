@@ -15,7 +15,7 @@ if(CMAKE_GENERATOR MATCHES "Makefiles")
     set(CMAKE_DEPENDS_USE_COMPILER FALSE)
 endif()
 
-project(Pecia VERSION 1.1.1 LANGUAGES C CXX)
+project(Pecia VERSION 1.1.2 LANGUAGES C CXX)
 
 # ── Supported target is strictly Windows x64 (64-bit) only. ────────────────
 # The project is deliberately single-platform / single-arch: it uses Windows
@@ -216,6 +216,7 @@ core/ShortcutCore.cpp
     editor/Document.cpp
     editor/FontUtils.cpp
     editor/Editor.cpp
+    editor/ImageAttach.cpp
     script/LuaEngine.cpp
     script/LuaParamParser.cpp
     script/ScriptManager.cpp
@@ -233,6 +234,7 @@ ui/MainWindow_callbacks.cpp
     ui/MainWindow_preview.cpp
     ui/MainWindow_sidepanel.cpp
     ui/SidePanel.cpp
+    ui/OutlineRows.cpp
     ui/MenuTable.cpp
     ui/Layout.cpp
     ui/FindReplace.cpp
@@ -253,7 +255,6 @@ ui/MatchHighlight.cpp
     ui/ToolChrome.cpp
     ui/UiBridge.cpp
     LuaTool/LuaPipeServer.cpp
-    LuaTool/AiPushServer.cpp
     core/AiApiClient.cpp
     core/Updater.cpp
     mdview/preprocess.cpp
@@ -986,6 +987,7 @@ add_executable(test_match_highlight
     ui/MatchHighlight.cpp
     editor/FontUtils.cpp
     editor/Editor.cpp
+    editor/ImageAttach.cpp
     ui/ImeInPlace.cpp
     core/Config.cpp
     core/UiBridge.cpp
@@ -1279,6 +1281,126 @@ target_link_libraries(test_ui_smoke PRIVATE
 add_test(NAME ui_smoke COMMAND test_ui_smoke)
 set_tests_properties(ui_smoke PROPERTIES TIMEOUT 60)
 
+# ---------------------------------------------------------------------------
+# Rounded-corner state machine - the "started maximized -> restore stays
+# square" regression (fixed 2026-10-31). The old code stored the EFFECTIVE
+# state in the window property, so maximizing overwrote the user preference
+# and every later refresh re-applied "square". Only the pure rule and the
+# property encoding are testable headlessly; the maximized sequence itself
+# stays on manual verification.
+add_executable(test_rounded_corners
+    test/test_rounded_corners.cpp
+    test/test_stubs.cpp
+    ui/WindowFrame.cpp
+)
+target_include_directories(test_rounded_corners PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/ui
+    ${FLTK_INCLUDE_DIRS}
+)
+if(MSVC)
+    target_compile_options(test_rounded_corners PRIVATE /utf-8 /permissive- /W4 /WX /MD)
+    target_compile_definitions(test_rounded_corners PRIVATE _CRT_SECURE_NO_WARNINGS UNICODE _UNICODE)
+endif()
+target_link_libraries(test_rounded_corners PRIVATE
+    ${FLTK_LIBRARIES}
+    comctl32
+    shell32
+    user32
+    imm32
+    gdi32
+    kernel32
+    winspool
+    ole32
+    oleaut32
+    uuid
+    comdlg32
+    advapi32
+    ws2_32
+    gdiplus
+    dwmapi
+)
+add_test(NAME rounded_corners COMMAND test_rounded_corners)
+set_tests_properties(rounded_corners PROPERTIES TIMEOUT 60)
+
+# ---------------------------------------------------------------------------
+# 大纲折叠的可见行计算 - "折一处全折光"回归（2026-10-31 用户实测）。
+# 折叠 key 只取祖先链（不含自身标题文本）时，同一父节点下的兄弟标题 key
+# 全部相同，折叠任一兄弟都会连带折掉整层。ui/OutlineRows.cpp 是纯函数，
+# 因此这里不需要窗口、FLTK 运行时或 I18n。
+add_executable(test_outline_collapse
+    test/test_outline_collapse.cpp
+    ui/OutlineRows.cpp
+)
+target_include_directories(test_outline_collapse PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/ui
+    ${FLTK_INCLUDE_DIRS}
+)
+if(MSVC)
+    target_compile_options(test_outline_collapse PRIVATE /utf-8 /permissive- /W4 /WX /MD)
+    target_compile_definitions(test_outline_collapse PRIVATE _CRT_SECURE_NO_WARNINGS UNICODE _UNICODE)
+endif()
+add_test(NAME outline_collapse COMMAND test_outline_collapse)
+set_tests_properties(outline_collapse PROPERTIES TIMEOUT 60)
+
+# ---------------------------------------------------------------------------
+# "空文档"判据 - 空文档不允许进入"仅预览"回归（2026-10-31 用户报的产品问题：
+# 仅预览中新建文件 → 编辑区隐藏、预览空白，用户以为窗口卡死）。
+# ui/PreviewMode.h 是纯头文件，不建窗口、不链接 FLTK。
+# ---------------------------------------------------------------------------
+add_executable(test_preview_mode
+    test/test_preview_mode.cpp
+)
+target_include_directories(test_preview_mode PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+if(MSVC)
+    target_compile_options(test_preview_mode PRIVATE /utf-8 /permissive- /W4 /WX /MD)
+    target_compile_definitions(test_preview_mode PRIVATE _CRT_SECURE_NO_WARNINGS UNICODE _UNICODE)
+endif()
+add_test(NAME preview_mode COMMAND test_preview_mode)
+set_tests_properties(preview_mode PROPERTIES TIMEOUT 60)
+
+# ---------------------------------------------------------------------------
+# AI 对话历史落盘格式 - serialize/parse 往返契约（AIChat/AiChatLog.h，纯头文件）。
+# 历史文件（ai_chat.txt）坏一块不能毁掉整份：容错解析写成契约。
+# ---------------------------------------------------------------------------
+add_executable(test_ai_chat_log
+    test/test_ai_chat_log.cpp
+)
+target_include_directories(test_ai_chat_log PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+if(MSVC)
+    target_compile_options(test_ai_chat_log PRIVATE /utf-8 /permissive- /W4 /WX /MD)
+    target_compile_definitions(test_ai_chat_log PRIVATE _CRT_SECURE_NO_WARNINGS UNICODE _UNICODE)
+endif()
+add_test(NAME ai_chat_log COMMAND test_ai_chat_log)
+set_tests_properties(ai_chat_log PROPERTIES TIMEOUT 60)
+
+# ---------------------------------------------------------------------------
+# 粘贴图片/文件 → 素材落盘 + Markdown 链接（editor/ImageAttach.h）。
+# 守的是纯逻辑：目录名消毒（空格/括号会截断 Markdown 链接）、默认目录名跟
+# 文档名、DIB→BGRA（翻转 / 24bpp 行对齐 / alpha 全 0 陷阱）、链接形态。
+# 剪贴板读写依赖真实系统状态，不在门禁内。
+# ---------------------------------------------------------------------------
+add_executable(test_image_attach
+    test/test_image_attach.cpp
+    editor/ImageAttach.cpp
+)
+target_include_directories(test_image_attach PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+if(MSVC)
+    target_compile_options(test_image_attach PRIVATE /utf-8 /permissive- /W4 /WX /MD)
+    target_compile_definitions(test_image_attach PRIVATE _CRT_SECURE_NO_WARNINGS UNICODE _UNICODE)
+endif()
+add_test(NAME image_attach COMMAND test_image_attach)
+set_tests_properties(image_attach PROPERTIES TIMEOUT 60)
+
 # The smoke test needs lang/ + the resource header next to its binary.
 add_dependencies(test_ui_smoke pecia_copy_lang)
 add_dependencies(test_ui_smoke pecia_copy_theme)
@@ -1386,6 +1508,7 @@ add_executable(test_mainwindow_smoke
     editor/Document.cpp
     editor/FontUtils.cpp
     editor/Editor.cpp
+    editor/ImageAttach.cpp
     script/LuaEngine.cpp
     script/LuaParamParser.cpp
     script/ScriptManager.cpp
@@ -1403,6 +1526,7 @@ add_executable(test_mainwindow_smoke
     ui/MainWindow_preview.cpp
     ui/MainWindow_sidepanel.cpp
     ui/SidePanel.cpp
+    ui/OutlineRows.cpp
     ui/MenuTable.cpp
     ui/Layout.cpp
     ui/FindReplace.cpp
@@ -1423,7 +1547,6 @@ add_executable(test_mainwindow_smoke
     ui/ToolChrome.cpp
     ui/UiBridge.cpp
     LuaTool/LuaPipeServer.cpp
-    LuaTool/AiPushServer.cpp
     mdview/preprocess.cpp
     mdview/image_export.cpp
     mdview/block_layout.cpp
