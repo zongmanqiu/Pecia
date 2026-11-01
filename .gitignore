@@ -14,6 +14,7 @@
 # <root>/temp/cmake_build (see build/_common.bat BUILD_DIR), so this is a
 # safety net for anyone who runs ctest inside main/build/ by hand.
 build/Testing/
+Testing/
 
 # Generic run-time debris in case anything is generated inside main/.
 *.log

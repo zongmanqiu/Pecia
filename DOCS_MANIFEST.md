@@ -8,7 +8,7 @@
 | 文件 | 覆盖内容 | 需要更新的时候 |
 |------|----------|----------------|
 | `README.md` | 项目介绍、下载、界面、环境要求、构建入口、技术栈、顶层目录 | 构建流程变化、新增/移除技术依赖、新增顶层目录、架构描述变化 |
-| `docs/` | 文档目录:`docs/README/` 子目录(15 份语言 README + 8 张界面截图)、发行流程清单 RELEASE_CHECKLIST.md、产品演示文稿 intro*.pptx、更新清单 update.json | 新增/删除语种、修改相对链接、更新演示文稿、main/ 顶层目录树变化、或更新清单字段含义变化时 |
+| `docs/` | 文档目录:`docs/README/` 子目录(15 份语言 README + 8 张界面截图)、发行流程清单 RELEASE_CHECKLIST.md、产品演示文稿 intro*.pptx、更新清单 update.json、`docs/history/` 多语言版本历史(只放翻译) | 新增/删除语种、修改相对链接、更新演示文稿、main/ 顶层目录树变化、更新清单字段含义变化、或发版时漏写 `docs/history/en.md` 对应小节 |
 | `目录结构说明.md` | 每个目录/文件的职责、测试清单、新增代码规则 | 新增/删除/重命名/改职责的任何文件或目录；新增测试 |
 | `开发指南.md` | 架构速览、开发流程、改代码后需同步的文档对照、提交前检查清单、UI 改动规约（复用与刷新）、版本号位置、**第十节「平台契约与已知缺口」**（UI 线程/异常边界/持久化/更新/分层例外的现状与缺口，均带文件:行号） | 开发流程/检查项/版本号位置/构建方式/UI 复用与刷新约定变化时；**修复第十节某条缺口后必须同步删改对应条目** |
 | `script/scripts/lua_api.txt` | Lua 脚本指南（==Meta==/@name 声明规范 + editor/win/regex API、params、pecia_lang、folder.ini、--!pui；随 scripts 文件夹复制到 build/script，PeciaLua 帮助按钮读取；末尾可追加 AI 提示词，由 PeciaAIChat 拼接进 system 消息） | 新增/修改/删除任何 Lua API 或脚本声明语法 |

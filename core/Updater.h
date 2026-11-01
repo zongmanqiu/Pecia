@@ -31,7 +31,8 @@
 struct UpdateManifest {
     std::string version;      // "1.1.3"
     std::string published;    // "2026-11-05", display only
-    std::string notes;        // changelog text
+    std::string notes;        // changelog text, Chinese (HISTORY.md is the source)
+    std::string notesEn;      // docs/history/en.md translation; empty = fall back
     std::string sha256;       // lowercase hex of the zip
     std::string urlGitee;     // full download URL (not constructed here)
     std::string urlGithub;
@@ -58,6 +59,11 @@ struct UpdateCheckResult {
 UpdateCheckResult checkUpdate(const std::string &currentVersion,
                               const std::string &urlGitee,
                               const std::string &urlGithub, int source);
+
+// Compare two "x.y.z" versions (a leading "v" is tolerated): 1 when `latest` is
+// newer than `cur`, -1 when older, 0 when equal. Public because the update page
+// has to judge a cached manifest exactly the way checkUpdate judges a fresh one.
+int compareVersions(const std::string &cur, const std::string &latest);
 
 // Reads the cached manifest next to the exe. Returns false when the file is
 // absent or unparsable; `ageSeconds` is the file's age at call time.

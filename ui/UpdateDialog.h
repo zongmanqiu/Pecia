@@ -40,8 +40,8 @@ public:
                  std::function<bool()> confirmUnsaved);
     ~UpdateDialog() override;
 
-    // Modal run loop (same shape as ConfirmDialog::run()). Kicks the first
-    // network check once the window is visible.
+    // Modal run loop (same shape as ConfirmDialog::run()). Shows whatever the
+    // local manifest holds; the network is only touched by 联网检查.
     void run();
 
 private:
@@ -49,7 +49,14 @@ private:
     void applyCheckResult(const UpdateCheckResult &r);
     void startDownload();
 
-    void setStatus(const char *text, Fl_Color colour);
+    void setStatus(const char *text);
+    void renderManifest(const UpdateManifest &m);   // version fields + changelog
+    void showCachedState();                         // the local manifest, no network
+    void applyInstallability(bool newer);           // newer + URL + hash all present
+    void setInstallable(bool can);
+    std::string downloadUrl() const;
+    Fl_Color normalColour() const;
+    Fl_Color dangerColour() const;
     void setBusy(bool busy);
     void setProgress(double frac, const std::string &text);
     void showNotes(const std::string &text);
@@ -69,6 +76,7 @@ private:
     std::function<bool()>  m_confirmUnsaved;
     UpdateManifest         m_manifest;      // what is currently displayed
     bool                   m_busy = false;  // a worker thread owns the UI
+    bool                   m_canInstall = false;
     std::shared_ptr<bool>  m_alive = std::make_shared<bool>(true);
 
     Fl_Box          *m_status    = nullptr;

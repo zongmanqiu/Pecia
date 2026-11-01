@@ -15,6 +15,7 @@
 #include <FL/Fl_Text_Display.H>
 
 #include <cstdio>
+#include <cstring>
 #include <cstdlib>
 #include <ctime>
 #include <thread>
@@ -27,21 +28,10 @@ const int GAP      = 8;
 const int NOTES_H  = 170;
 const int kStatusH = 40;   // two wrapped lines
 
-// "2026-10-30 14:22" derived from the cache file's age, so a cached verdict
-// states how old it is instead of pretending to be current.
-std::string ageToString(long long ageSeconds) {
-    if (ageSeconds < 0) return std::string("(?)");
-    std::time_t t = std::time(nullptr) - static_cast<std::time_t>(ageSeconds);
-    std::tm tmv{};
-    if (localtime_s(&tmv, &t) != 0) return std::string("(?)");
-    char buf[32];
-    if (!std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M", &tmv)) return std::string("(?)");
-    return buf;
-}
-
 // One Fl::awake hop. `alive` is cleared when the window closes, so a worker
 // that finishes afterwards drops its result instead of writing into a destroyed
 // dialog - or, worse, launching the updater script on a user who walked away.
+
 template <typename T>
 struct Job {
     std::shared_ptr<bool> alive;
@@ -81,12 +71,26 @@ UpdateDialog::UpdateDialog(const Theme *theme, int uiFontSize, Config *cfg,
     srcLbl->labelcolor(tc.text1);
 
     m_source = new SettingsChoice(MARGIN + lblW, y, 110, rowH);
+    // Same construction as ParamDialog's --!param dropdowns (the format every
+    // Lua script's parameter dialog uses): flat field background + the themed
+    // 1px outline. Without this FLTK's scheme paints a raised grey button.
+    m_source->box(FL_BORDER_BOX);
+    m_source->down_box(FL_BORDER_BOX);
+    m_source->textsize(uiFontSize);
+    m_source->color(tc.background1);
+    m_source->selection_color(tc.highlight2);
+    m_source->textcolor(tc.text1);
     m_source->add("Gitee");
     m_source->add("GitHub");
     m_source->value(cfg ? cfg->getUpdateSource() : 0);
     m_source->callback(cbSource, this);
 
     m_btnRefresh = new HoverButton(0, y, 0, rowH, I18n::get("update.page.refresh"));
+    m_btnRefresh->color(tc.background1);
+    m_btnRefresh->selection_color(tc.highlight1);
+    m_btnRefresh->setPressColor(tc.highlight2);
+    m_btnRefresh->labelcolor(tc.text1);
+    m_btnRefresh->labelsize(uiFontSize);
     m_btnRefresh->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
     m_btnRefresh->fit();
     m_btnRefresh->position(MARGIN + lblW + 110 + GAP * 2, y);
@@ -98,11 +102,11 @@ UpdateDialog::UpdateDialog(const Theme *theme, int uiFontSize, Config *cfg,
     m_curVer = new Fl_Box(FL_NO_BOX, MARGIN, y, half, rowH, nullptr);
     m_curVer->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
     m_curVer->labelsize(uiFontSize);
-    m_curVer->labelcolor(tc.text2);
+    m_curVer->labelcolor(tc.text1);
     m_mfVer = new Fl_Box(FL_NO_BOX, MARGIN + half, y, half, rowH, nullptr);
     m_mfVer->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
     m_mfVer->labelsize(uiFontSize);
-    m_mfVer->labelcolor(tc.text2);
+    m_mfVer->labelcolor(tc.text1);
     y += rowH + 8;
 
     // --- changelog (scrollable: a release note is not a one-line message) ---
@@ -110,7 +114,7 @@ UpdateDialog::UpdateDialog(const Theme *theme, int uiFontSize, Config *cfg,
                                   I18n::get("update.page.notes"));
     notesLbl->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
     notesLbl->labelsize(uiFontSize);
-    notesLbl->labelcolor(tc.text2);
+    notesLbl->labelcolor(tc.text1);
     y += uiFontSize + 4 + 4;
 
     m_notesBuf = new Fl_Text_Buffer();
@@ -129,7 +133,7 @@ UpdateDialog::UpdateDialog(const Theme *theme, int uiFontSize, Config *cfg,
     m_progText = new Fl_Box(MARGIN, y, 140, rowH, nullptr);
     m_progText->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
     m_progText->labelsize(uiFontSize);
-    m_progText->labelcolor(tc.text2);
+    m_progText->labelcolor(tc.text1);
     m_bar = new Fl_Progress(MARGIN + 148, y + 2, W - 2 * MARGIN - 148, rowH - 4);
     m_bar->minimum(0.0);
     m_bar->maximum(1.0);
@@ -141,8 +145,8 @@ UpdateDialog::UpdateDialog(const Theme *theme, int uiFontSize, Config *cfg,
     m_progRow->hide();
     y += rowH + 8;
 
-    // --- footer: [下载并更新][关闭]. The dismissive button stays rightmost,
-    //     the same rule every other Pecia dialog follows.
+    // --- footer: [更新][关闭]. The dismissive button stays rightmost, the
+    //     same rule every other Pecia dialog follows.
     m_btnDownload = new HoverButton(0, 0, 0, rowH, I18n::get("update.page.download"));
     m_btnDownload->callback(cbDownload, this);
     m_btnClose = new HoverButton(0, 0, 0, rowH, I18n::get("update.page.close"));
@@ -155,7 +159,11 @@ UpdateDialog::UpdateDialog(const Theme *theme, int uiFontSize, Config *cfg,
     finalizeShell();
 
     setProgress(0.0, std::string());
-    m_btnDownload->deactivate();
+    // Nothing is installable until a manifest says so. Availability is shown by
+    // dimming the LABEL only (see setInstallable) - Fl_Widget::deactivate()
+    // repaints the box with an opaque grey wash, and then the hover colour is
+    // wrong too.
+    setInstallable(false);
 }
 
 UpdateDialog::~UpdateDialog() {
@@ -173,9 +181,10 @@ UpdateDialog::~UpdateDialog() {
 void UpdateDialog::run() {
     position((Fl::w() - w()) / 2, (Fl::h() - h()) / 2);
     show();
-    // Started only once the window is on screen: the first frame shows the
-    // cached manifest (if any), then the network verdict replaces it.
-    startCheck();
+    // Deliberately no network here: a user who just wants to read the release
+    // notes of the version they already installed gets them from the local
+    // manifest, and the last check's answer stays on disk until they ask again.
+    showCachedState();
     while (shown()) Fl::wait();
 }
 
@@ -188,28 +197,28 @@ void UpdateDialog::requestClose() {
     hide();
 }
 
-void UpdateDialog::setStatus(const char *text, Fl_Color colour) {
+// The status line is one short string out of a fixed set of five (checking /
+// check ok / check failed / local manifest / update failed), always red so it is
+// findable at a glance. Nothing else goes here: the version fields and whether
+// the update button is dimmed carry the rest, and an empty string means "no news".
+void UpdateDialog::setStatus(const char *text) {
     m_statusBuf = text ? text : "";
     m_status->label(m_statusBuf.c_str());
-    m_status->labelcolor(colour);
+    m_status->labelcolor(dangerColour());
     m_status->redraw();
 }
 
 void UpdateDialog::setBusy(bool busy) {
     m_busy = busy;
-    if (busy) {
-        m_btnRefresh->deactivate();
-        m_btnDownload->deactivate();
-        m_source->deactivate();
-    } else {
-        m_btnRefresh->activate();
-        m_source->activate();
-        // The download button is re-enabled by applyCheckResult(), which owns
-        // the "is there something to install" decision.
-    }
+    Fl_Color fg = normalColour(), dim = hintColour();
+    // Labels only: the click guards in startCheck()/startDownload()/cbSource()
+    // are what actually block a second concurrent worker.
+    m_btnRefresh->labelcolor(busy ? dim : fg);
+    m_source->textcolor(busy ? dim : fg);
     m_btnRefresh->redraw();
-    m_btnDownload->redraw();
     m_source->redraw();
+    if (busy) setInstallable(false);
+    else      setInstallable(m_canInstall);
 }
 
 void UpdateDialog::showNotes(const std::string &text) {
@@ -230,10 +239,90 @@ void UpdateDialog::finishFailure(const std::string &message) {
     setBusy(false);
     m_progRow->hide();
     m_progRow->redraw();
-    setStatus(message.c_str(),
-              theme() ? theme()->colors().highlight3 : FL_RED);
-    m_btnDownload->deactivate();
+    setStatus(message.c_str());
+    setInstallable(false);
+}
+
+// ---------------------------------------------------------------------------
+// Display helpers
+// ---------------------------------------------------------------------------
+
+Fl_Color UpdateDialog::normalColour() const {
+    return theme() ? theme()->colors().text1 : FL_BLACK;
+}
+
+Fl_Color UpdateDialog::hintColour() const {
+    return theme() ? theme()->colors().text2 : FL_GRAY;
+}
+
+Fl_Color UpdateDialog::dangerColour() const {
+    return theme() ? theme()->colors().highlight3 : FL_RED;
+}
+
+// Availability is a LABEL colour, not a widget state: Fl_Widget::deactivate()
+// repaints the box with an opaque grey wash, and then the hover fill is wrong
+// too. The click guards in startCheck()/startDownload()/cbSource() are what
+// actually block a second concurrent worker.
+void UpdateDialog::setInstallable(bool can) {
+    m_canInstall = can;
+    m_btnDownload->labelcolor(can ? normalColour() : hintColour());
     m_btnDownload->redraw();
+}
+
+std::string UpdateDialog::downloadUrl() const {
+    return (m_source->value() == 1) ? m_manifest.urlGithub : m_manifest.urlGitee;
+}
+
+// One printf-shaped helper, because the status line composes two of these.
+static std::string fmt(const char *key, const char *a, const char *b) {
+    char buf[512];
+    snprintf(buf, sizeof(buf), I18n::get(key), a, b);
+    return buf;
+}
+
+void UpdateDialog::renderManifest(const UpdateManifest &m) {
+    m_curVerBuf = fmt("update.page.current", PECIA_VERSION, "");
+    m_curVer->label(m_curVerBuf.c_str());
+    m_mfVerBuf = m.version.empty()
+                     ? std::string(I18n::get("update.page.manifest_none"))
+                     : fmt("update.page.manifest", m.version.c_str(), "");
+    m_mfVer->label(m_mfVerBuf.c_str());
+    m_curVer->redraw();
+    m_mfVer->redraw();
+    // Release notes follow the UI language. Chinese is the source of truth, so
+    // every language that has no translation yet reads the Chinese section
+    // rather than nothing at all.
+    const char *code = I18n::currentCode();
+    const bool useEn = code && strncmp(code, "zh", 2) != 0 && !m.notesEn.empty();
+    showNotes(useEn ? m.notesEn : m.notes);
+}
+
+// Installing needs three things: a version newer than ours, a URL for the
+// source the user picked, and a hash to verify against. Without the hash we
+// refuse rather than lay down an unverified package.
+// A manifest we cannot act on (no hash, or no URL for the chosen source) is
+// shown by keeping the update button dimmed - not by writing a sentence about it.
+void UpdateDialog::applyInstallability(bool newer) {
+    if (!newer) { setInstallable(false); return; }
+    setInstallable(!m_manifest.sha256.empty() && !downloadUrl().empty());
+}
+
+// What the last successful check left on disk. Two words say where it came from,
+// which is also the honesty guard: a cached answer is never reported as "latest".
+void UpdateDialog::showCachedState() {
+    UpdateManifest m;
+    long long age = -1;
+    if (!readCachedManifest(m, age)) {
+        m_manifest = UpdateManifest();
+        renderManifest(m_manifest);
+        setStatus("");
+        setInstallable(false);
+        return;
+    }
+    m_manifest = m;
+    renderManifest(m);
+    setStatus(I18n::get("update.page.local"));
+    applyInstallability(compareVersions(PECIA_VERSION, m.version) > 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -249,7 +338,7 @@ void UpdateDialog::startCheck() {
     const int source = m_source->value();
 
     setBusy(true);
-    setStatus(I18n::get("update.page.checking"), hintColour());
+    setStatus(I18n::get("update.page.checking"));
 
     std::shared_ptr<bool> alive = m_alive;
     std::thread([this, alive, source, g, h]() {
@@ -263,7 +352,7 @@ void UpdateDialog::startCheck() {
             }, job);
         } catch (...) {
             auto *job = new Job<std::string>{ alive, this,
-                                              I18n::get("update.page.exception") };
+                                              I18n::get("update.page.failed") };
             Fl::awake([](void *d) {
                 auto *j = static_cast<Job<std::string> *>(d);
                 if (*j->alive) j->self->finishFailure(j->payload);
@@ -275,77 +364,19 @@ void UpdateDialog::startCheck() {
 
 void UpdateDialog::applyCheckResult(const UpdateCheckResult &r) {
     setBusy(false);
-    const Fl_Color normal = theme() ? theme()->colors().text1 : FL_BLACK;
-    const Fl_Color hint   = theme() ? theme()->colors().text2 : FL_GRAY;
-    const Fl_Color danger = theme() ? theme()->colors().highlight3 : FL_RED;
-    char line[640];
-
-    // The two version fields always describe what is on screen, network or not.
-    snprintf(line, sizeof(line), I18n::get("update.page.current"), PECIA_VERSION);
-    m_curVerBuf = line;
-    m_curVer->label(m_curVerBuf.c_str());
-    if (r.manifest.version.empty()) {
-        m_mfVerBuf = I18n::get("update.page.manifest_none");
-    m_mfVer->label(m_mfVerBuf.c_str());
-    } else {
-        snprintf(line, sizeof(line), I18n::get("update.page.manifest"),
-                 r.manifest.version.c_str());
-        m_mfVerBuf = line;
-        m_mfVer->label(m_mfVerBuf.c_str());
-    }
-    m_curVer->redraw();
-    m_mfVer->redraw();
-
-    showNotes(r.manifest.notes);
+    m_manifest = r.manifest;
+    renderManifest(m_manifest);
 
     if (!r.online && !r.fromCache) {
-        snprintf(line, sizeof(line), I18n::get("update.error"), r.error.c_str());
-        setStatus(line, danger);
-        m_btnDownload->deactivate();
-        m_btnDownload->redraw();
+        setStatus(I18n::get("update.page.failed"));
+        setInstallable(false);
         return;
     }
-
-    m_manifest = r.manifest;
-
-    if (r.hasUpdate) {
-        snprintf(line, sizeof(line), I18n::get("update.newAvailable"),
-                 r.manifest.version.c_str());
-        std::string s = line;
-        if (r.fromCache) {
-            char sub[320];
-            snprintf(sub, sizeof(sub), I18n::get("update.page.cacheoffline"),
-                     ageToString(r.cacheAgeSec).c_str());
-            s += sub;
-        }
-        setStatus(s.c_str(), normal);
-    } else if (r.online) {
-        // Only a fresh answer may claim "you are up to date".
-        setStatus(I18n::get("update.latest"), normal);
-    } else {
-        // A cache that is not newer than the running build proves nothing:
-        // it was written by whichever build last checked, possibly this one's
-        // predecessor. Say "unverified", never "latest".
-        char sub[320];
-        snprintf(sub, sizeof(sub), I18n::get("update.page.cacheoffline"),
-                 ageToString(r.cacheAgeSec).c_str());
-        setStatus(sub, hint);
-    }
-
-    // Installing needs a URL for the selected source AND a hash to verify
-    // against: without the hash we refuse rather than lay down an unverified包.
-    const int source = m_source->value();
-    const std::string url = (source == 1) ? m_manifest.urlGithub : m_manifest.urlGitee;
-    bool canInstall = r.hasUpdate && !url.empty();
-    if (canInstall && m_manifest.sha256.empty()) {
-        setStatus(I18n::get("update.page.nohash"), danger);
-        canInstall = false;
-    } else if (canInstall) {
-        m_btnDownload->activate();
-    } else {
-        m_btnDownload->deactivate();
-    }
-    m_btnDownload->redraw();
+    // Whether there IS a newer version is readable in the 最新版 field and in the
+    // update button; the line itself only says if the answer came from the
+    // network or from the local manifest.
+    setStatus(I18n::get(r.fromCache ? "update.page.local" : "update.page.ok"));
+    applyInstallability(r.hasUpdate);
 }
 
 // ---------------------------------------------------------------------------
@@ -353,10 +384,9 @@ void UpdateDialog::applyCheckResult(const UpdateCheckResult &r) {
 // ---------------------------------------------------------------------------
 
 void UpdateDialog::startDownload() {
-    if (m_busy || !m_cfg) return;
-    const int source = m_source->value();
-    const std::string url = (source == 1) ? m_manifest.urlGithub : m_manifest.urlGitee;
-    if (url.empty() || m_manifest.sha256.empty()) return;
+    if (m_busy || !m_cfg || !m_canInstall) return;
+    const std::string url = downloadUrl();
+    if (url.empty() || m_manifest.sha256.empty()) return;   // belt and braces
 
     const std::string exeDir = getExeDirUtf8();
     std::string ver = m_manifest.version;
@@ -370,23 +400,11 @@ void UpdateDialog::startDownload() {
 
     std::shared_ptr<bool> alive = m_alive;
     std::thread([this, alive, url, zipPath, wantHash, exeDir]() {
-        // Failure hop: red status, buttons back to normal.
         auto fail = [this, alive](const std::string &msg) {
             auto *job = new Job<std::string>{ alive, this, msg };
             Fl::awake([](void *d) {
                 auto *j = static_cast<Job<std::string> *>(d);
                 if (*j->alive) j->self->finishFailure(j->payload);
-                delete j;
-            }, job);
-        };
-        // Stage hop: keep the window busy and just rewrite the status line.
-        auto stage = [this, alive](const std::string &msg) {
-            auto *job = new Job<std::string>{ alive, this, msg };
-            Fl::awake([](void *d) {
-                auto *j = static_cast<Job<std::string> *>(d);
-                if (*j->alive)
-                    j->self->setStatus(j->payload.c_str(),
-                                       j->self->hintColour());
                 delete j;
             }, job);
         };
@@ -409,11 +427,9 @@ void UpdateDialog::startDownload() {
             };
 
             if (!downloadFile(url, zipPath, progress)) {
-                fail(I18n::get("update.dlfail"));
+                fail(I18n::get("update.page.updatefailed"));
                 return;
             }
-
-            stage(I18n::get("update.page.verifying"));
 
             std::string got;
             if (!sha256FileUtf8(zipPath, got) || got != wantHash) {
@@ -421,16 +437,13 @@ void UpdateDialog::startDownload() {
                 // swapped in transit, or the two mirrors differ). Delete it: a
                 // retry must not be able to pick up the bad file.
                 deleteFileUtf8(zipPath);
-                char buf[512];
-                snprintf(buf, sizeof(buf), I18n::get("update.page.hashfail"),
-                         wantHash.c_str(), got.c_str());
-                fail(buf);
+                fail(I18n::get("update.page.updatefailed"));
                 return;
             }
 
             const std::string batPath = exeDir + "pecia_update.bat";
             if (!writeUpdateBat(exeDir, zipPath, batPath)) {
-                fail(I18n::get("update.batfail"));
+                fail(I18n::get("update.page.updatefailed"));
                 return;
             }
 
@@ -445,7 +458,7 @@ void UpdateDialog::startDownload() {
                 // Handing off kills this process, so never lose work silently.
                 if (self->m_confirmUnsaved && !self->m_confirmUnsaved()) {
                     self->setBusy(false);
-                    self->setStatus(I18n::get("update.page.cancelled"), self->hintColour());
+                    self->applyInstallability(true);
                     return;
                 }
                 self->requestClose();      // stop every further worker callback
@@ -456,10 +469,6 @@ void UpdateDialog::startDownload() {
             fail(I18n::get("update.page.exception"));
         }
     }).detach();
-}
-
-Fl_Color UpdateDialog::hintColour() const {
-    return theme() ? theme()->colors().text2 : FL_GRAY;
 }
 
 void UpdateDialog::cbRefresh(Fl_Widget *, void *data) {
@@ -474,6 +483,9 @@ void UpdateDialog::cbSource(Fl_Widget *, void *data) {
     auto *self = static_cast<UpdateDialog *>(data);
     if (self->m_busy || !self->m_cfg) return;
     self->m_cfg->setUpdateSource(self->m_source->value());
-    // Switching source is a request for a different answer: re-check now.
-    self->startCheck();
+    // The source only decides WHICH URL a package would come from, so switching
+    // it re-evaluates availability - it does not start a download or a check.
+    if (self->m_manifest.version.empty()) return;
+    self->applyInstallability(compareVersions(PECIA_VERSION,
+                                              self->m_manifest.version) > 0);
 }

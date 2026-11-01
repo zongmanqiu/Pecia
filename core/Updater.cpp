@@ -151,17 +151,6 @@ void parseVersion(const std::string &v, int &maj, int &min, int &pat) {
     }
 }
 
-// Returns 1 if `latest` is newer than `cur`, -1 if older, 0 if equal.
-int compareVersion(const std::string &cur, const std::string &latest) {
-    int cm[3], lm[3];
-    parseVersion(cur, cm[0], cm[1], cm[2]);
-    parseVersion(latest, lm[0], lm[1], lm[2]);
-    for (int i = 0; i < 3; ++i) {
-        if (lm[i] != cm[i]) return lm[i] > cm[i] ? 1 : -1;
-    }
-    return 0;
-}
-
 // Flat "key":"value" manifest reader. `version` and at least one package URL
 // are mandatory: without a URL the check can be displayed but never acted on,
 // which is worse than reporting the manifest as unusable.
@@ -169,6 +158,7 @@ bool parseManifest(const std::string &json, UpdateManifest &m) {
     if (!findJsonString(json, "version", m.version) || m.version.empty()) return false;
     findJsonString(json, "published", m.published);
     findJsonString(json, "notes", m.notes);
+    findJsonString(json, "notes_en", m.notesEn);
     findJsonString(json, "sha256", m.sha256);
     findJsonString(json, "url_gitee", m.urlGitee);
     findJsonString(json, "url_github", m.urlGithub);
@@ -441,6 +431,16 @@ std::string getExeDirUtf8() {
     return n > 0 ? std::string(buf) : std::string();
 }
 
+int compareVersions(const std::string &cur, const std::string &latest) {
+    int cm[3], lm[3];
+    parseVersion(cur, cm[0], cm[1], cm[2]);
+    parseVersion(latest, lm[0], lm[1], lm[2]);
+    for (int i = 0; i < 3; ++i) {
+        if (lm[i] != cm[i]) return lm[i] > cm[i] ? 1 : -1;
+    }
+    return 0;
+}
+
 std::string updateCachePathUtf8() {
     return getExeDirUtf8() + "update.cache.json";
 }
@@ -487,7 +487,7 @@ UpdateCheckResult checkUpdate(const std::string &currentVersion,
         r.online     = true;
         r.sourceUsed = idx;
         r.manifest   = m;
-        r.hasUpdate  = compareVersion(currentVersion, m.version) > 0;
+        r.hasUpdate  = compareVersions(currentVersion, m.version) > 0;
         return r;
     }
 
@@ -500,7 +500,7 @@ UpdateCheckResult checkUpdate(const std::string &currentVersion,
         r.fromCache   = true;
         r.cacheAgeSec = age;
         r.manifest    = cached;
-        r.hasUpdate   = compareVersion(currentVersion, cached.version) > 0;
+        r.hasUpdate   = compareVersions(currentVersion, cached.version) > 0;
         return r;
     }
     r.error = lastErr;

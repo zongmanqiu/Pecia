@@ -52,18 +52,21 @@
 
 1. 在 gitee 与 GitHub 两个仓库创建 release，**tag 名 = 版本号**（如 `1.0.1`），
    上传第三节的 `Pecia_x64_<版本>.zip` 作为附件（附件名不可改，下载地址与 §三 同源）；
-2. 生成更新清单：`python build/gen_update_json.py <那份 zip 的路径>` → 写
-   `docs/update.json`。版本取 CMakeLists、说明取 HISTORY.md 对应小节、
-   **sha256 由实际上传的 zip 算出**——不要手抄；
-3. **顺序要求**：先把两个 release 的附件传完，**再**推 `docs/update.json`。
+2. 先在 `docs/history/en.md` 顶部补上这个版本的英文小节（标题写成
+   `## <版本> (<日期>)`）——更新页的英文说明就是从这里取的，缺小节生成器会报错，
+   不会悄悄退回中文；
+3. 生成更新清单：`python build/gen_update_json.py <那份 zip 的路径>` → 写
+   `docs/update.json`。版本取 CMakeLists、中文说明取 HISTORY.md、英文说明取
+   `docs/history/en.md`、**sha256 由实际上传的 zip 算出**——不要手抄；
+4. **顺序要求**：先把两个 release 的附件传完，**再**推 `docs/update.json`。
    反过来推，用户在清单生效、附件还没上传的窗口里点"检查更新"就是 404；
-4. 推完跑 `python build/gen_update_json.py --verify-remote`：两个镜像各下一遍，
+5. 推完跑 `python build/gen_update_json.py --verify-remote`：两个镜像各下一遍，
    与清单哈希比对。不一致说明两仓传的不是同一个文件，客户端只会报"校验失败"，
    用户看不出是发布侧的问题；
-5. 清单文件**不要进发布包**（包里是 exe 三件套 + lang/theme/script + 许可，见 §三）：
+6. 清单文件**不要进发布包**（包里是 exe 三件套 + lang/theme/script + 许可，见 §三）：
    程序运行时的缓存放 exe 同级的 `update.cache.json`，名字刻意不同，
    robocopy 覆盖安装目录时不会把出厂清单盖回用户机器上；
-6. **自动更新验证要用旧版本 exe 点"检查更新"**——远端产物会覆盖被测 exe（本机实测教训）。
+7. **自动更新验证要用旧版本 exe 点"检查更新"**——远端产物会覆盖被测 exe（本机实测教训）。
 
 ## 五、发行后验证
 

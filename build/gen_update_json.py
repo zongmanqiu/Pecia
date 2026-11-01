@@ -14,7 +14,8 @@
 字段的唯一来源：
     version   <- CMakeLists.txt 的 project(Pecia VERSION ...)（开发指南 §五：权威值）
     published <- HISTORY.md 对应小节标题里的日期
-    notes     <- HISTORY.md 该小节的正文
+    notes     <- HISTORY.md 该小节的正文（中文是真源）
+    notes_en  <- docs/history/en.md 同名小节（缺小节直接报错，不静默退回中文）
     sha256    <- 传进来的 zip
     url_*     <- 固定资产名 Pecia_x64_<版本>.zip（docs/RELEASE_CHECKLIST.md §三钉死，改名自动更新就 404）
 """
@@ -57,6 +58,24 @@ def history_section(version):
     return m.group(1), body.strip() + "\n"
 
 
+def english_section(version):
+    """docs/history/en.md 里对应版本的英文小节；没有就报错，不静默退回中文。"""
+    path = os.path.join(MAIN, "docs", "history", "en.md")
+    if not os.path.exists(path):
+        sys.exit("缺少 docs/history/en.md（更新说明的英文来源）")
+    text = read(path)
+    m = re.search(r"^## %s \([0-9-]+\)\s*$" % re.escape(version), text, re.M)
+    if not m:
+        sys.exit("docs/history/en.md 里没有 %s 的小节，先补英文再出清单" % version)
+    start = m.end()
+    nxt = re.search(r"^## ", text[start:], re.M)
+    body = text[start:start + nxt.start()] if nxt else text[start:]
+    body = body.strip()
+    if body.endswith("---"):
+        body = body[:-3].rstrip()
+    return body + "\n"
+
+
 def sha256_of(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -78,6 +97,7 @@ def build_manifest(version, zip_path):
         "url_github": "https://github.com/%s/releases/download/%s/%s"
                       % (GITHUB_REPO, version, ASSET % version),
         "notes": notes,
+        "notes_en": english_section(version),
     }
 
 
@@ -135,7 +155,8 @@ def main():
     print("  version   = %s" % m["version"])
     print("  published = %s" % m["published"])
     print("  sha256    = %s" % m["sha256"])
-    print("  notes     = %d 字节" % len(m["notes"]))
+    print("  notes     = %d 字节 (zh) / %d 字节 (en)"
+          % (len(m["notes"]), len(m["notes_en"])))
     print("顺序提醒：先把 zip 传上两个 release，再推这份 update.json（反了点检查就 404）；")
     print("          推完跑 `python build/gen_update_json.py --verify-remote` 核对两镜像。")
 
