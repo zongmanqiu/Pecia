@@ -564,10 +564,18 @@ void MainWindow::updateStatusBar() {
     // "Ln 12 / Col 5" was hardcoded English in an otherwise fully
     // translated UI, and the two numbers are the ones everybody reads
     // first, so the shortest form wins (2026-10-31).
-    snprintf(buf2, sizeof(buf2),
-             "%d:%d     %d%%     %s     Size %s%s",
-             line, col, pct, enc, sizeStr,
-             t->doc->isReadOnly() ? "     Read-only" : "");
+    //
+    // 仅预览时编辑区被隐藏、光标不存在，行列号只是"上一个光标"的陈旧值：
+    // 整段去掉，与菜单栏「编辑」的置灰状态保持一致（2026-11-01 用户定）。
+    // 缩放/编码/大小描述的是文档本身，照旧显示。
+    const char *ro = t->doc->isReadOnly() ? "     Read-only" : "";
+    if (m_previewOnly) {
+        snprintf(buf2, sizeof(buf2), "%d%%     %s     Size %s%s",
+                 pct, enc, sizeStr, ro);
+    } else {
+        snprintf(buf2, sizeof(buf2), "%d:%d     %d%%     %s     Size %s%s",
+                 line, col, pct, enc, sizeStr, ro);
+    }
     m_status->value(buf2);
 }
 

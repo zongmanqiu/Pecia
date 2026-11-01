@@ -145,7 +145,6 @@ void MainWindow::rebuildScriptBar() {
     m_scriptBarMenu = menu;
     m_scriptBarMenuCount = itemCount;
     m_scriptBar->menu(menu);
-    m_scriptBar->redraw();
 
     // Refresh the script shortcut dispatch registry (a new script may
     // have been added by the Save As -> reload pipe flow).

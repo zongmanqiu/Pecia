@@ -13,6 +13,7 @@
 #include "ui/Layout.h"   // MENU_H（仅注释引用；按钮栏删除后本文件不再用它）
 #include "ui/PreviewMode.h"   // 空文档判据（仅预览的准入条件）
 #include "ui/SidePanel.h"     // 左侧面板（layoutPreviewPanes 需要完整类型）
+#include "ui/FindReplace.h"   // 仅预览时把查找交给预览（setPreviewFinder）
 #include <FL/Fl.H>
 #include <FL/Fl_Menu_Bar.H>
 #include <FL/Fl_Menu_Item.H>
@@ -23,6 +24,9 @@
 #include <FL/platform.H>
 #include <shellapi.h>
 #include <shobjidl.h>   // IFileSaveDialog（另存为 HTML 的路径选择）
+#include "core/PathUtils.h"   // fromUtf8（本地相对路径解析）
+#include <filesystem>
+#include <string.h>   // _strnicmp：协议白名单（与编辑区 Ctrl+Click 同一判断）
 
 // --------------------------------------------------------------------------
 // 预览临时目录管理（exe 同级 temp/<文档名>-<PID>/）：
@@ -229,6 +233,9 @@ void MainWindow::syncPreviewMenu()
         if (m_previewActive && m_previewOnly) it->set(); else it->clear();
         if (hasPreviewContent()) it->activate(); else it->deactivate();
     }
+    // 仅预览 = 编辑区被隐藏：菜单栏「编辑」与右键菜单同一套灰度（只留
+    // 复制/全选）。分屏预览时编辑区还在，全部可用。
+    syncEditMenuReadOnly(m_previewOnly);
     m_menu->redraw();
 }
 
@@ -249,6 +256,9 @@ void MainWindow::togglePreview()
         m_previewOnly = false;
         stopAutoRefreshLoop();
         stopScrollSync();
+        // 编辑锁跟着模式走：关预览就恢复可编辑（保留 isReadOnly 半句，
+        // 那是文件本身的状态，与这里无关）。
+        syncEditLock();
         if (m_preview) {
             if (Fl::focus() == m_preview->view()) {
                 Tab *t = activeTab();
@@ -302,10 +312,26 @@ void MainWindow::togglePreview()
         m_preview->view()->set_open_callback([this](const std::string &path) {
             openFile(path.c_str());
         });
-        // Ctrl+滚轮缩放预览字体（全局 handler 亦处理，此处为焦点在预览时的兜底）
-        m_preview->view()->set_zoom_callback([this](float delta) {
-            if (m_preview) m_preview->setFontScale(m_preview->fontScale() * delta);
+        // 预览里点链接：与编辑区 Ctrl+Click 同一套打开规则（见 openPreviewLink）。
+        m_preview->setLinkCallback([this](const std::string &url) {
+            openPreviewLink(url);
         });
+        // 双击图片：本体文件用系统默认程序打开（见 openPreviewImageTarget）。
+        m_preview->view()->set_file_open_callback([this](const std::string &target) {
+            openPreviewImageTarget(target);
+        });
+        // Ctrl+滚轮缩放：与编辑区走同一个字号状态（setFontSize），
+        // 预览比例 = 编辑字号/基准字号，不再维护独立的预览比例。
+        m_preview->view()->set_zoom_callback([this](int step) {
+            setFontSize(fontSize() + step);
+        });
+        // 右键菜单：与编辑区**完全同一份**（Edit 白名单 + View ▶ + Markdown ▶），
+        // 只读=true 只把会改原文的项置灰。见 MainWindow::showContextMenu。
+        m_preview->view()->set_context_callback([this](int x, int y) {
+            showContextMenu(x, y, /*readOnly=*/true);
+        });
+        // 打开预览时按当前字号初始化，保证编辑区与预览的比例一致。
+        syncPreviewFontScale();
         // 渲染完成 → 重建目录树
         m_preview->setHeadingsCallback([this](const std::vector<PreviewHeading> &hs) {
             rebuildPreviewToc(hs);
@@ -361,6 +387,13 @@ void MainWindow::togglePreviewOnly()
     setPreviewOnly(true);
 }
 
+// 把编辑区字号换算成预览字体比例（预览比例 = 字号/基准字号）。
+void MainWindow::syncPreviewFontScale()
+{
+    if (!m_preview) return;
+    m_preview->setFontScale((float)fontSize() / (float)m_baseFontSize);
+}
+
 // 设定"仅预览"的目标状态（幂等）。菜单要的是翻面，而"打开 .md 文件时 =
 // 仅预览"这类配置要的是"设成某个状态"——两者共用这一处实现。
 void MainWindow::setPreviewOnly(bool on)
@@ -373,6 +406,7 @@ void MainWindow::setPreviewOnly(bool on)
         // 没有预览时先开：togglePreview() 会读 m_previewOnly 决定排布
         m_previewOnly = on;
         togglePreview();
+        syncEditLock();
         syncPreviewMenu();
         return;
     }
@@ -386,7 +420,51 @@ void MainWindow::setPreviewOnly(bool on)
     } else if (Tab *t = activeTab()) {
         Fl::focus(t->editor);
     }
+    syncEditLock();
     syncPreviewMenu();
+}
+
+// 把"仅预览"翻译成每份文档的编辑锁。所有既有写入拦截点都已改查
+// Document::isEditable()，所以一处置位就能同时覆盖编辑区键盘/IME/粘贴、
+// Lua 与管道、AI 插入、查找替换；保存/另存为只看 isReadOnly()，不受影响。
+// 多标签场景下逐份同步，退出时整批解锁（新标签在 addTab 里补一次）。
+void MainWindow::syncEditLock()
+{
+    for (auto &t : m_tabsList)
+        if (t.doc) t.doc->setEditLocked(m_previewOnly);
+
+    // 查找随编辑能力一起切换：仅预览下编辑区不可见，命中必须在预览里看得见，
+    // 所以把查找交给预览处理（在渲染文本上找并高亮）；退出时恢复编辑区查找，
+    // 同时清掉预览里的查找选区。
+    if (m_findBar) {
+        if (m_previewOnly) {
+            m_findBar->setPreviewFinder(
+                [this](const char *needle, bool cs, bool ww, bool forward,
+                       bool wrap, bool *found, int *index, int *total) {
+                    return previewFindText(needle, cs, ww, forward, wrap,
+                                           found, index, total);
+                });
+        } else {
+            m_findBar->setPreviewFinder(FindReplace::preview_find_cb_t());
+            if (m_preview && m_preview->view()) m_preview->view()->clear_selection();
+        }
+    }
+}
+
+// 仅预览的查找：在预览的渲染文本里找（编辑区隐藏，源文本里的偏移用户既看
+// 不到也用不上）。分块大文档没有整篇 document，find_text 会返回 false，
+// FindReplace 据此退回编辑区查找 —— 不做半截实现。
+bool MainWindow::previewFindText(const char *needle, bool caseSensitive,
+                                 bool wholeWord, bool forward, bool wrap,
+                                 bool *found, int *index, int *total)
+{
+    if (found) *found = false;
+    if (index) *index = 0;
+    if (total) *total = 0;
+    if (!m_previewOnly || !m_preview || !m_preview->view()) return false;
+    if (!needle || !*needle) return false;
+    return m_preview->view()->find_text(needle, caseSensitive, wholeWord,
+                                        forward, wrap, found, index, total);
 }
 
 void MainWindow::cbTogglePreviewOnly(Fl_Widget *w, void *data)
@@ -762,6 +840,70 @@ static std::string editorFontName(const Config* cfg)
     char fb[64] = {0};
     if (cfg) cfg->getEditorFont(fb, sizeof(fb));
     return fb;
+}
+
+// 预览里点击链接。与编辑区 Ctrl+Click 完全同一套打开规则：
+//   · http/https → 系统默认浏览器（协议白名单，其余协议一律不处理）
+//   · 相对路径   → 相对"当前文档目录"解析，存在就在 Pecia 里打开（同拖放）
+//   · "#锚点"    → mdview 自己滚动，不会走到这里
+void MainWindow::openPreviewLink(const std::string &url)
+{
+    if (url.empty() || url[0] == '#') return;
+
+    auto startsWithNoCase = [](const std::string &s, const char *p, size_t n) {
+        return s.size() >= n && _strnicmp(s.c_str(), p, n) == 0;
+    };
+    if (startsWithNoCase(url, "http://", 7) ||
+        startsWithNoCase(url, "https://", 8)) {
+        std::wstring w = widen(url);
+        if (!w.empty())
+            ShellExecuteW(nullptr, L"open", w.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        return;
+    }
+    // 其它带协议的（mailto: / file: / javascript: …）不处理：编辑区 Ctrl+Click
+    // 也只放行 http/https，两处行为必须一致。
+    if (url.find("://") != std::string::npos) return;
+
+    Tab *tab = activeTab();
+    if (!tab || !tab->doc) return;
+    std::string base = tab->doc->filePath();
+    if (base.empty()) return;   // 未保存的新文档没有基准目录
+    auto slash = base.find_last_of("/\\");
+    if (slash == std::string::npos) return;
+    base.resize(slash + 1);     // 含尾部路径分隔符
+
+    // "other.md#sec" 依然是打开 other.md；只看文件部分。
+    std::string rel = url;
+    auto hash = rel.find('#');
+    if (hash != std::string::npos) rel.resize(hash);
+    if (rel.empty()) return;
+
+    std::filesystem::path p = pathutil::fromUtf8(rel);
+    if (p.is_relative()) p = pathutil::fromUtf8(base) / p;
+    p = p.lexically_normal();
+    std::error_code ec;
+    if (!std::filesystem::exists(p, ec) || ec) return;
+    std::string utf8 = p.u8string();
+    openFile(utf8.c_str());
+}
+
+void MainWindow::openPreviewImageTarget(const std::string &target)
+{
+    if (target.empty()) return;
+
+    const bool remote = _strnicmp(target.c_str(), "http://", 7) == 0 ||
+                        _strnicmp(target.c_str(), "https://", 8) == 0;
+    std::wstring w = widen(target);
+    if (w.empty()) return;
+    if (remote) {
+        // 远程图还没落盘（下载中/失败）：与链接点击同一个动作，交给浏览器。
+        ShellExecuteW(nullptr, L"open", w.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        return;
+    }
+    // 本地文件（原生图或已落盘的远程图）：用系统默认程序打开本体，不经编辑器。
+    std::error_code ec;
+    if (!std::filesystem::exists(pathutil::fromUtf8(target), ec) || ec) return;
+    ShellExecuteW(nullptr, L"open", w.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
 void MainWindow::openPreviewInBrowser()

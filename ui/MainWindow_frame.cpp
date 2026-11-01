@@ -103,18 +103,29 @@ int MainWindow::handle(int event) {
     case FL_MOUSEWHEEL: {
         bool ctrl = (Fl::event_state() & (FL_CTRL | FL_COMMAND)) != 0;
         int dy = Fl::event_dy();
-        // 鼠标在预览区：普通滚轮滚动预览；Ctrl+滚轮在预览区不缩放（预览无缩放功能）
+        // 鼠标在预览区：普通滚轮滚动预览；Ctrl+滚轮与编辑区同一套缩放
+        // （setFontSize，预览比例 = 字号/基准字号）。
         if (m_previewActive) {
             // 纯预览：整块内容区都是预览，没有分界点，任何位置都滚预览。
             if (m_previewOnly) {
-                if (!ctrl) scrollPreview(dy * 40);
+                if (ctrl) {
+                    if (dy < 0) setFontSize(fontSize() + 1);
+                    else if (dy > 0) setFontSize(fontSize() - 1);
+                } else {
+                    scrollPreview(dy * 40);
+                }
                 return 1;
             }
             // 内容区可能被左侧面板挤窄：分界点 = 侧栏宽 + 内容区内编辑区宽
             const int cl = contentLeft();
             const int divX = cl + (int)((w() - cl) * m_previewRatio);
             if (Fl::event_x() >= divX) {
-                if (!ctrl) scrollPreview(dy * 40);
+                if (ctrl) {
+                    if (dy < 0) setFontSize(fontSize() + 1);
+                    else if (dy > 0) setFontSize(fontSize() - 1);
+                } else {
+                    scrollPreview(dy * 40);
+                }
                 return 1;
             }
         }
@@ -142,7 +153,11 @@ int MainWindow::handle(int event) {
         // pressed (it reaches FL_SHORTCUT after the focused widget
         // declines it). We never bind Esc to anything, so swallow it:
         // an editor must not quit on a stray Esc keypress.
-        if (Fl::event_key() == FL_Escape) return 1;
+        // 仅预览时 Esc 退出预览（回到分屏/编辑），否则只是吞掉 Esc。
+        if (Fl::event_key() == FL_Escape) {
+            if (m_previewOnly) setPreviewOnly(false);
+            return 1;
+        }
         break;
     }
     case FL_PUSH: {

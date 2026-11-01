@@ -29,6 +29,8 @@
 #include "core/Theme.h"
 #include "ui/Layout.h"
 #include "ui/MainWindow.h"
+#include "editor/Document.h"
+#include "editor/Editor.h"
 #include "ui/SidePanel.h"
 #include "ui/SmokeTest.h"
 #include "mdview/container.h"
@@ -37,6 +39,7 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Image_Surface.H>
 #include <FL/Fl_Menu_Bar.H>
+#include <FL/Fl_Output.H>
 #include <FL/Fl_Text_Editor.H>
 #include <FL/Fl_Tabs.H>
 #include <FL/Fl_Menu_Item.H>
@@ -336,6 +339,152 @@ static bool waitPreviewContent(PreviewPanel &p) {
     return false;
 }
 
+// ---------------------------------------------------------------------------
+// 仅预览没有编辑器可用，键盘翻页（PageUp/PageDown/Home/End）是预览唯一的
+// 滚动方式。直接调用 ViewWidget::handle()：Fl::e_keysym 是 FLTK 公开的按键
+// 状态，设置后走的是与真实按键同一条分发路径。
+// ---------------------------------------------------------------------------
+static void test_preview_keyboard_scroll()
+{
+    std::string md;
+    for (int i = 1; i <= 120; ++i) {
+        md += "## Section " + std::to_string(i) + "\n\n";
+        md += "Paragraph used only to make the preview tall enough to scroll.\n\n";
+    }
+    PreviewPanel panel;
+    panel.view()->resize(0, 0, 800, 600);
+    panel.renderAsync(md, "", "");
+    CHECK(waitPreviewContent(panel));
+    CHECK(panel.view()->has_content());
+
+    const int total = panel.view()->content_height();
+    CHECK(total > panel.view()->h());
+    CHECK(panel.view()->scroll_y() == 0);
+
+    Fl::e_keysym = FL_Page_Down;
+    CHECK(panel.view()->handle(FL_KEYBOARD) == 1);
+    const int afterPage = panel.view()->scroll_y();
+    CHECK(afterPage > 0);
+
+    Fl::e_keysym = FL_End;
+    CHECK(panel.view()->handle(FL_KEYBOARD) == 1);
+    CHECK(panel.view()->scroll_y() > afterPage);
+
+    Fl::e_keysym = FL_Home;
+    CHECK(panel.view()->handle(FL_KEYBOARD) == 1);
+    CHECK(panel.view()->scroll_y() == 0);
+
+    // 已经在顶部，PageUp 必须停在 0（scroll_to 负责夹紧）
+    Fl::e_keysym = FL_Page_Up;
+    CHECK(panel.view()->handle(FL_KEYBOARD) == 1);
+    CHECK(panel.view()->scroll_y() == 0);
+    Fl::e_keysym = 0;
+
+    std::fprintf(stderr, "preview keyboard scroll: total=%d afterPage=%d\n",
+                 total, afterPage);
+}
+
+// ---------------------------------------------------------------------------
+// 右键分派：预览只读，右键菜单由 MainWindow 组装，ViewWidget 只负责在
+// FL_PUSH 时把窗口内坐标交出去（并不进入拖拽/滚动条逻辑）。这里用自定义
+// 回调断言"右键 → 回调 + 坐标原样 + 返回 1"，因为真实的 popup() 会阻塞。
+// ---------------------------------------------------------------------------
+static void test_preview_right_click_dispatch()
+{
+    std::string md;
+    for (int i = 1; i <= 40; ++i)
+        md += "## Section " + std::to_string(i) + "\n\nText.\n\n";
+
+    PreviewPanel panel;
+    panel.view()->resize(0, 0, 800, 600);
+    panel.renderAsync(md, "", "");
+    CHECK(waitPreviewContent(panel));
+
+    int gotX = -1, gotY = -1, calls = 0;
+    panel.view()->set_context_callback([&](int x, int y) {
+        gotX = x;
+        gotY = y;
+        ++calls;
+    });
+
+    const int scrollBefore = panel.view()->scroll_y();
+    Fl::e_x = 120;
+    Fl::e_y = 240;
+    Fl::e_keysym = FL_Button + FL_RIGHT_MOUSE;   // event_button() == 右键
+    CHECK(panel.view()->handle(FL_PUSH) == 1);
+    Fl::e_keysym = 0;
+
+    CHECK(calls == 1);
+    CHECK(gotX == 120);
+    CHECK(gotY == 240);
+    // 右键不能开始拖拽/滚动：滚动位置必须原地不动
+    CHECK(panel.view()->scroll_y() == scrollBefore);
+}
+
+// ---------------------------------------------------------------------------
+// 预览链接点击（ViewWidget::dispatch_link_click + MyContainer::on_anchor_click）：
+// 用真实 litehtml 布局做端到端命中测试 —— 从 DOM 里取 <a> 的 placement 算点击
+// 坐标，合成 PUSH/RELEASE，断言 URL 原样交给上层、纯 #锚点不外传。
+// 坐标换算（窗口坐标 → 文档坐标 → 分块内坐标）出错时这里会直接失败。
+// ---------------------------------------------------------------------------
+static litehtml::element::ptr findAnchorElement(const litehtml::element::ptr &el)
+{
+    if (!el) return nullptr;
+    const char *href = el->get_attr("href");
+    if (href && *href) return el;
+    for (auto &child : el->children()) {
+        litehtml::element::ptr found = findAnchorElement(child);
+        if (found) return found;
+    }
+    return nullptr;
+}
+
+static void test_preview_link_click_dispatch()
+{
+    MyContainer holder;
+    ViewWidget view(0, 0, 640, 480, &holder);
+    view.load_and_render(
+        "<html><body><p><a href=\"https://example.com/doc\">example link</a> "
+        "<a href=\"#nowhere\">nav</a></p></body></html>");
+
+    CHECK(holder.document() != nullptr);
+    litehtml::element::ptr anchor = findAnchorElement(holder.document()->root());
+    CHECK(anchor != nullptr);
+
+    std::vector<std::string> opened;
+    holder.set_link_callback([&](const std::string &u) { opened.push_back(u); });
+
+    if (anchor) {
+        const litehtml::position pos = anchor->get_placement();
+        const int px = (int)pos.x + (int)pos.width / 2;
+        const int py = (int)pos.y + (int)pos.height / 2;
+
+        Fl::e_x = px;
+        Fl::e_y = py;
+        Fl::e_keysym = FL_Button + FL_LEFT_MOUSE;   // event_button() == 左键
+        CHECK(view.handle(FL_PUSH) == 1);
+        CHECK(view.handle(FL_RELEASE) == 1);
+        Fl::e_keysym = 0;
+
+        CHECK(opened.size() == 1);
+        if (!opened.empty()) CHECK(opened[0] == "https://example.com/doc");
+    }
+
+    // 同一个链接"按下后拖动超过 3px"是滚动，不是点击：不能打开。
+    if (anchor) {
+        const litehtml::position pos = anchor->get_placement();
+        Fl::e_x = (int)pos.x + 2;
+        Fl::e_y = (int)pos.y + (int)pos.height / 2;
+        Fl::e_keysym = FL_Button + FL_LEFT_MOUSE;
+        CHECK(view.handle(FL_PUSH) == 1);
+        Fl::e_x += 20;   // 拖动
+        CHECK(view.handle(FL_DRAG) == 1);
+        CHECK(view.handle(FL_RELEASE) == 1);
+        Fl::e_keysym = 0;
+        CHECK(opened.size() == 1);   // 没有新增
+    }
+}
+
 static void test_preview_toggle_gdi() {
     // ~220 sections: comfortably past the 256 KB chunk threshold, so the
     // render exercises the block path (the path real users hit).
@@ -381,6 +530,180 @@ static void test_preview_toggle_gdi() {
     // build stays flat. The bound is loose enough for driver-level jitter
     // but far below the leak rate.
     CHECK(after - base <= 8);
+}
+
+// ---------------------------------------------------------------------------
+// 仅预览下的"菜单 / 状态栏一致性"（2026-11-01 用户定）：
+//   · 编辑区被隐藏 = 那些动作点不动 → 菜单栏「编辑」除"复制/全选/查找三项"
+//     外全部置灰，判定与预览右键菜单**同一条**（isReadOnlyAllowed）；
+//   · 状态栏的 line:col 只是上一个光标的陈旧值 → 整段隐藏。
+// 用一个**独立窗口**跑这条契约：往主窗口的文档里写内容会让它变脏，后面的
+// "关闭标签"就会弹保存确认框（模态），而这里没人会保存它。
+// ---------------------------------------------------------------------------
+static void test_preview_only_menu_and_status()
+{
+    MainWindow w(800, 600, "smoke-preview-only");
+    w.show();
+    settle();
+
+    CHECK(w.insertAiText("# Preview only sample\n\nBody text.\n"));
+    settle();
+    MainWindow::cbTogglePreviewOnly(&w, &w);   // 没预览 → 以仅预览打开
+    settle();
+
+    auto sameLabel = [](const Fl_Menu_Item &it, const char *i18nKey,
+                        const char *english) {
+        const char *t = I18n::get(i18nKey);
+        return it.text && ((t && *t && std::strcmp(it.text, t) == 0) ||
+                           std::strcmp(it.text, english) == 0);
+    };
+
+    // 按 i18n 文案找「编辑」头（窗口会按持久化语言重写菜单标签，英文路径
+    // "Edit" 只在 en 下成立）。
+    Fl_Menu_Item *edit = nullptr;
+    if (Fl_Menu_Bar *bar = w.menuBar()) {
+        for (const Fl_Menu_Item *it = bar->menu(); it && it->text; it = it->next(1)) {
+            if (sameLabel(*it, "menu.edit", "Edit") && (it->flags & FL_SUBMENU)) {
+                edit = const_cast<Fl_Menu_Item *>(it);
+                break;
+            }
+        }
+    }
+    CHECK(edit != nullptr);
+
+    int rows = 0, inactive = 0, active = 0, mismatch = 0;
+    if (edit) {
+        for (const Fl_Menu_Item *it = edit + 1; it->text; ++it) {
+            ++rows;
+            const bool allowed =
+                sameLabel(*it, "menu.edit.copy", "Copy") ||
+                sameLabel(*it, "menu.edit.selectall", "Select All") ||
+                sameLabel(*it, "menu.edit.find", "Find...") ||
+                sameLabel(*it, "menu.edit.findnext", "Find Next") ||
+                sameLabel(*it, "menu.edit.findprev", "Find Previous");
+            const bool gray = (it->flags & FL_MENU_INACTIVE) != 0;
+            if (gray) ++inactive; else ++active;
+            if (gray != !allowed) ++mismatch;   // 该灰的灰、该亮的亮
+        }
+    }
+    CHECK(rows == 15);       // Undo..Send to AI（菜单栏是完整一组，不是右键白名单）
+    CHECK(inactive == 10);   // 只留 Copy / Select All / Find / Find Next / Find Prev
+    CHECK(active == 5);
+    CHECK(mismatch == 0);
+
+    // 菜单栏整组置灰不能"传染"给右键菜单：预览右键仍要保留复制/全选可用
+    // （buildContextMenu 从菜单项复制 flags，必须先清掉再按 readOnly 重算）。
+    {
+        Fl_Menu_Item pm[128];
+        std::memset(pm, 0, sizeof(pm));
+        CHECK(w.buildContextMenu(pm, 128, true) > 0);
+        int gray = 0, bright = 0;
+        for (const Fl_Menu_Item *it = pm; it->text; it = it->next(1)) {
+            if (it->flags & (FL_SUBMENU | FL_SUBMENU_POINTER)) continue;
+            if (it->flags & FL_MENU_INACTIVE) ++gray; else ++bright;
+        }
+        CHECK(gray == 7);
+        CHECK(bright == 2);
+    }
+
+    // 状态栏：编码与大小里都没有冒号，所以"整串不含 ':'"就是没有 line:col
+    Fl_Output *status = nullptr;
+    for (int i = 0; i < w.children(); ++i) {
+        auto *o = dynamic_cast<Fl_Output *>(w.child(i));
+        if (o && std::strstr(o->value(), "Size")) { status = o; break; }
+    }
+    CHECK(status != nullptr);
+    w.tick();
+    if (status) {
+        CHECK(std::strchr(status->value(), ':') == nullptr);
+        CHECK(std::strstr(status->value(), "Size") != nullptr);
+    }
+
+    // 退出仅预览：菜单栏全部恢复可用，状态栏回到 line:col
+    MainWindow::cbTogglePreviewOnly(&w, &w);
+    settle(0.2);   // 让预览面板的延迟销毁（0.1s）落地
+    int stillGray = 0;
+    if (edit)
+        for (const Fl_Menu_Item *it = edit + 1; it->text; ++it)
+            if (it->flags & FL_MENU_INACTIVE) ++stillGray;
+    CHECK(stillGray == 0);
+    w.tick();
+    if (status) CHECK(std::strchr(status->value(), ':') != nullptr);
+
+    w.hide();
+    settle();
+}
+
+// ---------------------------------------------------------------------------
+// 仅预览 = 编辑能力锁（2026-11-01 用户定）：
+//   · 文档进入 isEditLocked，一切写 buffer 的入口失效 —— 包括不经过光标的
+//     键盘、Lua 脚本、AI/管道插入、整篇 APPLY；
+//   · 查找保留、替换置灰（查找是刚需，替换不该可用）；
+//   · 保存/另存为仍针对原文（只看 isReadOnly，不受编辑锁影响）；
+//   · 退出仅预览后同一入口恢复可用。
+// 用独立窗口：写内容会让文档变脏，避免污染主窗口的后续断言。
+// ---------------------------------------------------------------------------
+// 从控件树里定位编辑区（不碰 MainWindow::Tab 私有结构）。
+static Editor *findEditor(Fl_Group *g)
+{
+    for (int i = 0; i < g->children(); ++i) {
+        Fl_Widget *c = g->child(i);
+        if (Editor *ed = dynamic_cast<Editor *>(c)) return ed;
+        if (Fl_Group *sub = dynamic_cast<Fl_Group *>(c))
+            if (Editor *ed = findEditor(sub)) return ed;
+    }
+    return nullptr;
+}
+
+static void test_preview_only_edit_lock()
+{
+    MainWindow w(800, 600, "smoke-preview-only-lock");
+    w.show();
+    settle();
+
+    CHECK(w.insertAiText("# Locked sample\n\nBody text.\n"));
+    settle();
+    MainWindow::cbTogglePreviewOnly(&w, &w);   // 没预览 → 以仅预览打开
+    settle();
+
+    // Tab 是 MainWindow 的私有结构，测试不留后门：从控件树里找编辑器，
+    // 文档状态走 Editor::doc()（公开）。handle() 借 Fl_Text_Editor 的公开
+    // 入口调用（Editor 的同名覆盖是 protected，但虚派发仍落到它）。
+    Editor *ed = findEditor(&w);
+    CHECK(ed != nullptr && ed->doc() != nullptr);
+    if (!ed || !ed->doc()) { w.hide(); settle(); return; }
+    Document *doc = ed->doc();
+
+    CHECK(doc->isEditLocked());
+    CHECK(!doc->isEditable());
+    const int len = doc->buffer()->length();
+
+    // 三条不走光标的写入路径：能力锁必须在数据面就失效。
+    std::string err, out;
+    CHECK(!w.insertAiText("must not land\n", &err));
+    CHECK(!w.applyDocumentSnapshot("# replaced\n", &err));
+    CHECK(!w.executeLuaScript("# no-op\n", &out, &err));
+    CHECK(doc->buffer()->length() == len);
+
+    // 键盘：即使把按键直接投给（隐藏的）编辑器，也不能落字。
+    Fl::e_keysym = 'x';
+    Fl::e_text = const_cast<char *>("x");
+    Fl::e_length = 1;
+    static_cast<Fl_Text_Editor *>(ed)->handle(FL_KEYBOARD);
+    CHECK(doc->buffer()->length() == len);
+    Fl::e_keysym = 0;
+    Fl::e_text = nullptr;
+    Fl::e_length = 0;
+
+    // 退出仅预览：锁解除，同一入口恢复可用（保存路径只看 isReadOnly）。
+    MainWindow::cbTogglePreviewOnly(&w, &w);
+    settle(0.2);
+    CHECK(!doc->isEditLocked());
+    CHECK(doc->isEditable());
+    CHECK(w.insertAiText("now it lands\n", &err));
+
+    w.hide();
+    settle();
 }
 
 int main() {
@@ -489,21 +812,114 @@ int main() {
     MainWindow::cbToggleStatusbar(&win, &win);
     settle();
 
-    // ── View context menu clone (MainWindow::buildViewContextMenu) ─────────
-    // The editor's right-click "View" submenu is generated from the live View
-    // menu. A broken clone shows up as an empty submenu, not a crash.
+    // ── Right-click menu: editor == preview, only graying differs ──────────
+    // 用户契约（2026-11-01）：编辑区与预览区右键菜单**完全等同** —— 同一份
+    // buildContextMenu()：Edit 白名单 + View ▶ + Markdown ▶（后两者整份复刻
+    // 菜单栏，以后加菜单项自动跟上）。预览只是把会改原文的动作置灰，保留
+    // 复制 / 全选。这里逐槽位断言两个数组布局一致，再断言置灰范围。
     {
-        Fl_Menu_Item items[96];
-        std::memset(items, 0, sizeof(items));
-        const int n = win.buildViewContextMenu(items, 96);
-        CHECK(n > 0);
-        CHECK(n < 96);
-        // Every produced item must carry a label or be a separator/terminator.
-        bool anyLabel = false;
-        for (int i = 0; i < n; ++i)
-            if (items[i].text && (items[i].flags & FL_SUBMENU) == 0)
-                anyLabel = true;
-        CHECK(anyLabel);
+        Fl_Menu_Item editorMenu[128];
+        Fl_Menu_Item previewMenu[128];
+        std::memset(editorMenu, 0, sizeof(editorMenu));
+        std::memset(previewMenu, 0, sizeof(previewMenu));
+        const int ne = win.buildContextMenu(editorMenu, 128, false);
+        const int np = win.buildContextMenu(previewMenu, 128, true);
+        CHECK(ne > 0);
+        CHECK(np == ne);   // 同一份内容：槽位数必须相同
+
+        // 逐槽位比对文案与子菜单标志（置灰位是唯一允许的差异）
+        bool layoutSame = (np == ne);
+        for (int i = 0; layoutSame && i < ne; ++i) {
+            const Fl_Menu_Item &a = editorMenu[i];
+            const Fl_Menu_Item &b = previewMenu[i];
+            if (!a.text || !b.text) {
+                if (a.text != b.text) layoutSame = false;
+                continue;
+            }
+            if (std::strcmp(a.text, b.text) != 0) layoutSame = false;
+            if ((a.flags & (FL_SUBMENU | FL_SUBMENU_POINTER)) !=
+                (b.flags & (FL_SUBMENU | FL_SUBMENU_POINTER)))
+                layoutSame = false;
+        }
+        CHECK(layoutSame);
+
+        auto sameLabel = [](const Fl_Menu_Item &it, const char *i18nKey,
+                            const char *english) {
+            const char *t = I18n::get(i18nKey);
+            return it.text && ((t && *t && std::strcmp(it.text, t) == 0) ||
+                               std::strcmp(it.text, english) == 0);
+        };
+        // 在同一层里找一项（next(1) 自动跳过子菜单内容与不可见项）。
+        auto findInLevel = [&](const Fl_Menu_Item *level, const char *i18nKey,
+                               const char *english) -> const Fl_Menu_Item * {
+            for (const Fl_Menu_Item *it = level; it->text; it = it->next(1))
+                if (sameLabel(*it, i18nKey, english)) return it;
+            return nullptr;
+        };
+
+        // 预览：Edit 9 条（Undo/Redo/Cut/Copy/Paste/Delete/Select All +
+        // Search Selection + Send to AI），只有 Copy / Select All 可用。
+        const Fl_Menu_Item *viewHead = nullptr;
+        const Fl_Menu_Item *mdHead = nullptr;
+        int editRows = 0, inactiveEdit = 0, activeEdit = 0, grayMismatch = 0;
+        for (const Fl_Menu_Item *it = previewMenu; it->text; it = it->next(1)) {
+            if (it->flags & (FL_SUBMENU | FL_SUBMENU_POINTER)) {
+                if (sameLabel(*it, "menu.view", "View")) viewHead = it;
+                if (sameLabel(*it, "menu.markdown", "Markdown")) mdHead = it;
+                continue;
+            }
+            ++editRows;
+            const bool allowed =
+                sameLabel(*it, "menu.edit.copy", "Copy") ||
+                sameLabel(*it, "menu.edit.selectall", "Select All");
+            const bool gray = (it->flags & FL_MENU_INACTIVE) != 0;
+            if (gray) ++inactiveEdit; else ++activeEdit;
+            if (gray != !allowed) ++grayMismatch;   // 该灰的灰、该亮的亮
+        }
+        CHECK(editRows == 9);
+        CHECK(inactiveEdit == 7);
+        CHECK(activeEdit == 2);
+        CHECK(grayMismatch == 0);
+
+        // View ▶ 整份复刻：开关组 + Font + Zoom（含子项）+ Statistics + Theme
+        if (viewHead) {
+            const Fl_Menu_Item *sub = viewHead + 1;
+            CHECK(findInLevel(sub, "menu.view.menubar", "Menu Bar") != nullptr);
+            CHECK(findInLevel(sub, "menu.view.font", "Font") != nullptr);
+            CHECK(findInLevel(sub, "menu.view.statistics", "Statistics...") != nullptr);
+            const Fl_Menu_Item *zoom = findInLevel(sub, "menu.view.zoom", "Zoom");
+            CHECK(zoom != nullptr);
+            if (zoom) {
+                CHECK(findInLevel(zoom + 1, "menu.view.zoomin", "Zoom In") != nullptr);
+                CHECK(findInLevel(zoom + 1, "menu.view.zoomout", "Zoom Out") != nullptr);
+                CHECK(findInLevel(zoom + 1, "menu.view.zoomreset", "Reset Zoom") != nullptr);
+            }
+            const Fl_Menu_Item *theme = findInLevel(sub, "menu.view.theme", "Theme");
+            CHECK(theme != nullptr);
+            // Theme 必须原样保留 FL_SUBMENU_POINTER：cbSetTheme 靠
+            // "项地址 == m_themeMenu[i]" 识别主题，复制一份会让选主题静默失效。
+            if (theme) CHECK((theme->flags & FL_SUBMENU_POINTER) != 0);
+        }
+
+        // Markdown ▶ 整份复刻：预览开关 + 动作 + Auto Refresh 五档
+        if (mdHead) {
+            const Fl_Menu_Item *sub = mdHead + 1;
+            CHECK(findInLevel(sub, "menu.markdown.preview", "Preview") != nullptr);
+            CHECK(findInLevel(sub, "menu.markdown.previewonly", "Preview Only") != nullptr);
+            CHECK(findInLevel(sub, "menu.markdown.refresh", "Refresh") != nullptr);
+            CHECK(findInLevel(sub, "menu.markdown.openinbrowser", "Open in Browser") != nullptr);
+            CHECK(findInLevel(sub, "menu.markdown.exporthtml", "Export HTML...") != nullptr);
+            const Fl_Menu_Item *autoRefresh =
+                findInLevel(sub, "menu.markdown.autorefresh", "Auto Refresh");
+            CHECK(autoRefresh != nullptr);
+            if (autoRefresh) {
+                int radios = 0;
+                for (const Fl_Menu_Item *it = autoRefresh + 1; it->text;
+                     it = it->next(1))
+                    if (it->flags & FL_MENU_RADIO) ++radios;
+                CHECK(radios == 5);   // Off / 1s / 5s / 10s / 30s
+            }
+        }
     }
 
     // ── Tab lifecycle + the "last tab closes the window" rule ─────────────
@@ -616,6 +1032,14 @@ int main() {
     // ── Preview edit-refresh gate (A5) ────────────────────────────────────
     test_preview_edit_refresh();
     test_preview_toggle_gdi();
+    // ── 仅预览的键盘翻页 ──────────────────────────────────────────────────
+    test_preview_keyboard_scroll();
+    test_preview_right_click_dispatch();
+    test_preview_link_click_dispatch();
+    // ── 仅预览：菜单栏灰度 + 状态栏去行列号 ────────────────────────────────
+    test_preview_only_menu_and_status();
+    // ── 仅预览：编辑能力锁（键盘 / Lua / AI / APPLY 一律失效）───────────────
+    test_preview_only_edit_lock();
 
     int fails = test::failCount();
     std::fprintf(stderr, "%d checks, %d failures\n", test::checkCount(), fails);

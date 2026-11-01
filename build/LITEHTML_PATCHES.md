@@ -74,6 +74,24 @@ height = y2 - y;
 写入语义（`css_w()`）走写时复制：先断开共享再改，所以布局阶段（如
 `table.cpp` 给每个 `td` 回填计算宽度）不会污染共享伙伴。
 
+### 补丁追加：动态重算也必须先断开共享 (2026-11-01)
+
+`html_tag::compute_styles()` 原先把结果写进 `*m_css`（`m_css->compute(...)`），
+绕过了 `css_w()`。初始解析阶段每个元素都是独占实例（`use_count()==1`），所以
+没问题；但**共享已经发生之后的任何一次重算都会写穿伙伴**：
+
+`document::on_mouse_over()` → `find_styles_changes()` → `refresh_styles()`
+→ `compute_styles()`，即 `:hover` 的动态刷新。markdown 预览里所有 `<a>` 的
+计算样式完全相同，本来就共享同一个 `css_properties`，于是「鼠标移到一条链接」
+把文档里**所有链接一起染红**（用户实测截图确认）。同理影响 `:active`、
+媒体查询变化等一切运行期样式重算。
+
+修复：改为 `css_w().compute(this, doc)`。创建阶段 `use_count()==1`，`css_w()`
+不做克隆，解析开销与内存占用不变；仅在悬停跨链接时克隆一份（约 1 KB，一次）。
+
+**修改文件：** `src/html_tag.cpp`
+（代码注释见 `// PATCHED by Pecia (see build/LITEHTML_PATCHES.md):`）
+
 ### 为什么 `background` 里的渐变不参与相等比较
 
 `background::m_image` 的元素类型是 `litehtml::image`（`gradient.h`），内含完整
@@ -83,12 +101,14 @@ height = y2 - y;
 
 ### 回归保护
 
-`main/test/test_litehtml_css_pool.cpp`（ctest 项 `litehtml_css_pool`）覆盖四种情况：
+`main/test/test_litehtml_css_pool.cpp`（ctest 项 `litehtml_css_pool`）覆盖五类情况：
 
 - 每个 setter 单独改动都必须打破相等（漏字段 → 该测试变红）
 - 重复结构文档确实发生共享
 - 同 tag 不同父色**不得**合并
 - 写时复制后，共享伙伴取值不变
+- `on_mouse_over()`（`:hover` 动态重算）只改被悬停的那一个元素，共享伙伴取值不变
+  —— 回退 `css_w()` 该条即变红（2026-11-01 实测）
 
 `test_preview_mem.cpp` 中原有的一条断言 `v_el >= v_css`（"css 确实是内联的"）
 是这条改动的**反向门禁**，已按新事实翻转为 `v_el < v_css`，并说明原因。

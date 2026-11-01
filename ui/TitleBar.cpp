@@ -14,6 +14,15 @@
 #include <algorithm>
 #include "resource.h"
 
+// The tab strip starts after the caption icon, and drawTabs()/hitTest() recompute
+// that offset independently of draw(): one value, three sites, or the painted tabs
+// and the click targets drift apart.
+// kIconSz must stay a size image/pecia.ico carries a frame for: asking for a size
+// the .ico lacks makes Windows resample the nearest frame, measured at ~12/255 mean
+// channel error (worst 97) against a native frame's ~1.
+static const int kIconMargin = 6;
+static const int kIconSz = 18;
+
 TitleBar::TitleBar(int X, int Y, int W, int H)
     : Fl_Widget(X, Y, W, H, nullptr) {
     box(FL_FLAT_BOX);
@@ -27,11 +36,6 @@ TitleBar::TitleBar(int X, int Y, int W, int H)
     m_btnW[BTN_MIN]   = 32;
     m_btnW[BTN_MAX]   = 32;
     m_btnW[BTN_CLOSE] = 32;
-#if defined(_WIN32)
-    m_hIcon = (HICON)LoadImageW(GetModuleHandleW(nullptr),
-                                MAKEINTRESOURCEW(IDI_PECIA),
-                                IMAGE_ICON, 16, 16, 0);
-#endif
 }
 
 TitleBar::~TitleBar() {
@@ -50,18 +54,29 @@ void TitleBar::setTabData(const std::vector<TabInfo> &tabs, int activeIndex) {
 void TitleBar::draw() {
     fl_draw_box(FL_FLAT_BOX, x(), y(), w(), h(), color());
 
-    const int ICON_SZ = 16;
-    const int ICON_MARGIN = 6;
-    int iconX = x() + ICON_MARGIN;
-    int iconY = y() + (h() - ICON_SZ) / 2;
 #if defined(_WIN32)
+    // fl_gc is a device-pixel DC: FLTK multiplies every drawing coordinate by the
+    // screen scale inside its own calls, so this raw GDI call has to do the same or
+    // the icon stays 20 physical px (and un-centres) on a >100% display.
+    Fl_Window *iconWin = window();
+    const float s = Fl::screen_scale(iconWin ? iconWin->screen_num() : 0);
+    const int devSz = int(kIconSz * s + 0.5f);
+    if (devSz != m_iconPx) {
+        if (m_hIcon) DestroyIcon((HICON)m_hIcon);
+        m_hIcon = (HICON)LoadImageW(GetModuleHandleW(nullptr),
+                                    MAKEINTRESOURCEW(IDI_PECIA),
+                                    IMAGE_ICON, devSz, devSz, 0);
+        m_iconPx = devSz;
+    }
     if (m_hIcon) {
-        DrawIconEx(fl_gc, iconX, iconY, (HICON)m_hIcon, ICON_SZ, ICON_SZ, 0, nullptr, DI_NORMAL);
+        DrawIconEx(fl_gc, int((x() + kIconMargin) * s),
+                   int((y() + (h() - kIconSz) / 2) * s),
+                   (HICON)m_hIcon, devSz, devSz, 0, nullptr, DI_NORMAL);
     }
 #endif
 
     int buttonsTotalW = enabledButtonsTotalW();
-    int tabAreaX = x() + ICON_MARGIN + ICON_SZ + 8;
+    int tabAreaX = x() + kIconMargin + kIconSz + 8;
     int tabAreaW = (x() + w() - buttonsTotalW - 6) - tabAreaX;
 
     if (m_multiTab) {
@@ -93,9 +108,8 @@ void TitleBar::drawTabs() {
     if (n > 128) n = 128;
     m_tabCount = n;
 
-    const int ICON_MARGIN = 6, ICON_SZ = 16;
     int buttonsTotalW = enabledButtonsTotalW();
-    int areaX = x() + ICON_MARGIN + ICON_SZ + 8;
+    int areaX = x() + kIconMargin + kIconSz + 8;
     int areaW = (x() + w() - buttonsTotalW - 6) - areaX;
 
     int availW = areaW - h();
@@ -212,9 +226,8 @@ int TitleBar::hitTest(int mx, int my) const {
     }
 
     if (m_multiTab) {
-        const int ICON_MARGIN = 6, ICON_SZ = 16;
         int buttonsTotalW = enabledButtonsTotalW();
-        int tabAreaX = x() + ICON_MARGIN + ICON_SZ + 8;
+        int tabAreaX = x() + kIconMargin + kIconSz + 8;
         int tabAreaW = (x() + w() - buttonsTotalW - 6) - tabAreaX;
         int availW = tabAreaW - h();
 

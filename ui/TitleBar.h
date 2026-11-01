@@ -124,7 +124,8 @@ private:
     int  m_winX = 0, m_winY = 0;
 
 #if defined(_WIN32)
-    void *m_hIcon = nullptr;      // HICON for the app icon (16x16)
+    void *m_hIcon = nullptr;      // HICON for the app icon, (re)loaded to the
+    int   m_iconPx = 0;           // current device size from the exe resource
 #endif
 
     // Tab layout cache (recalculated in drawTabs(), used by hitTest())

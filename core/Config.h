@@ -255,6 +255,16 @@ Config();
     void getSearchEngineUrl(char *buf, int len) const;
     void setSearchEngineUrl(const char *url);
 
+    // 更新源与更新清单地址（帮助 > 检查更新）。0 = Gitee，1 = GitHub。
+    // 地址与当前选择都持久化：清空一个地址 = 禁用该源（checkUpdate 跳过空地址，
+    // 并在选中源失败时自动试另一个）。默认值指向两个仓库 main 根的 update.json。
+    int  getUpdateSource() const;
+    void setUpdateSource(int source);
+    void getUpdateUrlGitee(char *buf, int len) const;
+    void setUpdateUrlGitee(const char *url);
+    void getUpdateUrlGithub(char *buf, int len) const;
+    void setUpdateUrlGithub(const char *url);
+
     // Language code ("en", "zh-CN", ...)
     void getLang(char *buf, int len, const char *fallback = "en") const;
     void setLang(const char *code);

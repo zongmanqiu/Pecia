@@ -758,6 +758,9 @@ void MainWindow::setFontSize(int size) {
     // the status-bar zoom percentage are unaffected. Resetting to the
     // base (Ctrl+0) stores 0 = "no zoom".
     m_cfg->setEditorZoomSize(size == m_baseFontSize ? 0 : size);
+    // 预览与编辑区共用同一套缩放状态：预览比例 = 字号/基准字号。
+    // setFontScale 内部会跳过未变化的调用，不会白白重排。
+    syncPreviewFontScale();
     // The line-number gutter width is measured from the current font, so
     // it must be recomputed whenever the zoom changes (plan.txt #10).
     updateLinenumberWidth();

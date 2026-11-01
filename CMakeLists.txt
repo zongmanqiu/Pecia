@@ -244,6 +244,7 @@ ui/MatchHighlight.cpp
     ui/ShortcutDialog.cpp
     ui/InfoWindow.cpp
     ui/AboutDialog.cpp
+    ui/UpdateDialog.cpp
     ui/TitleBar.cpp
     ui/WindowFrame.cpp
     ui/WindowShadow.cpp
@@ -260,11 +261,20 @@ ui/MatchHighlight.cpp
     mdview/preprocess.cpp
     mdview/image_export.cpp
     mdview/block_layout.cpp
+    mdview/selection.cpp
     mdview/container.cpp
     mdview/preview_panel.cpp
     build/pecia.rc
     "${CMAKE_BINARY_DIR}/gen/version_pecia.rc"
 )
+
+# rc.exe only tells the generator about the .rc itself, so swapping image/pecia.ico
+# alone relinks nothing and silently ships the previous icon. Track what the .rc reads.
+set_property(SOURCE build/pecia.rc PROPERTY OBJECT_DEPENDS
+    ${CMAKE_SOURCE_DIR}/build/pecia.manifest
+    ${CMAKE_SOURCE_DIR}/image/pecia.ico
+    ${CMAKE_SOURCE_DIR}/image/WeChatPay.svg
+    ${CMAKE_SOURCE_DIR}/image/ALiPay.svg)
 
 if(MSVC)
     # Zero-warning policy (2026-10-23): every FIRST-PARTY target（三个 exe + 全部
@@ -384,6 +394,10 @@ add_executable(PeciaLua WIN32
     "${CMAKE_BINARY_DIR}/gen/version_pecia_lua.rc"
 )
 
+set_property(SOURCE build/pecia_lua.rc PROPERTY OBJECT_DEPENDS
+    ${CMAKE_SOURCE_DIR}/build/pecia.manifest
+    ${CMAKE_SOURCE_DIR}/image/lua.ico)
+
 target_include_directories(PeciaLua PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
@@ -449,6 +463,10 @@ add_executable(PeciaAIChat WIN32
     build/pecia_ai.rc
     "${CMAKE_BINARY_DIR}/gen/version_pecia_ai.rc"
 )
+
+set_property(SOURCE build/pecia_ai.rc PROPERTY OBJECT_DEPENDS
+    ${CMAKE_SOURCE_DIR}/build/pecia.manifest
+    ${CMAKE_SOURCE_DIR}/image/ai_bot.ico)
 
 target_include_directories(PeciaAIChat PRIVATE
     ${CMAKE_SOURCE_DIR}
@@ -765,6 +783,33 @@ target_link_libraries(test_block_layout PRIVATE
 )
 add_test(NAME block_layout COMMAND test_block_layout)
 set_tests_properties(block_layout PROPERTIES TIMEOUT 60)
+
+# --- preview text selection (P2) ---------------------------------------------
+# 选区不会崩，出错只会"看起来还行"：高亮和字形错位、复制出来的文字少一个词
+# 或多一个空格、两行被粘在一起。这些都属于用户在复制之后才发现的问题，
+# 所以按索引契约断言：文档序 run、按字符计的命中偏移、严格/宽松两级命中、
+# 矩形几何与复制文本。桩容器按 8px/字节量宽，期望的几何是精确值而非近似。
+add_executable(test_preview_selection
+    test/test_preview_selection.cpp
+    mdview/selection.cpp
+    core/SearchCore.cpp   # 预览内查找复用编辑区的搜索语义（rawSearchForward 等）
+)
+target_include_directories(test_preview_selection PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/mdview
+    ${PECIA_THIRDPARTY}/litehtml-0.10/include
+)
+if(MSVC)
+    target_compile_options(test_preview_selection PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /WX /MD)
+    target_compile_definitions(test_preview_selection PRIVATE
+        UNICODE _UNICODE NOMINMAX _CRT_SECURE_NO_WARNINGS)
+endif()
+target_link_libraries(test_preview_selection PRIVATE
+    litehtml
+    user32 gdi32
+)
+add_test(NAME preview_selection COMMAND test_preview_selection)
+set_tests_properties(preview_selection PROPERTIES TIMEOUT 60)
 
 
 # --- css_properties sharing pool (P0 of 预览内存优化方案) --------------------
@@ -1536,6 +1581,7 @@ add_executable(test_mainwindow_smoke
     ui/ShortcutDialog.cpp
     ui/InfoWindow.cpp
     ui/AboutDialog.cpp
+    ui/UpdateDialog.cpp
     ui/TitleBar.cpp
     ui/WindowFrame.cpp
     ui/WindowShadow.cpp
@@ -1550,6 +1596,7 @@ add_executable(test_mainwindow_smoke
     mdview/preprocess.cpp
     mdview/image_export.cpp
     mdview/block_layout.cpp
+    mdview/selection.cpp
     mdview/container.cpp
     mdview/preview_panel.cpp
 )

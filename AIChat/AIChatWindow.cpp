@@ -830,7 +830,12 @@ void AIChatWindow::sendTo(const std::string &pipe, const char *failKey) {
     if (rep.peerConnected && rep.ok) {
         setStatus(I18n::get("chat.inserted"));
     } else {
-        setStatus(I18n::get(failKey));
+        // 主程序拒绝时（例如仅预览的编辑锁）会带回具体原因，优先显示；
+        // 没有原因就退回通用失败文案。
+        if (rep.peerConnected && !rep.payload.empty())
+            setStatus(rep.payload.c_str());
+        else
+            setStatus(I18n::get(failKey));
     }
 }
 

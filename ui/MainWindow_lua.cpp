@@ -229,7 +229,7 @@ bool MainWindow::executeLuaScript(const std::string &script,
         if (errMsg) *errMsg = I18n::get("lua.nodoc");
         return false;
     }
-    if (t->doc->isReadOnly()) {
+    if (!t->doc->isEditable()) {
         if (errMsg) *errMsg = I18n::get("lua.readonly");
         return false;
     }
@@ -309,7 +309,7 @@ bool MainWindow::insertAiText(const std::string &text, std::string *errMsg) {
         if (errMsg) *errMsg = I18n::get("lua.nodoc");
         return false;
     }
-    if (t->doc->isReadOnly()) {
+    if (!t->doc->isEditable()) {
         if (errMsg) *errMsg = I18n::get("lua.readonly");
         return false;
     }
@@ -382,7 +382,7 @@ bool MainWindow::getDocumentSnapshot(std::string *payload,
         if (errMsg) *errMsg = I18n::get("lua.nodoc");
         return false;
     }
-    if (t->doc->isReadOnly()) {
+    if (!t->doc->isEditable()) {
         if (errMsg) *errMsg = I18n::get("lua.readonly");
         return false;
     }
@@ -413,7 +413,7 @@ bool MainWindow::applyDocumentSnapshot(const std::string &payload,
         if (errMsg) *errMsg = I18n::get("lua.nodoc");
         return false;
     }
-    if (t->doc->isReadOnly()) {
+    if (!t->doc->isEditable()) {
         if (errMsg) *errMsg = I18n::get("lua.readonly");
         return false;
     }

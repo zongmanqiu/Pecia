@@ -194,7 +194,11 @@ void GoTo::updateHintVisibility() {
 
 int GoTo::handle(int event) {
     updateHintVisibility();
-    if (event == FL_KEYDOWN && (Fl::event_key() == FL_Enter || Fl::event_key() == FL_KP_Enter)) {
+    // Windows 驱动只派发 FL_KEYBOARD（Fl_win32.cxx 里 WM_KEYDOWN 直接交给
+    // Fl::handle(FL_KEYBOARD)），FL_KEYDOWN 是历史写法；两种都接住，否则
+    // PassThruInput 放行的 Enter 会落到 Fl_Group 的导航、把焦点挪走。
+    if ((event == FL_KEYBOARD || event == FL_KEYDOWN) &&
+        (Fl::event_key() == FL_Enter || Fl::event_key() == FL_KP_Enter)) {
         gotoLine();
         return 1;
     }

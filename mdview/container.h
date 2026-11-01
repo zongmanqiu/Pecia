@@ -19,6 +19,7 @@
 #include "litehtml.h"
 #include "text_width_cache.h"
 #include "block_layout.h"
+#include "selection.h"
 #include <FL/Fl_Shared_Image.H>
 #include <FL/Fl_SVG_Image.H>
 #include <FL/Fl_JPEG_Image.H>
@@ -115,6 +116,13 @@ public:
     using anchor_cb_t = std::function<void(const std::string&)>;
     void set_anchor_callback(anchor_cb_t cb) { m_anchor_cb = std::move(cb); }
 
+    // 非锚点链接点击回调（http(s) / 本地相对路径）。litehtml 在 <a> 上
+    // 「按下+抬起同一元素」时触发 on_anchor_click()；纯 "#锚点" 由容器自己
+    // 滚动，其余 URL 一律原样交回上层。预览层不碰 ShellExecute —— 协议白名单
+    // 和「相对当前文档目录解析」都在 MainWindow 做，与编辑区 Ctrl+Click 一致。
+    using link_cb_t = std::function<void(const std::string&)>;
+    void set_link_callback(link_cb_t cb) { m_link_cb = std::move(cb); }
+
     // 远程图片下载完成回调（主线程触发；用于通知视图重绘）
     using remote_done_cb_t = std::function<void()>;
     void set_remote_done_callback(remote_done_cb_t cb) { m_remote_done_cb = std::move(cb); }
@@ -149,6 +157,15 @@ public:
     // 把整个文件夹复制过去。不再另设 temp\*.img 缓存（同一张图会存两份，
     // 且哈希名既不可读也打不开）。
     void set_asset_dir(const std::string& dir) { m_asset_dir = dir; }
+
+    // 双击图片时「打开哪一个文件」：
+    //   · 本地图  → 文档目录 + src（已做 %XX 解码）的绝对路径；
+    //   · 远程图  → 预览产物目录里按 URL 原名落盘的那份文件（与浏览器/导出
+    //     共用同一份，不再下载）；还没下载完/下载失败时返回原 URL，上层用
+    //     浏览器打开（与链接点击同一个动作）。
+    // 返回空串 = 不是可打开的图片（扩展名不在白名单），或本地文件不存在。
+    // 上层据返回值是 http(s) 还是路径决定用浏览器还是系统默认程序。
+    std::string image_open_target(const std::string& src) const;
 
     // Manual refresh only: ignore the persistent remote-image cache and the
     // per-run asset files, so the next layout downloads fresh bytes. The
@@ -217,6 +234,7 @@ private:
     std::vector<std::pair<unsigned char*, bool>> m_owned_pixels;
     scroll_to_cb_t m_scroll_cb;
     anchor_cb_t m_anchor_cb;             // 分块模式的锚点跳转（见 set_anchor_callback）
+    link_cb_t m_link_cb;                 // 非锚点链接（http(s)/本地相对路径）
     remote_done_cb_t m_remote_done_cb;   // 远程图片下载完成（主线程）
     remote_settled_cb_t m_remote_settled_cb;   // 全部远程图结束（成功/失败）
     int m_pendingRemoteDownloads = 0;          // 仅 UI 线程读写
@@ -254,6 +272,28 @@ class ViewWidget : public Fl_Widget {
     int m_drag_start_y = 0;
     int m_drag_start_scroll_x = 0;
     int m_drag_start_scroll_y = 0;
+    // 左键"点击"判定：按下与抬起要落在同一位置附近，才当作链接点击
+    // （拖动超过 3px 是触摸滚动/拖选，绝不能顺带打开链接）。
+    int m_click_x = 0;
+    int m_click_y = 0;
+    bool m_click_moved = false;
+    // 预览内文本选区（P2：单块内拖选 + 逐行高亮 + 复制渲染文字）。
+    // 全量模式选的就是 m_container->document()；分块模式只覆盖「开始拖选的
+    // 那一块」（跨块选区要按块拼接文字，属后续工作），m_sel_block 记块下标。
+    pecia::TextSelection m_sel;
+    int  m_sel_block = -1;        // -1 = 全量文档；>=0 = 分块模式下的块下标
+    bool m_sel_dragging = false;  // 左键选字拖动进行中
+    // 预览内查找：上次命中的首/尾位置（Next 从尾继续、Prev 从首继续）与当时
+    // 的关键词。关键词变了或换了文档就作废，下一次从文首/文末重新开始。
+    pecia::TextSelection::Pos m_findStart;
+    pecia::TextSelection::Pos m_findEnd;
+    std::string m_findNeedle;
+    bool m_findValid = false;
+    // 悬停在 <a href> 上：手型光标 + 链接变红（:hover 样式）。
+    // 只在「进入/离开链接」时让 litehtml 重算一次样式；同一链接内逐词移动
+    // 不重算 —— 否则每挪过一个词就是一次全树样式检查，大文档会明显卡顿。
+    bool m_hover_hand = false;
+    litehtml::element::weak_ptr m_hover_anchor;
     bool m_dragging_vscroll = false;
     bool m_dragging_hscroll = false;
     bool m_rendering = false;             // 后台渲染进行中（空内容时显示 Rendering...）
@@ -263,7 +303,14 @@ class ViewWidget : public Fl_Widget {
     std::string m_renderError;
     std::string m_current_html;       // 当前渲染的 HTML 内容（用于导出）
     std::function<void(const std::string&)> m_open_cb;  // 拖放打开路径回调
-    std::function<void(float)> m_zoom_cb;               // Ctrl+滚轮缩放回调
+    // 双击图片回调：本地文件（或远程图的原 URL）原样交回 MainWindow。
+    // 与链接同一约定 —— 预览层不判断协议、不调 ShellExecute。
+    std::function<void(const std::string&)> m_file_open_cb;
+    std::function<void(int)> m_zoom_cb;                 // Ctrl+滚轮缩放回调（+1/-1）
+    // 右键菜单回调：参数是窗口内坐标（Fl::event_x/y 语义，FLTK popup 需要）。
+    // 菜单内容（视图开关 / Markdown 动作）由 MainWindow 组装，预览本身仍是
+    // 只读的 —— 这里只负责把右键交出去。
+    std::function<void(int, int)> m_context_cb;
     // Scrollbar colors (theme-driven; defaults match old hardcoded values
     // so the widget still works before setScrollbarColors is called).
     Fl_Color m_trackColor = fl_rgb_color(240, 240, 240);
@@ -295,15 +342,38 @@ public:
     int scroll_x() const { return m_scroll_x; }
     const std::string& current_html() const { return m_current_html; }
     void set_open_callback(std::function<void(const std::string&)> cb) { m_open_cb = std::move(cb); }
+    // 双击图片：本地文件用系统默认程序打开；远程图还没落盘时给的是原 URL。
+    // 只在「不在 <a> 里的图片」上触发（图片套在链接里时单击就是链接语义）。
+    void set_file_open_callback(std::function<void(const std::string&)> cb) {
+        m_file_open_cb = std::move(cb);
+    }
     void set_rendering(bool r) { m_rendering = r; if (r) m_renderError.clear(); redraw(); }
     // 布局失败（通常是 oom）：显示一行原因，替代 Rendering...。
     void set_render_error(const std::string& msg) { m_renderError = msg; redraw(); }
-    void set_zoom_callback(std::function<void(float)> cb) { m_zoom_cb = std::move(cb); }
+    // Ctrl+滚轮缩放：step = +1 / -1（放大 / 缩小一级），与编辑区字号
+    // 缩放完全同一套状态（MainWindow::setFontSize），不再有独立的预览比例。
+    void set_zoom_callback(std::function<void(int)> cb) { m_zoom_cb = std::move(cb); }
+    // 右键菜单（仅预览时是恢复菜单栏/状态栏等开关的唯一鼠标入口）
+    void set_context_callback(std::function<void(int, int)> cb) { m_context_cb = std::move(cb); }
     void setScrollbarColors(Fl_Color track, Fl_Color thumb) {
         m_trackColor = track;
         m_thumbColor = thumb;
         redraw();
     }
+    // 预览选区（只读）：有选区才允许复制；"全选"作用于当前块/整篇。
+    bool has_selection() const { return m_sel.has_range() && m_sel.document_alive(); }
+    bool copy_selection();   // 有选区 → 写系统剪贴板并返回 true
+    void select_all();       // 全量模式 = 整篇；分块模式 = 视口所在块
+    void clear_selection();
+    // 预览内查找（仅预览时编辑区不可见，查找结果必须出现在预览里）。
+    // 在渲染后的文字上查找并就地选中命中区间、滚动到可见位置。
+    // 返回 false = 分块模式（没有整篇 document，暂不支持）或无内容，
+    // 调用方据此退回编辑区查找。*found 表示本次是否命中，
+    // *index/*total 是命中序号（1 基）与总数。
+    bool find_text(const std::string& needle, bool caseSensitive, bool wholeWord,
+                   bool forward, bool wrap, bool* found, int* index, int* total);
+    // 丢弃上次命中的锚点（关键词变了 / 换文档时由 find_text 自己重置）。
+    void reset_find_state();
     void draw() override;
     void resize(int X, int Y, int W, int H) override;
     int handle(int event) override;
@@ -315,6 +385,29 @@ private:
     void draw_chunked(int content_w, int content_h, const litehtml::position& clip);
     // 分块模式下把块实例化到「包含当前视口」的窗口。
     void ensure_visible_blocks(int content_h);
+    // 把窗口内坐标换算成文档坐标并交给 litehtml 做命中测试（on_lbutton_down +
+    // on_lbutton_up）。命中 <a> 时 litehtml 会回调 MyContainer::on_anchor_click，
+    // 外链再由容器转交上层。返回 false = 没有可用的 document（未渲染/块未实例化）。
+    bool dispatch_link_click(int mx, int my);
+    // 悬停命中：按当前 document（分块模式扣块偏移）取指针下的元素，
+    // 再沿 parent 链找最近的 <a href>。返回 false = 没有可用文档/未命中。
+    bool element_at(int mx, int my, litehtml::element::ptr& out, int* block_out = nullptr) const;
+    // 鼠标移动统一入口：更新手型光标 + 链接 :hover 样式（变红）。
+    void update_hover(int mx, int my);
+    // 双击命中图片 → 交给 m_file_open_cb（打开本体图片/原 URL）。
+    // 返回 true = 已处理（调用方不再开始拖选）；图片在 <a href> 里则返回 false。
+    bool open_image_at(int mx, int my);
+    // ---- 选区内部实现 ----
+    // 按下左键：命中文字才锚定并进入拖选，返回 true；否则调用方保持拖拽滚动。
+    bool selection_begin_at(int mx, int my);
+    // 拖动：扩展到当前指针位置（总是取最近的文本位置）。
+    bool selection_extend_at(int mx, int my);
+    // 窗口坐标 → 选区所属 document 的坐标（分块模式扣掉块偏移）。
+    bool selection_point(int mx, int my, litehtml::pixel_t& doc_x, litehtml::pixel_t& doc_y) const;
+    // 高亮：在 doc->draw 之后、外层裁剪之内逐行平铺半透明蓝。
+    // ox/oy = 该 document 原点在屏幕上的位置。
+    void draw_selection(int ox, int oy, const litehtml::position& clip);
+    void reset_selection();   // 只清状态（不 redraw），供绘制/渲染路径调用
     // 防抖重排：resize 时注册 FLTK 定时器，延迟执行 re-render。
     static void debounce_timer_cb(void* data);
     void do_deferred_render();

@@ -392,6 +392,11 @@ std::string remote_image_file_name(const std::string& url)
     return fb;
 }
 
+bool is_openable_image_name(const std::string& url_or_path)
+{
+    return !url_image_ext(url_or_path).empty();
+}
+
 std::string remote_image_cache_dir()
 {
     static const std::string dir = [] {

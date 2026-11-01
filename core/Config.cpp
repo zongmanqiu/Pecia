@@ -154,6 +154,9 @@ static const char *configKeyDesc(const char *key) {
     if (strcmp(key,"trim_leading_blank")==0) return "保存时是否删除行首空行 (1=是 0=否)";
     if (strcmp(key,"trim_trailing_whitespace")==0) return "保存时是否删除行尾空白 (1=是 0=否)";
     if (strcmp(key,"ui_font_size")==0) return "界面字号";
+    if (strcmp(key,"update_source")==0) return "检查更新使用的源 (0=Gitee 1=GitHub)";
+    if (strcmp(key,"update_url_gitee")==0) return "Gitee 更新清单 update.json 地址（空=禁用该源）";
+    if (strcmp(key,"update_url_github")==0) return "GitHub 更新清单 update.json 地址（空=禁用该源）";
     if (strcmp(key,"win_x")==0) return "主窗口 X 坐标";
     if (strcmp(key,"win_y")==0) return "主窗口 Y 坐标";
     if (strcmp(key,"win_w")==0) return "主窗口宽度";
@@ -449,6 +452,22 @@ void Config::initFromDisk() {
         m_dirtyKeys.insert("ai_api_key");
         needSave = true;
     }
+
+    // Update manifest URLs get seeded (not left absent) so the user can see and
+    // edit what the check actually uses; an empty value means "source disabled".
+    if (m_entries.find("update_url_gitee") == m_entries.end()) {
+        m_entries["update_url_gitee"] =
+            "https://gitee.com/qiuzongman/pecia/raw/main/docs/update.json";
+        m_dirtyKeys.insert("update_url_gitee");
+        needSave = true;
+    }
+    if (m_entries.find("update_url_github") == m_entries.end()) {
+        m_entries["update_url_github"] =
+            "https://raw.githubusercontent.com/zongmanqiu/Pecia/refs/heads/main/docs/update.json";
+        m_dirtyKeys.insert("update_url_github");
+        needSave = true;
+    }
+    needSave |= validateKey("update_source", 0, 0, 1);
 
     // Remove deprecated keys that should no longer persist.
     // font_id/font_size: dead legacy keys (no writer ever existed);
@@ -994,6 +1013,38 @@ void Config::getSearchEngineUrl(char *buf, int len) const {
 void Config::setSearchEngineUrl(const char *url) {
     writeStr("search_engine_url",
              (url && *url) ? url : "https://www.bing.com/search?q=%s");
+}
+
+// ---------------------------------------------------------------------------
+// Update source + manifest URLs
+// ---------------------------------------------------------------------------
+
+int Config::getUpdateSource() const {
+    return readInt("update_source", 0);
+}
+
+void Config::setUpdateSource(int source) {
+    writeInt("update_source", (source == 1) ? 1 : 0);
+}
+
+void Config::getUpdateUrlGitee(char *buf, int len) const {
+    readStr("update_url_gitee", buf, len,
+            "https://gitee.com/qiuzongman/pecia/raw/main/docs/update.json");
+}
+
+void Config::setUpdateUrlGitee(const char *url) {
+    // Unlike the search engine template, an EMPTY value is meaningful here:
+    // it disables that source (checkUpdate skips empty URLs).
+    writeStr("update_url_gitee", url ? url : "");
+}
+
+void Config::getUpdateUrlGithub(char *buf, int len) const {
+    readStr("update_url_github", buf, len,
+            "https://raw.githubusercontent.com/zongmanqiu/Pecia/refs/heads/main/docs/update.json");
+}
+
+void Config::setUpdateUrlGithub(const char *url) {
+    writeStr("update_url_github", url ? url : "");
 }
 
 // ---------------------------------------------------------------------------

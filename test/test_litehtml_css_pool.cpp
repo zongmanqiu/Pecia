@@ -19,6 +19,12 @@
 //      Two identical tags under differently styled parents must NOT merge.
 //      Guarded by a real two-parent document.
 //
+//   3. Too eager via a later recompute: compute_styles() must detach before
+//      writing. It used to write straight into *m_css, so any dynamic style
+//      refresh (:hover, :active) rewrote every element sharing that instance.
+//      Real-world symptom: hovering one link in the preview turned every link
+//      red. Guarded by a real document plus document::on_mouse_over.
+//
 // Plus the copy-on-write contract itself: writing through css_w() on one
 // element must never be observable from an element sharing that instance.
 
@@ -44,7 +50,14 @@ public:
                                    const litehtml::document*,
                                    litehtml::font_metrics* fm) override
     {
-        if (fm) *fm = litehtml::font_metrics();
+        // Non-zero metrics: section 5 hit-tests a rendered link, and a zero
+        // line height makes every inline box 0 px tall so nothing is inside.
+        if (fm) {
+            fm->height = 16;
+            fm->ascent = 12;
+            fm->descent = 4;
+            fm->x_height = 8;
+        }
         return 1;
     }
     void delete_font(litehtml::uint_ptr) override {}
@@ -305,6 +318,89 @@ int main()
                          (second->css().get_color() == before) ? "unchanged" : "CHANGED");
             CHECK(&first->css() != &second->css());     // writer detached
             CHECK(second->css().get_color() == before); // reader unaffected
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 5. Dynamic recompute (:hover) must not write through a shared instance.
+    //
+    // document::on_mouse_over() -> find_styles_changes() -> refresh_styles()
+    // -> compute_styles() is the one path that recomputes a style AFTER the
+    // interning pass has made identical elements share one instance. If that
+    // path writes in place, the hover colour of one link leaks to all of them.
+    // -----------------------------------------------------------------------
+    {
+        const char* kLinks =
+            "<html><body>"
+            "<p style=\"margin:0\"><a class=\"lnk\" href=\"http://one/\">one</a></p>"
+            "<p style=\"margin:0\"><a class=\"lnk\" href=\"http://two/\">two</a></p>"
+            "</body></html>";
+        const char* kLinkCss =
+            "a { color: #0366d6; text-decoration: underline; }"
+            "a:hover { color: #d73a49; }";
+
+        auto doc3 = litehtml::document::createFromString(
+            kLinks, &container, litehtml::master_css, kLinkCss);
+        CHECK(doc3 != nullptr);
+        if (doc3) {
+            doc3->render(400);
+
+            elements all;
+            flatten(doc3->root(), all);
+            litehtml::element::ptr first, second;
+            for (const auto& el : all) {
+                const char* cls = el->get_attr("class");
+                if (cls && std::string(cls) == "lnk") {
+                    if (!first) first = el;
+                    else second = el;
+                }
+            }
+            CHECK(first && second);
+            if (first && second) {
+                // Premise: the two links carry the SAME interned instance.
+                // Without that the leak cannot happen, so this must hold.
+                CHECK(&first->css() == &second->css());
+
+                const litehtml::web_color base1 = first->css().get_color();
+                const litehtml::web_color base2 = second->css().get_color();
+                // An inline <a> has no box of its own (get_placement() reports
+                // 0x0); its text run is what carries the pixels, and that is
+                // also what get_element_by_point() resolves back to the <a>.
+                litehtml::position box;
+                for (const auto& el : all) {
+                    if (!el->is_text()) continue;
+                    std::string t;
+                    el->get_text(t);
+                    if (t == "one") { box = el->get_placement(); break; }
+                }
+                CHECK(box.width > 0 && box.height > 0);
+                const litehtml::pixel_t px = box.x + box.width / 2;
+                const litehtml::pixel_t py = box.y + box.height / 2;
+                litehtml::position::vector boxes;
+                doc3->on_mouse_over(px, py, px, py, boxes);
+
+                auto over = doc3->get_over_element();
+                std::fprintf(stderr,
+                             "hover@(%.1f,%.1f) box(%.1f,%.1f,%.1f,%.1f): over=%s, "
+                             "hovered link %s, sibling %s, instances %s\n",
+                             (double)px, (double)py, (double)box.x, (double)box.y,
+                             (double)box.width, (double)box.height,
+                             over ? over->get_tagName() : "null",
+                             (first->css().get_color() == base1) ? "UNCHANGED" : "changed",
+                             (second->css().get_color() == base2) ? "unchanged" : "CHANGED",
+                             (&first->css() == &second->css()) ? "STILL SHARED" : "detached");
+
+                CHECK(first->css().get_color() != base1);   // :hover applied
+                CHECK(second->css().get_color() == base2);  // sibling untouched
+                CHECK(&first->css() != &second->css());     // COW detached
+
+                // Leaving restores the hovered link and still leaves the
+                // sibling alone.
+                litehtml::position::vector leave_boxes;
+                doc3->on_mouse_leave(leave_boxes);
+                CHECK(first->css().get_color() == base1);
+                CHECK(second->css().get_color() == base2);
+            }
         }
     }
 

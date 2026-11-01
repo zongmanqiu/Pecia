@@ -362,7 +362,15 @@ void litehtml::html_tag::compute_styles(bool recursive)
 
 	m_style.subst_vars(this);
 
-	m_css->compute(this, doc);
+	// PATCHED by Pecia (see build/LITEHTML_PATCHES.md): m_css may be an instance
+	// shared through document::intern_css - every identically styled element
+	// (e.g. all <a> links of a markdown document) points at ONE css_properties.
+	// compute() overwrites every field in place, so writing straight into *m_css
+	// rewrote that shared instance: hovering one link (document::on_mouse_over ->
+	// find_styles_changes -> refresh_styles -> compute_styles) turned ALL links
+	// red at once. css_w() detaches first - a no-op when use_count()==1, which is
+	// the case during the initial style pass, so parsing cost is unchanged.
+	css_w().compute(this, doc);
 
 	// Our own properties are final now - try to share the instance with an equal
 	// one. Children are computed afterwards, so they can still inherit from us:

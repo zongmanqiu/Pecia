@@ -289,10 +289,17 @@ void PreviewPanel::scrollToAnchor(const std::string &id)
 
 void PreviewPanel::setFontScale(float scale)
 {
-    if (scale < 0.6f) scale = 0.6f;
-    if (scale > 2.5f) scale = 2.5f;
+    // 与编辑区字号统一的缩放比例：编辑区 6..48 相对基准字号可到 0.4..4.0，
+    // 这里按同一范围夹紧，保证两边百分比一致。
+    if (scale < 0.4f) scale = 0.4f;
+    if (scale > 4.0f) scale = 4.0f;
+    // 没变化就不重新布局（Ctrl+滚轮在上下限处会反复触发）
+    if (scale > m_fontScale - 0.001f && scale < m_fontScale + 0.001f) return;
     m_fontScale = scale;
-    // 重新渲染当前 HTML（保持滚动比例），字体缩放由 MyContainer 应用
+    // 缩放只作为基准传给 MyContainer：它把值用在 get_default_font_size()
+    // （根字号），CSS 里的字号/行高/间距都是相对单位，一次乘出全篇比例。
+    if (m_container) m_container->set_font_scale(scale);
+    // 重新渲染当前 HTML（保持滚动比例），让布局按新基准重算
     float ratio = (m_view->content_height() > 0)
                   ? (float)m_view->scroll_y() / (float)m_view->content_height() : 0.0f;
     if (m_view->has_content()) {

@@ -17,6 +17,13 @@ RemoteFetchFn default_remote_fetch();
 // 返回空串表示这个 URL 推不出可靠的文件名（调用方应保持原样，别猜）。
 std::string remote_image_file_name(const std::string& url);
 
+// 双击预览里的图片 → 交给系统默认程序之前必须过这张白名单。
+// 只放行预览本身能解码的扩展名（png/jpg/jpeg/gif/svg/webp/bmp/ico/avif），
+// 判定与 remote_image_file_name 共用同一个 url_image_ext：URL 的 ?query /
+// #fragment 会被忽略，目录里带点但不是文件名（"dir.png/"）不算。
+// 不通过 = 文档里写了什么路径都不会被 ShellExecute 执行（例如 ![](x.exe)）。
+bool is_openable_image_name(const std::string& url_or_path);
+
 // ---------------------------------------------------------------------------
 // Persistent remote-image byte cache (preview fetch layer only)
 //

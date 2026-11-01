@@ -43,6 +43,16 @@ public:
     // Highlight / clear all search matches in the editor.
     void highlightAllMatches();
     void clearMatchHighlight();
+
+    // 仅预览（编辑区不可见）时代替编辑区查找：命中必须在预览里显示，所以
+    // 查找改在预览的渲染文本上执行。MainWindow 在进入/退出仅预览时注册或
+    // 清空这个回调；回调返回 false 表示预览不支持（如分块大文档），此时
+    // 照旧查编辑区。*found 为是否命中，*index/*total 供「序号/总数」显示。
+    using preview_find_cb_t = std::function<bool(const char *needle, bool caseSensitive,
+                                                 bool wholeWord, bool forward,
+                                                 bool wrap, bool *found,
+                                                 int *index, int *total)>;
+    void setPreviewFinder(preview_find_cb_t cb) { m_previewFind = std::move(cb); }
     void setCloseCallback(std::function<void()> cb) { m_onClose = std::move(cb); }
     void setHighlightCallback(std::function<void(bool)> cb) { m_onHighlightChange = std::move(cb); }
 
@@ -125,11 +135,13 @@ private:
 
     std::function<void()> m_onClose;
     std::function<void(bool)> m_onHighlightChange;  // true = highlight on, false = off
+    preview_find_cb_t m_previewFind;   // 非空 = 仅预览，查找交给预览
 
     const Theme *m_theme = nullptr;
     int          m_fontSize = 16;   // font size for labels and inputs
 
     int countMatches();
+    bool searchInPreview(bool forward);   // true = 本次已由预览处理
     void updateMatchCount();
     void updateHintVisibility();
     void updateButtonStates();   // enable/disable All/Replace/ReplaceAll per read-only

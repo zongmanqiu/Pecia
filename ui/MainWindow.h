@@ -98,14 +98,17 @@ public:
 
     Fl_Menu_Bar    *menuBar() const { return m_menu; }   // 右键菜单复用主菜单项
 
-    // Append a self-contained "View" submenu to `out`, copying every View
-    // item BEFORE the Font item (the toggles: Menu Bar .. Word Wrap). Used by
-    // the editor's right-click menu, so adding a new View item above Font in
-    // g_menu automatically shows up there - no second hand-maintained list.
-    // `cap` is the remaining Fl_Menu_Item capacity; returns the number of
-    // slots written INCLUDING the submenu terminator, or 0 when there is no
-    // View/Font item. The caller must still append the outer popup terminator.
-    int buildViewContextMenu(Fl_Menu_Item *out, int cap) const;
+    // 右键菜单（编辑区与预览区**完全同一份**）：
+    //   Edit 白名单（平铺）+ View ▶ + Markdown ▶（后两者整份复刻菜单栏）。
+    // readOnly=true（预览）时只保留"复制/全选"，其余 Edit 动作置灰。
+    // `cap` 是剩余槽位容量；返回写入槽位数（含结尾 {nullptr}），0 = 组装失败。
+    // 组装实现放在 editor/Editor.cpp（Editor 被独立测试链接，需要同一符号）。
+    // Public 为了能被 mainwindow_smoke 直接断言。
+    int buildContextMenu(Fl_Menu_Item *out, int cap, bool readOnly) const;
+    // 弹出上面这份菜单（编辑区 / 预览区共用）。x/y 是窗口内坐标
+    // （Fl::event_x/y 语义）；FLTK 的 popup() 传了 menu_button 时会自动
+    // 叠加窗口偏移，这里不能再转屏幕坐标。
+    void showContextMenu(int x, int y, bool readOnly);
     bool isMenuBarVisible() const { return m_showMenuBar; }
 
     // Open a file into a new tab (or reuse an existing tab if the file
@@ -425,16 +428,41 @@ private:
     // "打开 .md 时"这句配置要的是"设成某个状态"。
     void            setPreviewOnly(bool on);
     void            togglePreviewOnly();        // 分屏 ⇄ 纯预览（预览全宽）
+    // 把"仅预览"同步成每份文档的编辑锁（Document::setEditLocked）。
+    // 所有写入入口查 Document::isEditable()，保存/另存为只看 isReadOnly()。
+    void            syncEditLock();
+    // 仅预览下的查找：在预览的渲染文本里查找并把命中选中、滚动到可见位置
+    // （编辑区不可见，命中必须出现在用户看得见的地方）。返回 false = 预览
+    // 不支持（未渲染 / 分块大文档），FindReplace 据此退回编辑区查找。
+    bool            previewFindText(const char *needle, bool caseSensitive,
+                                    bool wholeWord, bool forward, bool wrap,
+                                    bool *found, int *index, int *total);
+    // 把编辑区字号换算成预览字体比例（预览比例 = 字号/基准字号）。
+    // 定义在 MainWindow_preview.cpp：MainWindow.cpp 只有 PreviewPanel 的
+    // 前向声明，不能直接访问它的成员。
+    void            syncPreviewFontScale();
     // 两栏排布。contentH = 内容区全高（含 find/go-to 栏占位），tabsH = 扣掉
     // 栏位后的可视高度；侧栏/分隔条用 contentH（不被栏位挤短）。
     void            layoutPreviewPanes(int contentTop, int contentH, int tabsH);
     // 同步 Markdown > Preview / Preview Only 两个勾选状态（语言切换后菜单项
     // 标签被重写，所以两处查找：原始英文路径 + 翻译后路径）。
     void            syncPreviewMenu();
+    // 仅预览：编辑区被隐藏且不可操作，菜单栏「编辑」按与预览右键菜单同一套
+    // 判定（isReadOnlyAllowed）置灰，只留"复制/全选/查找三项"，替换置灰
+    // （Tools > Lua Script 一并置灰；脚本栏不动，写入由能力锁兜底）；
+    // 退出时全部恢复。实现在 editor/Editor.cpp，与 buildContextMenu 共用同一条规则。
+    void            syncEditMenuReadOnly(bool readOnly);
     void            rebuildPreviewToc(const std::vector<PreviewHeading> &headings); // 重建目录数据
     void            showOutlineInSidePanel();   // 打开左侧面板并切到大纲页
     void            setAutoRefresh(int ms);     // 设置自动刷新间隔并持久化
     void            openPreviewInBrowser();     // 导出 HTML 并用默认浏览器打开（与"另存为"同一实现）
+    // 预览里点击链接：http/https 交给系统浏览器（与编辑区 Ctrl+Click 同一套
+    // 协议白名单）；其余按"相对当前文档目录"解析，存在就在 Pecia 里打开。
+    void            openPreviewLink(const std::string &url);
+    // 预览里双击图片：目标若是 http(s)（远程图还没落盘）→ 系统浏览器；
+    // 否则就是磁盘上的本体图片文件 → 系统默认程序（不经过 Pecia 编辑器）。
+    // 与链接点击共用同一套协议判断，两处行为不会漂移。
+    void            openPreviewImageTarget(const std::string &target);
     void            exportHtmlToFile();         // 另存为自包含 HTML（文件框选路径）
 public:
     static void  cbToggleSidePanel(Fl_Widget *, void *);  // 菜单：左侧面板开关

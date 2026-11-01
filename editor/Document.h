@@ -60,6 +60,14 @@ public:
     // Read-only flag (large-file mode or external set).
     bool isReadOnly() const { return m_readOnly; }
 
+    // 编辑锁：由"仅预览"这类 UI 模式置位，与 isReadOnly 分开 —— 后者表示
+    // 文件本身不可写（保存会被拒），前者只锁编辑，保存/另存为仍针对原文
+    // 照常可用（2026-11-01 用户定）。所有会写 buffer 的入口统一查
+    // isEditable()，新增入口也必须查，否则就是绕过能力锁。
+    bool isEditLocked() const { return m_editLocked; }
+    void setEditLocked(bool on) { m_editLocked = on; }
+    bool isEditable() const { return !m_readOnly && !m_editLocked; }
+
     // Detect encoding from the first few bytes of a file (see
     // core/EncodingCore.h - detectEncoding()).
 
@@ -90,6 +98,7 @@ private:
     Encoding        m_encoding;
     bool            m_dirty;
     bool            m_readOnly;
+    bool            m_editLocked = false;   // 仅预览等 UI 模式的编辑锁（见 isEditable）
     EOL             m_eol;
     bool            m_trimTrailing;
     bool            m_trimLeadingBlank = false;

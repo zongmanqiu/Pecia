@@ -297,13 +297,12 @@ void FindReplace::setEditor(Fl_Text_Editor *e) {
     updateButtonStates();
 }
 
-// Read-only documents (large >100 MB files, and any file the user marked
-// read-only) cannot be modified or highlighted, so Find All / Replace /
-// Replace All are disabled (greyed out) instead of silently no-opping.
-// Next/Prev and Go To keep working - they only read the buffer.
+// 不可编辑的文档（>100 MB 只读打开，或处于"仅预览"的编辑锁）不能修改或
+// 高亮，所以 Find All / Replace / Replace All 置灰而不是静默失败。
+// Next/Prev 与 Go To 照常可用 —— 它们只读 buffer（仅预览下查找是刚需）。
 bool FindReplace::editorReadOnly() const {
     if (auto *ed = dynamic_cast<Editor *>(m_editor))
-        return ed->doc() && ed->doc()->isReadOnly();
+        return ed->doc() && !ed->doc()->isEditable();
     return false;
 }
 
@@ -441,19 +440,9 @@ void FindReplace::activate(const char *initialText, bool focusReplace) {
     if (focusReplace) {
         Fl::focus(m_replaceInput);
         m_replaceInput->insert_position(0, m_replaceInput->size());
-        if (m_replaceLabel) {
-            if (initialText && *initialText) m_replaceLabel->hide();
-            else m_replaceLabel->show();
-        }
-        // Hide the find hint when we're focused on replace
-        if (m_findLabel) m_findLabel->hide();
     } else {
         Fl::focus(m_findInput);
         m_findInput->insert_position(0, m_findInput->size());
-        if (m_findLabel) {
-            if (initialText && *initialText) m_findLabel->hide();
-            else m_findLabel->show();
-        }
     }
     // Reset match count state
     m_totalCount = 0;
@@ -463,6 +452,11 @@ void FindReplace::activate(const char *initialText, bool focusReplace) {
     // Run a layout pass so the count display reaches its final width
     // before the first redraw.
     layout(w());
+    // 占位提示（"查找"/"替换为"）的显隐只由 updateHintVisibility 决定：它看
+    // 焦点和空值，与 updateHintLabel 同一套规则。activate 里曾经按"有没有
+    // 初始文本"手动 show/hide，会出现"刚聚焦的输入框里又闪一下占位文字"的
+    // 矛盾状态（焦点在框内却显示占位提示），随后 layout() 又把它藏起来。
+    updateHintVisibility();
     updateMatchCount();
 }
 
@@ -541,6 +535,18 @@ void FindReplace::refreshLabels() {
 }
 
 int FindReplace::handle(int event) {
+    // 「查找」输入框里按 Enter = 点「下一个」。
+    // PassThruInput 对 Enter 返回 0（GoTo 需要放行 Enter 自己接住），于是这个
+    // 事件会冒泡到这里；若不在这里截住，就会落到 Fl_Group::handle(FL_KEYBOARD)
+    // 的 navigation(navkey())（Fl_Group.cxx 里 Enter 的 navkey 是 FL_Down），
+    // 焦点被挪到下一行的「替换为」输入框 —— 用户看到的就是"跳转而不是查找"。
+    // Windows 驱动只派发 FL_KEYBOARD（Fl_win32.cxx），FL_KEYDOWN 一并兼容。
+    if ((event == FL_KEYBOARD || event == FL_KEYDOWN) &&
+        Fl::focus() == m_findInput &&
+        (Fl::event_key() == FL_Enter || Fl::event_key() == FL_KP_Enter)) {
+        findNext();
+        return 1;
+    }
     // Let FLTK process the event first so focus changes take effect.
     int ret = Fl_Group::handle(event);
     // After focus/unfocus events, update the hint label visibility.
@@ -646,6 +652,14 @@ int FindReplace::countMatches() {
 }
 
 void FindReplace::updateMatchCount() {
+    // 仅预览：计数由预览给出（见 searchInPreview），不要再按源 buffer 重算，
+    // 否则显示的会是源文本的匹配数、和预览里高亮的那一段对不上。
+    if (m_previewFind) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%d/%d", m_currentIndex, m_totalCount);
+        m_matchCount->value(buf);
+        return;
+    }
     // Use pre-computed values from findNext/findPrev
     // If no search has been performed yet, count total matches (only for
     // regular-sized buffers - counting a >100 MB file freezes the UI).
@@ -896,9 +910,37 @@ void FindReplace::clearMatchHighlight() {
     if (m_onHighlightChange) m_onHighlightChange(false);
 }
 
+// 仅预览的查找入口：查询交给 MainWindow，后者在预览的渲染文本里查找并把
+// 命中区间选中、滚动到可见位置。计数也用预览的（源文本里还有 Markdown 语法
+// 和不显示的字符，两边本来就可能不一致）。返回 false = 这次不走预览，调用
+// 方继续走编辑区路径。
+bool FindReplace::searchInPreview(bool forward) {
+    if (!m_previewFind) return false;
+    const char *needle = m_findInput->value();
+    if (!needle || !*needle) return false;
+
+    bool found = false;
+    int index = 0, total = 0;
+    if (!m_previewFind(needle, caseSensitive(), wholeWord(), forward,
+                       m_chkWrap->value() != 0, &found, &index, &total))
+        return false;
+
+    m_totalCount = total;
+    m_currentIndex = found ? index : 0;
+    // 预览路径的位置不是源文件字节偏移，混进编辑区的增量序号逻辑只会算出
+    // 错值；置 -1 让编辑区路径下次自己重算。
+    m_lastPos = -1;
+    if (!found) fl_beep();
+    updateMatchCount();
+    return true;
+}
+
 void FindReplace::findNext() {
-    if (!m_editor) return;
     clearMatchHighlight();
+    // 仅预览：编辑区被隐藏，命中必须在预览里看得见 —— 查找改在预览的渲染
+    // 文本上执行。预览不支持（分块大文档）时回落到编辑区路径。
+    if (searchInPreview(true)) return;
+    if (!m_editor) return;
     Fl_Text_Buffer *buf = m_editor->buffer();
     if (!buf) return;   // editor detached (e.g. tab is in mid-open)
     const char *needle = m_findInput->value();
@@ -1010,8 +1052,9 @@ void FindReplace::updateMatchIndex(Fl_Text_Buffer *buf, const char *needle,
 }
 
 void FindReplace::findPrev() {
-    if (!m_editor) return;
     clearMatchHighlight();
+    if (searchInPreview(false)) return;
+    if (!m_editor) return;
     Fl_Text_Buffer *buf = m_editor->buffer();
     if (!buf) return;   // editor detached (e.g. tab is in mid-open)
     const char *needle = m_findInput->value();

@@ -22,12 +22,11 @@
 #include "ui/InfoWindow.h"
 #include "ui/AboutDialog.h"
 #include "ui/ParamDialog.h"
-#include "core/Updater.h"
-#include <thread>
+#include "mdview/preview_panel.h"   // PreviewPanel::view()：预览选区复制/全选路由
+#include "ui/UpdateDialog.h"
 #include <FL/Fl.H>
 #include <FL/Fl_Window.H>
 #include <FL/Fl_Box.H>
-#include <FL/Fl_Progress.H>
 #include <cstdlib>
 
 #include "core/Config.h"
@@ -212,7 +211,7 @@ void MainWindow::cbExit(Fl_Widget * /*w*/, void *data) {
 
 void MainWindow::cbUndo(Fl_Widget * /*w*/, void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
-    if (!self || !self->activeTab() || self->activeTab()->doc->isReadOnly()) return;
+    if (!self || !self->activeTab() || !self->activeTab()->doc->isEditable()) return;
     opLog("undo: begin len=%d", self->activeTab()->editor->buffer()->length());
     Fl_Text_Editor::kf_undo(0, self->activeTab()->editor);
     opLog("undo: end len=%d canUndo=%d",
@@ -222,24 +221,35 @@ void MainWindow::cbUndo(Fl_Widget * /*w*/, void *data) {
 
 void MainWindow::cbRedo(Fl_Widget * /*w*/, void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
-    if (!self || !self->activeTab() || self->activeTab()->doc->isReadOnly()) return;
+    if (!self || !self->activeTab() || !self->activeTab()->doc->isEditable()) return;
     Fl_Text_Editor::kf_redo(0, self->activeTab()->editor);
 }
 
 void MainWindow::cbCut(Fl_Widget * /*w*/, void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
-    if (!self || !self->activeTab() || self->activeTab()->doc->isReadOnly()) return;
+    if (!self || !self->activeTab() || !self->activeTab()->doc->isEditable()) return;
     Fl_Text_Editor::kf_cut(0, self->activeTab()->editor);
 }
 
 void MainWindow::cbCopy(Fl_Widget * /*w*/, void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
-    if (self && self->activeTab()) Fl_Text_Editor::kf_copy(0, self->activeTab()->editor);
+    if (!self || !self->activeTab()) return;
+    // 预览选区优先：预览是只读视图，复制的是渲染出来的文字。仅在"焦点在
+    // 预览"或"仅预览"（编辑区被隐藏、焦点必然在预览）时生效；否则照旧复制
+    // 编辑区的选区（两处选区互不影响）。
+    if (self->m_preview) {
+        ViewWidget *v = self->m_preview->view();
+        if (v && (self->m_previewOnly || Fl::focus() == v)) {
+            v->copy_selection();
+            return;
+        }
+    }
+    Fl_Text_Editor::kf_copy(0, self->activeTab()->editor);
 }
 
 void MainWindow::cbPaste(Fl_Widget * /*w*/, void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
-    if (!self || !self->activeTab() || self->activeTab()->doc->isReadOnly()) return;
+    if (!self || !self->activeTab() || !self->activeTab()->doc->isEditable()) return;
     Editor *ed = self->activeTab()->editor;
     // 剪贴板里没有文本、只有图片/文件时，素材落盘 + 插入链接（选项默认关，
     // 由 Editor::pasteMedia 自己判断）。有文本时它立刻返回 false，走默认粘贴。
@@ -249,7 +259,7 @@ void MainWindow::cbPaste(Fl_Widget * /*w*/, void *data) {
 
 void MainWindow::cbDelete(Fl_Widget * /*w*/, void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
-    if (!self || !self->activeTab() || self->activeTab()->doc->isReadOnly()) return;
+    if (!self || !self->activeTab() || !self->activeTab()->doc->isEditable()) return;
     Fl_Text_Buffer *buf = self->activeTab()->doc->buffer();
     int start, end;
     // With a selection: remove it. Without one: delete the character at
@@ -265,6 +275,15 @@ void MainWindow::cbDelete(Fl_Widget * /*w*/, void *data) {
 void MainWindow::cbSelectAll(Fl_Widget * /*w*/, void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
     if (!self || !self->activeTab()) return;
+    // 与 cbCopy 同一条路由：焦点在预览 / 仅预览 → 选预览里的文字，
+    // 否则选编辑区全文。
+    if (self->m_preview) {
+        ViewWidget *v = self->m_preview->view();
+        if (v && (self->m_previewOnly || Fl::focus() == v)) {
+            v->select_all();
+            return;
+        }
+    }
     Fl_Text_Buffer *buf = self->activeTab()->doc->buffer();
     buf->select(0, buf->length());
     self->activeTab()->editor->redraw();
@@ -281,8 +300,8 @@ void MainWindow::cbTimeDate(Fl_Widget * /*w*/, void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
     if (!self) return;
     Tab *t = self->activeTab();
-    // 与 cbDelete 一致：只读文档（>100 MB 打开时选择"只读查看"）不写入。
-    if (!t || !t->doc || !t->editor || t->doc->isReadOnly()) return;
+    // 与 cbDelete 一致：不可编辑（只读文件 / 仅预览编辑锁）不写入。
+    if (!t || !t->doc || !t->editor || !t->doc->isEditable()) return;
 
     SYSTEMTIME st;
     GetLocalTime(&st);
@@ -738,213 +757,16 @@ void MainWindow::cbAbout(Fl_Widget * /*w*/, void *data) {
                     self ? self->m_cfg->getUiFontSize() : 14);
 }
 
-// Help > Check for Updates.
-namespace {
-
-// Modeless "downloading" window. Without it the UI looks frozen for the
-// several seconds it takes to pull the ~7 MB zip on the worker thread.
-// It is removed by whoever finishes the download (success or failure) and
-// ignores the close button so it cannot vanish mid-transfer.
-class UpdateProgressWin : public Fl_Window {
-public:
-    UpdateProgressWin(const char *title, const char *label)
-        : Fl_Window(380, 116, title) {
-        begin();
-        m_text = new Fl_Box(12, 14, 356, 26, label);
-        m_text->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-        m_bar = new Fl_Progress(12, 50, 356, 22);
-        m_bar->minimum(0.0);
-        m_bar->maximum(1.0);
-        m_bar->value(0.0);
-        m_bar->selection_color(fl_rgb_color(0, 110, 220));
-        m_bar->color(FL_BACKGROUND2_COLOR);
-        end();
-        // Swallow close attempts: only the download decides when this ends.
-        callback([](Fl_Widget *, void *) {}, nullptr);
-        set_modal();
-    }
-
-    // frac < 0 => total size unknown (indeterminate).
-    void setProgress(double frac, const std::string &text) {
-        m_buf = text;
-        m_text->label(m_buf.c_str());
-        m_bar->value(static_cast<float>(frac < 0 ? 0.5 : frac));
-        redraw();
-    }
-
-private:
-    Fl_Box      *m_text  = nullptr;
-    Fl_Progress *m_bar   = nullptr;
-    std::string  m_buf;   // owns the bytes behind m_text->label()
-};
-
-// Byte count as "3.2 MB" / "812 KB" for the progress label.
-std::string formatBytes(long long n) {
-    char buf[64];
-    if (n >= 1024 * 1024)      snprintf(buf, sizeof(buf), "%.1f MB", (double)n / 1048576.0);
-    else if (n >= 1024)        snprintf(buf, sizeof(buf), "%.0f KB", (double)n / 1024.0);
-    else                       snprintf(buf, sizeof(buf), "%lld B", n);
-    return buf;
-}
-
-struct UpdateResult {
-    UpdateInfo   info;
-    MainWindow  *self  = nullptr;
-    const Theme *theme = nullptr;
-    int          fs    = 14;
-};
-
-// Marshalled progress report (worker thread -> UI thread via Fl::awake).
-struct UpdateProgressMsg {
-    UpdateProgressWin *win;
-    long long          received;
-    long long          total;
-};
-
-// Marshalled failure: message + the theme/font needed to draw it.
-struct UpdateFailMsg {
-    std::string   msg;
-    const Theme  *theme;
-    int           fs;
-    UpdateProgressWin *win;
-};
-
-// Marshalled launch request (UI thread).
-struct UpdateLaunchMsg {
-    std::string        bat;
-    UpdateProgressWin *win;
-};
-
-void startUpdate(const UpdateInfo &info, const Theme *theme, int fs);
-
-// Runs on the FLTK UI thread (via Fl::awake). Shows the outcome of the check.
-// Shows the outcome of the check in Pecia's themed ConfirmDialog (the
-// same window Lua errors use), so the look is consistent whether or not
-// a new version was found.
-void handleCheckResult(const UpdateResult &r) {
-    if (!r.info.error.empty()) {
-        char msg[512];
-        snprintf(msg, sizeof(msg), I18n::get("update.error"), r.info.error.c_str());
-        // single "OK" button, mirroring the Lua error dialog.
-        ConfirmDialog(I18n::get("update.title"), msg,
-                      I18n::get("settings.ok"), nullptr, nullptr,
-                      r.theme, r.fs).run();
-        return;
-    }
-    if (!r.info.hasUpdate) {
-        ConfirmDialog(I18n::get("update.title"), I18n::get("update.latest"),
-                      I18n::get("settings.ok"), nullptr, nullptr,
-                      r.theme, r.fs).run();
-        return;
-    }
-    std::string notes = r.info.notes;
-    if (notes.size() > 800) { notes.resize(800); notes += "\n..."; }
-    char msg[2048];
-    snprintf(msg, sizeof(msg), I18n::get("update.newAvailable"),
-             r.info.latest.c_str(), notes.c_str());
-    ConfirmDialog dlg(I18n::get("update.title"), msg,
-                      I18n::get("update.update"), I18n::get("update.later"), nullptr,
-                      r.theme, r.fs);
-    if (dlg.run() != 0) return;
-    // Updating exits this process, so never lose work silently: give the
-    // user the chance to save (or cancel) every dirty document first.
-    if (r.self && !r.self->confirmUnsavedBeforeUpdate()) return;
-    startUpdate(r.info, r.theme, r.fs);
-}
-
-// Download + write the updater bat on a worker thread, then hand off to the
-// UI thread to launch it and exit the current process.
-void startUpdate(const UpdateInfo &info, const Theme *theme, int fs) {
-    // Called on the UI thread: safe to create/show the progress window here.
-    auto *win = new UpdateProgressWin(I18n::get("update.title"),
-                                      I18n::get("update.downloading"));
-    win->position((Fl::w() - win->w()) / 2, (Fl::h() - win->h()) / 2);
-    win->show();
-
-    struct Ctx {
-        UpdateInfo        info;
-        const Theme      *theme;
-        int               fs;
-        UpdateProgressWin *win;
-    };
-    auto *ctx = new Ctx{info, theme, fs, win};
-
-    std::thread([ctx]() {
-        // Report a failure in Pecia's own themed dialog (not fl_message).
-        auto fail = [ctx](const char *key) {
-            auto *f = new UpdateFailMsg{I18n::get(key), ctx->theme, ctx->fs, ctx->win};
-            Fl::awake([](void *d) {
-                auto *ff = static_cast<UpdateFailMsg *>(d);
-                if (ff->win) { ff->win->hide(); delete ff->win; }
-                ConfirmDialog(I18n::get("update.title"), ff->msg.c_str(),
-                              I18n::get("settings.ok"), nullptr, nullptr,
-                              ff->theme, ff->fs).run();
-                delete ff;
-            }, f);
-        };
-
-        std::string exeDir = getExeDirUtf8();
-        std::string base = ctx->info.latest;
-        if (!base.empty() && (base[0] == 'v' || base[0] == 'V')) base = base.substr(1);
-        std::string zipPath = exeDir + "Pecia_x64_" + base + ".zip";
-
-        auto progress = [ctx](long long received, long long total) {
-            auto *p = new UpdateProgressMsg{ctx->win, received, total};
-            Fl::awake([](void *d) {
-                auto *pp = static_cast<UpdateProgressMsg *>(d);
-                std::string t;
-                if (pp->total > 0) {
-                    char buf[160];
-                    snprintf(buf, sizeof(buf), "%s / %s  (%.0f%%)",
-                             formatBytes(pp->received).c_str(),
-                             formatBytes(pp->total).c_str(),
-                             100.0 * (double)pp->received / (double)pp->total);
-                    t = buf;
-                } else {
-                    t = std::string(I18n::get("update.downloading")) +
-                        "  " + formatBytes(pp->received);
-                }
-                if (pp->win)
-                    pp->win->setProgress(
-                        pp->total > 0 ? (double)pp->received / (double)pp->total : -1.0, t);
-                delete pp;
-            }, p);
-        };
-
-        if (!downloadFile(ctx->info.url, zipPath, progress)) { fail("update.dlfail"); delete ctx; return; }
-
-        std::string batPath = exeDir + "pecia_update.bat";
-        if (!writeUpdateBat(exeDir, zipPath, batPath)) { fail("update.batfail"); delete ctx; return; }
-
-        auto *l = new UpdateLaunchMsg{batPath, ctx->win};
-        Fl::awake([](void *d) {
-            auto *ll = static_cast<UpdateLaunchMsg *>(d);
-            if (ll->win) { ll->win->hide(); delete ll->win; }
-            std::string bat = ll->bat;
-            delete ll;
-            launchUpdater(bat);
-            exit(0);
-        }, l);
-        delete ctx;
-    }).detach();
-}
-} // namespace
-
+// Help > Check for Updates - opens the update page (see ui/UpdateDialog.h).
+// Everything network-related (check, download, hash verify, hand-off to the
+// updater script) lives behind that window, so this callback stays a one-liner
+// and the old "verdict dialog + second progress window" pair is gone.
 void MainWindow::cbCheckUpdates(Fl_Widget * /*w*/, void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
-    const Theme *theme = self ? &self->m_theme : nullptr;
-    int fs = self ? self->m_cfg->getUiFontSize() : 14;
-
-    // Network check on a worker thread so the UI never blocks.
-    std::thread([self, theme, fs]() {
-        UpdateInfo info = checkForUpdate(PECIA_VERSION);
-        auto *r = new UpdateResult{info, self, theme, fs};
-        Fl::awake([](void *d) {
-            auto *res = static_cast<UpdateResult *>(d);
-            handleCheckResult(*res);
-            delete res;
-        }, r);
-    }).detach();
+    if (!self) return;
+    UpdateDialog dlg(&self->m_theme, self->m_cfg->getUiFontSize(), self->m_cfg,
+                     [self]() { return self->confirmUnsavedBeforeUpdate(); });
+    dlg.run();
 }
 
 // Settings > Shortcuts - opens the shortcut customization dialog.

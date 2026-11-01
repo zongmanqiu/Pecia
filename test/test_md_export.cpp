@@ -10,7 +10,9 @@
 //
 // Covered: cache hit -> rewrite + copy with the correct extension, cache miss
 // -> remote URL kept verbatim, HTML-escaped "&" resolving to the same cache
-// file, unknown extension -> kept remote, repeated use of one picture.
+// file, unknown extension -> kept remote, repeated use of one picture, and the
+// extension whitelist that guards "double-click an image -> open with the
+// system default program" (is_openable_image_name).
 #include "test_assert.h"
 #include "mdview/image_export.h"
 
@@ -328,6 +330,25 @@ static void test_count_remote_image_srcs()
     fs::remove_all(g_build);
 }
 
+// 双击预览图片 → 系统默认程序之前必须过白名单：只认预览能解码的扩展名，
+// 并且忽略 URL 的 ?query / #fragment。否则文档里一句 ![](x.exe) 就能把任意
+// 本地文件交给 ShellExecute（见 image_export.h 的说明）。
+static void test_openable_image_name()
+{
+    CHECK(is_openable_image_name("https://x.test/a.PNG"));
+    CHECK(is_openable_image_name("https://x.test/a.png?w=100&h=80"));
+    CHECK(is_openable_image_name("https://x.test/a.svg#view"));
+    CHECK(is_openable_image_name("C:\\docs\\img\\p1.jpeg"));
+    CHECK(is_openable_image_name("img/sub/pic.webp"));
+
+    CHECK(!is_openable_image_name(""));
+    CHECK(!is_openable_image_name("https://x.test/a.exe"));
+    CHECK(!is_openable_image_name("C:\\docs\\setup.exe"));
+    CHECK(!is_openable_image_name("https://x.test/run.png.exe"));
+    CHECK(!is_openable_image_name("https://x.test/dir.png/"));   // 目录名不是文件
+    CHECK(!is_openable_image_name("noextension"));
+}
+
 int main()
 {
     std::fflush(stderr);
@@ -341,6 +362,7 @@ int main()
     test_non_remote_sources_untouched();
     test_remote_byte_cache();
     test_count_remote_image_srcs();
+    test_openable_image_name();
     int fails = test::failCount();
     std::fprintf(stderr, "%d checks, %d failures\n", test::checkCount(), fails);
     return fails ? 1 : 0;

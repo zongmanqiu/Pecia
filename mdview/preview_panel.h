@@ -51,6 +51,13 @@ public:
     using headings_cb_t = std::function<void(const std::vector<PreviewHeading> &)>;
     void setHeadingsCallback(headings_cb_t cb) { m_headingsCb = std::move(cb); }
 
+    // 预览里的外链点击（http(s) / 本地相对路径）：原样转给 MainWindow。
+    // 预览层不做协议判断，也不调 ShellExecute —— 打开方式与编辑区
+    // Ctrl+Click 完全同一套（见 MainWindow::openPreviewLink）。
+    void setLinkCallback(std::function<void(const std::string &)> cb) {
+        if (m_container) m_container->set_link_callback(std::move(cb));
+    }
+
     // 每张远程图结束（成功/失败）时触发。MainWindow 用它复用已有的
     // scheduleTrimSoon() 做工作集回收；不参与重绘判定。
     using remote_settled_cb_t = std::function<void()>;

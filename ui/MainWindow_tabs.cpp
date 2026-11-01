@@ -9,6 +9,7 @@
 #include "editor/Editor.h"
 #include "ui/TitleBar.h"
 #include "ui/FindReplace.h"
+#include "mdview/preview_panel.h"   // 仅预览下切标签要把焦点交给预览视图
 #include "ui/GoTo.h"
 #include "core/Config.h"
 #include "core/Theme.h"
@@ -248,6 +249,15 @@ int MainWindow::addTab(Document *doc, const char * /*label*/) {
     // 实测 File > New 后界面不动）。
     normalizePreviewState();
 
+    // 新标签也要跟当前模式对齐：仅预览时补锁；normalize 若关掉了预览，
+    // 这里把焦点交还编辑器（理由同 switchToTab）。
+    syncEditLock();
+    if (m_previewOnly) {
+        if (m_preview && m_preview->view()) Fl::focus(m_preview->view());
+    } else {
+        Fl::focus(ed);
+    }
+
     return (int)m_tabsList.size() - 1;
 }
 
@@ -397,10 +407,17 @@ void MainWindow::layoutTabs() {
 void MainWindow::switchToTab(int index) {
     if (index < 0 || index >= (int)m_tabsList.size()) return;
     m_tabs->value(m_tabsList[index].page);
-    Fl::focus(m_tabsList[index].editor);
-    // Start the new tab's cursor in the visible phase.
-    m_cursorVisible = true;
-    m_tabsList[index].editor->show_cursor(1);
+    // 仅预览下编辑区是隐藏的：焦点绝不能再落回去 —— FLTK 的键盘派发只看
+    // Fl::focus()、不看控件可见性，焦点落回去就会把字打进看不见的文档
+    //（Ctrl+Tab 走 cycleTab → 这里，默认快捷键就能触发）。
+    if (m_previewOnly && m_preview && m_preview->view()) {
+        Fl::focus(m_preview->view());
+    } else {
+        Fl::focus(m_tabsList[index].editor);
+        // Start the new tab's cursor in the visible phase.
+        m_cursorVisible = true;
+        m_tabsList[index].editor->show_cursor(1);
+    }
 
     // Closing the tab we came from may have left FindBar's m_editor / its
     // captured m_countText pointing at an already-deleted editor/buffer.

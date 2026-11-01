@@ -4,10 +4,12 @@
 
 #include <windows.h>
 #include <winhttp.h>
+#include <bcrypt.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 #include <wchar.h>   // _wtoi64 (Content-Length parsing)
 
 #pragma comment(lib, "winhttp.lib")
@@ -109,16 +111,26 @@ bool decodeJsonString(const std::string &body, size_t &i, std::string &out) {
     return false;
 }
 
-// Find "key":"value" and decode value.
+// Find "key":"value" and decode value. The colon must follow the key
+// immediately (whitespace aside), and occurrences that fail that test are
+// skipped: a changelog that mentions "version" inside its own text would
+// otherwise answer for the real key.
 bool findJsonString(const std::string &body, const char *key, std::string &out) {
     std::string needle = std::string("\"") + key + "\"";
-    size_t pos = body.find(needle);
-    if (pos == std::string::npos) return false;
-    pos = body.find(':', pos + needle.size());
-    if (pos == std::string::npos) return false;
-    size_t q = body.find_first_not_of(" \t\r\n", pos + 1);
-    if (q == std::string::npos || body[q] != '"') return false;
-    return decodeJsonString(body, q, out);
+    size_t from = 0;
+    while (true) {
+        size_t pos = body.find(needle, from);
+        if (pos == std::string::npos) return false;
+        from = pos + needle.size();
+        size_t colon = from;
+        while (colon < body.size() && (body[colon] == ' ' || body[colon] == '\t' ||
+                                       body[colon] == '\r' || body[colon] == '\n')) ++colon;
+        if (colon >= body.size() || body[colon] != ':') continue;
+        size_t q = body.find_first_not_of(" \t\r\n", colon + 1);
+        if (q == std::string::npos || body[q] != '"') continue;
+        if (decodeJsonString(body, q, out)) return true;
+        return false;   // right key, broken value: do not hunt further
+    }
 }
 
 // Parse "v1.2.3" / "1.2" into up to three ints.
@@ -148,6 +160,57 @@ int compareVersion(const std::string &cur, const std::string &latest) {
         if (lm[i] != cm[i]) return lm[i] > cm[i] ? 1 : -1;
     }
     return 0;
+}
+
+// Flat "key":"value" manifest reader. `version` and at least one package URL
+// are mandatory: without a URL the check can be displayed but never acted on,
+// which is worse than reporting the manifest as unusable.
+bool parseManifest(const std::string &json, UpdateManifest &m) {
+    if (!findJsonString(json, "version", m.version) || m.version.empty()) return false;
+    findJsonString(json, "published", m.published);
+    findJsonString(json, "notes", m.notes);
+    findJsonString(json, "sha256", m.sha256);
+    findJsonString(json, "url_gitee", m.urlGitee);
+    findJsonString(json, "url_github", m.urlGithub);
+    return !m.urlGitee.empty() || !m.urlGithub.empty();
+}
+
+// Whole file into a string (wide path, so Chinese install dirs work).
+bool readWholeFile(const std::string &pathUtf8, std::string &out) {
+    out.clear();
+    std::wstring w = utf8ToWide(pathUtf8);
+    if (w.empty()) return false;
+    HANDLE h = CreateFileW(w.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    char buf[16384];
+    DWORD got = 0;
+    while (ReadFile(h, buf, sizeof(buf), &got, nullptr) && got > 0) out.append(buf, got);
+    bool ok = (got == 0);   // ReadFile returning 0 bytes is EOF, the normal exit
+    CloseHandle(h);
+    return ok;
+}
+
+// Seconds since the file was last written; -1 when it cannot be read.
+long long fileAgeSeconds(const std::string &pathUtf8) {
+    std::wstring w = utf8ToWide(pathUtf8);
+    if (w.empty()) return -1;
+    HANDLE h = CreateFileW(w.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return -1;
+    FILETIME ft;
+    long long age = -1;
+    if (GetFileTime(h, nullptr, nullptr, &ft)) {
+        FILETIME now;
+        GetSystemTimeAsFileTime(&now);
+        ULARGE_INTEGER a, b;
+        a.HighPart = now.dwHighDateTime;    a.LowPart = now.dwLowDateTime;
+        b.HighPart = ft.dwHighDateTime;     b.LowPart = ft.dwLowDateTime;
+        if (a.QuadPart >= b.QuadPart)
+            age = (long long)((a.QuadPart - b.QuadPart) / 10000000ULL);
+    }
+    CloseHandle(h);
+    return age;
 }
 
 // Parse [http|https]://host[:port]/path.
@@ -194,7 +257,11 @@ bool followRedirect(const std::wstring &wloc, std::string &host, std::string &pa
 
 // GET `url`, body into `out`. Synchronous, blocking. Manually follows
 // redirects (no dependency on the missing WINHTTP_OPTION_ENABLE_REDIRECTS).
-bool httpGetBody(const std::string &url, int timeoutMs, std::string &out, std::string &err) {
+// A 4xx/5xx is reported as a failure with the status in `err` -- an error page
+// is not a manifest, and saving one as "update.zip" would only be caught later
+// by the hash check with a far less useful message.
+bool httpGetBody(const std::string &url, int timeoutMs, std::string &out, std::string &err,
+                 DWORD *outStatus = nullptr) {
     std::string cur = url;
     for (int hop = 0; hop <= 8; ++hop) {
         std::string host, path; bool tls; INTERNET_PORT port = INTERNET_DEFAULT_HTTPS_PORT;
@@ -241,6 +308,12 @@ bool httpGetBody(const std::string &url, int timeoutMs, std::string &out, std::s
                 err = "server redirected but no Location header";
                 WinHttpCloseHandle(hR); WinHttpCloseHandle(hC); WinHttpCloseHandle(hS); return false;
             }
+            if (status >= 400) {
+                err = "HTTP " + std::to_string(status);
+                if (outStatus) *outStatus = status;
+                WinHttpCloseHandle(hR); WinHttpCloseHandle(hC); WinHttpCloseHandle(hS); return false;
+            }
+            if (outStatus) *outStatus = status;
         }
         char buf[16384];
         DWORD read = 0;
@@ -306,6 +379,11 @@ bool httpDownload(const std::string &url, const std::wstring &savePathW,
                 err = "server redirected but no Location header";
                 WinHttpCloseHandle(hR); WinHttpCloseHandle(hC); WinHttpCloseHandle(hS); return false;
             }
+            if (status >= 400) {
+                // Never save an error page as the package.
+                err = "HTTP " + std::to_string(status);
+                WinHttpCloseHandle(hR); WinHttpCloseHandle(hC); WinHttpCloseHandle(hS); return false;
+            }
         }
         HANDLE hf = CreateFileW(savePathW.c_str(), GENERIC_WRITE, 0, nullptr,
                                 CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -363,35 +441,179 @@ std::string getExeDirUtf8() {
     return n > 0 ? std::string(buf) : std::string();
 }
 
-UpdateInfo checkForUpdate(const std::string &currentVersion) {
-    UpdateInfo info;
-    std::string api = "https://gitee.com/api/v5/repos/qiuzongman/pecia/releases/latest";
-    std::string body, err;
-    if (!httpGetBody(api, 10000, body, err)) { info.error = err; return info; }
+std::string updateCachePathUtf8() {
+    return getExeDirUtf8() + "update.cache.json";
+}
 
-    std::string tag;
-    if (!findJsonString(body, "tag_name", tag) || tag.empty()) {
-        info.error = "cannot parse release info";
-        return info;
-    }
-    info.latest = tag;
-    findJsonString(body, "body", info.notes);   // optional changelog
+bool readCachedManifest(UpdateManifest &out, long long &ageSeconds) {
+    ageSeconds = -1;
+    std::string raw;
+    if (!readWholeFile(updateCachePathUtf8(), raw)) return false;
+    UpdateManifest m;
+    if (!parseManifest(raw, m)) return false;
+    ageSeconds = fileAgeSeconds(updateCachePathUtf8());
+    out = m;
+    return true;
+}
 
-    int cmp = compareVersion(currentVersion, tag);
-    if (cmp <= 0) {
-        // current >= latest -> nothing newer (cmp==0 equal, cmp<0 dev build ahead)
-        info.hasUpdate = false;
-        return info;
+// Writes the fetched JSON verbatim, so the cache keeps every byte the server
+// sent (re-serialising it would drift from what the mirrors actually serve).
+static void writeCacheManifest(const std::string &rawJson) {
+    std::string path = updateCachePathUtf8();
+    std::wstring w = utf8ToWide(path);
+    if (w.empty()) return;
+    FILE *f = _wfopen(w.c_str(), L"wb");
+    if (!f) return;                 // read-only install dir: check still works
+    fwrite(rawJson.data(), 1, rawJson.size(), f);
+    fclose(f);
+}
+
+UpdateCheckResult checkUpdate(const std::string &currentVersion,
+                              const std::string &urlGitee,
+                              const std::string &urlGithub, int source) {
+    UpdateCheckResult r;
+    const std::string urls[2] = { urlGitee, urlGithub };
+    const int order[2] = { source == 1 ? 1 : 0, source == 1 ? 0 : 1 };
+    std::string lastErr = "没有可用的更新清单地址";
+
+    for (int k = 0; k < 2; ++k) {
+        const int idx = order[k];
+        if (urls[idx].empty()) continue;          // an unset source is skipped, not tried
+        std::string body, err;
+        if (!httpGetBody(urls[idx], 10000, body, err)) { lastErr = err; continue; }
+        UpdateManifest m;
+        if (!parseManifest(body, m)) { lastErr = "更新清单无法解析"; continue; }
+        writeCacheManifest(body);
+        r.online     = true;
+        r.sourceUsed = idx;
+        r.manifest   = m;
+        r.hasUpdate  = compareVersion(currentVersion, m.version) > 0;
+        return r;
     }
-    // latest is newer: build deterministic download URL. The asset name
-    // "Pecia_x64_<tag>.zip" is fixed by docs/RELEASE_CHECKLIST.md section 3 -
-    // rename the uploaded zip and auto-update 404s.
-    std::string base = tag;
-    if (!base.empty() && (base[0] == 'v' || base[0] == 'V')) base = base.substr(1);
-    info.url = "https://gitee.com/qiuzongman/pecia/releases/download/" + tag +
-               "/Pecia_x64_" + base + ".zip";
-    info.hasUpdate = true;
-    return info;
+
+    // Neither source answered. The cache may still say "a newer version was seen
+    // last time", but it must never be reported as "up to date" -- after the user
+    // upgrades, the cache in the install dir is the one the PREVIOUS build wrote.
+    UpdateManifest cached;
+    long long age = -1;
+    if (readCachedManifest(cached, age)) {
+        r.fromCache   = true;
+        r.cacheAgeSec = age;
+        r.manifest    = cached;
+        r.hasUpdate   = compareVersion(currentVersion, cached.version) > 0;
+        return r;
+    }
+    r.error = lastErr;
+    return r;
+}
+
+// ---------------------------------------------------------------------------
+// SHA-256 via bcrypt.dll, resolved on demand from System32 only.
+// LOAD_LIBRARY_SEARCH_SYSTEM32 is scoped to this call, which is why adding a
+// second DLL to the process does not require the process-wide
+// SetDefaultDllDirectories change the gap list asks for on new bare-name loads.
+// ---------------------------------------------------------------------------
+namespace {
+
+typedef NTSTATUS (WINAPI *OpenAlgFn)(BCRYPT_ALG_HANDLE *, LPCWSTR, LPCWSTR, ULONG);
+typedef NTSTATUS (WINAPI *GetPropFn)(BCRYPT_HANDLE, LPCWSTR, PUCHAR, ULONG, ULONG *, ULONG);
+typedef NTSTATUS (WINAPI *CreateHashFn)(BCRYPT_ALG_HANDLE, BCRYPT_HASH_HANDLE *,
+                                        PUCHAR, ULONG, PUCHAR, ULONG, ULONG);
+typedef NTSTATUS (WINAPI *HashDataFn)(BCRYPT_HASH_HANDLE, PUCHAR, ULONG, ULONG);
+typedef NTSTATUS (WINAPI *FinishHashFn)(BCRYPT_HASH_HANDLE, PUCHAR, ULONG, ULONG);
+typedef NTSTATUS (WINAPI *DestroyHashFn)(BCRYPT_HASH_HANDLE);
+typedef NTSTATUS (WINAPI *CloseAlgFn)(BCRYPT_ALG_HANDLE, ULONG);
+
+struct BcryptApi {
+    OpenAlgFn     openAlg     = nullptr;
+    GetPropFn     getProp     = nullptr;
+    CreateHashFn  createHash  = nullptr;
+    HashDataFn    hashData    = nullptr;
+    FinishHashFn  finishHash  = nullptr;
+    DestroyHashFn destroyHash = nullptr;
+    CloseAlgFn    closeAlg    = nullptr;
+    bool          ok          = false;
+    BcryptApi() {
+        HMODULE m = LoadLibraryExW(L"bcrypt.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!m) return;
+        openAlg     = (OpenAlgFn)GetProcAddress(m, "BCryptOpenAlgorithmProvider");
+        getProp     = (GetPropFn)GetProcAddress(m, "BCryptGetProperty");
+        createHash  = (CreateHashFn)GetProcAddress(m, "BCryptCreateHash");
+        hashData    = (HashDataFn)GetProcAddress(m, "BCryptHashData");
+        finishHash  = (FinishHashFn)GetProcAddress(m, "BCryptFinishHash");
+        destroyHash = (DestroyHashFn)GetProcAddress(m, "BCryptDestroyHash");
+        closeAlg    = (CloseAlgFn)GetProcAddress(m, "BCryptCloseAlgorithmProvider");
+        ok = openAlg && getProp && createHash && hashData && finishHash &&
+             destroyHash && closeAlg;
+        // The module stays loaded for the process lifetime on purpose: freeing it
+        // between calls would re-do the search every check and could unmap code a
+        // hash operation is still inside.
+    }
+};
+
+const BcryptApi &bcryptApi() {
+    static BcryptApi a;   // C++11: thread-safe init (this runs on a worker thread)
+    return a;
+}
+
+} // namespace
+
+bool sha256FileUtf8(const std::string &pathUtf8, std::string &hexLower) {
+    hexLower.clear();
+    const BcryptApi &api = bcryptApi();
+    if (!api.ok) return false;
+
+    BCRYPT_ALG_HANDLE hAlg = nullptr;
+    if (api.openAlg(&hAlg, BCRYPT_SHA256_ALGORITHM, nullptr, 0) != 0) return false;
+
+    DWORD objLen = 0, hashLen = 0, got = 0;
+    bool good = api.getProp(hAlg, BCRYPT_OBJECT_LENGTH, (PUCHAR)&objLen, sizeof(objLen),
+                            &got, 0) == 0 && objLen > 0 &&
+                api.getProp(hAlg, BCRYPT_HASH_LENGTH, (PUCHAR)&hashLen, sizeof(hashLen),
+                            &got, 0) == 0 && hashLen > 0;
+
+    std::vector<unsigned char> hashObj, hashVal;
+    BCRYPT_HASH_HANDLE hHash = nullptr;
+    if (good) {
+        hashObj.resize(objLen);
+        hashVal.resize(hashLen);
+        good = api.createHash(hAlg, &hHash, hashObj.data(), objLen, nullptr, 0, 0) == 0;
+    }
+
+    if (good) {
+        std::wstring w = utf8ToWide(pathUtf8);
+        HANDLE h = CreateFileW(w.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                               OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h == INVALID_HANDLE_VALUE) {
+            good = false;
+        } else {
+            unsigned char chunk[65536];
+            DWORD read = 0;
+            while (ReadFile(h, chunk, sizeof(chunk), &read, nullptr) && read > 0) {
+                if (api.hashData(hHash, chunk, read, 0) != 0) { good = false; break; }
+            }
+            CloseHandle(h);
+            if (good) good = api.finishHash(hHash, hashVal.data(), (DWORD)hashVal.size(), 0) == 0;
+        }
+    }
+
+    if (hHash) api.destroyHash(hHash);
+    api.closeAlg(hAlg, 0);
+
+    if (!good) return false;
+    static const char *kHex = "0123456789abcdef";
+    for (unsigned char b : hashVal) {
+        hexLower += kHex[b >> 4];
+        hexLower += kHex[b & 15];
+    }
+    return true;
+}
+
+bool deleteFileUtf8(const std::string &pathUtf8) {
+    std::wstring w = utf8ToWide(pathUtf8);
+    if (w.empty()) return false;
+    if (DeleteFileW(w.c_str())) return true;
+    return GetFileAttributesW(w.c_str()) == INVALID_FILE_ATTRIBUTES;  // already gone
 }
 
 bool downloadFile(const std::string &url, const std::string &savePathUtf8,
@@ -496,10 +718,18 @@ bool writeUpdateBat(const std::string &exeDirUtf8, const std::string &zipPathUtf
     b += L("  if errorlevel 1 set \"FAIL=1\"");
     b += L(")");
 
-    // 6. remove the zip (user's step 6)
+    // 6. clean up ONLY on success. Deleting the zip unconditionally (what this
+    // script used to do) throws away the one artefact a retry needs: a failed
+    // robocopy left the user with neither a new version nor a package to retry
+    // from, and the next attempt re-downloads 7 MB before failing the same way.
     b += L("echo [5/6] Cleaning up...");
-    b += L("rmdir /s /q \"!EXT!\" 2>nul");
-    b += L("del /q \"!ZIP!\" 2>nul");
+    b += L("if \"!FAIL!\"==\"0\" (");
+    b += L("  rmdir /s /q \"!EXT!\" 2>nul");
+    b += L("  del /q \"!ZIP!\" 2>nul");
+    b += L(") else (");
+    b += L("  >>\"!LOG!\" echo kept for retry: !ZIP!");
+    b += L("  echo Update failed - the package was kept for a retry.");
+    b += L(")");
 
     // 7. restart (user's step 7)
     b += L("echo [6/6] Starting Pecia...");

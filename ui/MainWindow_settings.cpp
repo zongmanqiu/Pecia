@@ -448,9 +448,15 @@ void MainWindow::showFindBar(bool withReplace) {
             ::free(sel);
         }
     }
+    // 先 show() 再 layoutTabs()，最后才 activate()（与 showGoToBar 同一时序）：
+    // 栏必须先可见才会被 layoutTabs 计入内容区高度、才会拿到最终的 x/y/宽度；
+    // 反过来（先 activate 后 layout）会让子控件先用旧几何排一遍、再被整体挪动，
+    // 表现为「查找」栏/输入框在打开瞬间跳动、闪烁。activate() 里的 layout(w())
+    // 此时已是最终宽度，等于一次幂等校验。
+    m_findBar->show();
+    layoutTabs();
     m_findBar->activate(initial, withReplace);
     if (initial) ::free((void *)initial);
-    layoutTabs();
 }
 
 void MainWindow::showGoToBar() {

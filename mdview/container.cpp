@@ -8,6 +8,7 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Image_Surface.H>
 #include <FL/fl_draw.H>
+#include <litehtml/render_item.h>   // root_render()->get_element_by_point（悬停命中）
 
 #include <algorithm>
 #include <cctype>
@@ -355,8 +356,9 @@ litehtml::uint_ptr MyContainer::create_font(const litehtml::font_description& de
     if (descr.weight >= 700) off += 1;
     if (descr.style == litehtml::font_style_italic) off += 2;
     Fl_Font face = (Fl_Font)(base + off);
-    // 预览字体缩放：布局尺寸与绘制尺寸统一在此应用（px/pt/em 全部生效）
-    int     size = (int)(descr.size * m_font_scale);
+    // 字号已经是缩放后的（根字体 = get_default_font_size()，CSS 全用相对
+    // 单位），这里不能再乘 m_font_scale，否则会二次缩放。
+    int     size = (int)descr.size;
     if (size < 1) size = 1;
 
     auto* fi = new FontInfo();
@@ -468,7 +470,11 @@ litehtml::pixel_t MyContainer::pt_to_px(float pt) const
 
 litehtml::pixel_t MyContainer::get_default_font_size() const
 {
-    return litehtml::pixel_t(16.0f);   // 缩放统一在 create_font 应用
+    // 缩放基准点：litehtml 在解析 HTML 时用这个值作为根字体大小，所有
+    // em / rem / 百分比 / line-height 都由它推导。缩放只在这里乘一次，
+    // create_font 不再重复乘 —— 否则字号放大而间距（line-height、margin、
+    // padding 都是按未缩放字号算的）不跟着放大，文字就会重叠。
+    return litehtml::pixel_t(16.0f * m_font_scale);
 }
 
 const char* MyContainer::get_default_font_name() const
@@ -776,6 +782,30 @@ std::string MyContainer::resolve_image_path(const std::string& url, const std::s
     return u;
 }
 
+std::string MyContainer::image_open_target(const std::string& src) const
+{
+    // 白名单先行：文档里的 ![](x.exe) 连路径解析都不做，直接当"没有可打开的图片"。
+    if (src.empty() || !is_openable_image_name(src)) return std::string();
+
+    std::string full = resolve_image_path(src, m_base_url);
+    if (!is_remote_url(full))
+        return GetFileAttributesW(widen(full).c_str()) == INVALID_FILE_ATTRIBUTES
+                   ? std::string()
+                   : full;
+
+    // 远程图：预览时已经按 URL 原名落盘到产物目录（见 load_image_file），
+    // 与浏览器/导出共用同一份文件。还没下载完（或下载失败）→ 磁盘上没有，
+    // 返回原 URL 让上层用浏览器打开，双击不会是"没反应"。
+    std::string dir = m_asset_dir;
+    if (dir.empty()) dir = pathutil::exeDir() + "\\temp";
+    while (!dir.empty() && (dir.back() == '\\' || dir.back() == '/')) dir.pop_back();
+    const std::string name = remote_image_file_name(full);
+    if (dir.empty() || name.empty()) return full;
+    const std::string file = dir + "\\" + name;
+    if (GetFileAttributesW(widen(file).c_str()) == INVALID_FILE_ATTRIBUTES) return full;
+    return file;
+}
+
 // 按 URL 类型分派加载缓存文件：SVG 用 resvg 渲染，GIF 走多帧动画，
 // 其余按位图（stb）。远程"下载完成"与"缓存已存在"两条路径共用本函数——
 // 若两条路径各自分派，一旦漏掉 SVG 就会出现"首次显示、再次打开变占位"
@@ -966,8 +996,12 @@ void MyContainer::get_image_size(const char* src, const char* baseurl, litehtml:
     }
 
     if (img && img->w() > 0 && img->h() > 0) {
-        sz.width = litehtml::pixel_t((float)img->w());
-        sz.height = litehtml::pixel_t((float)img->h());
+        // 图片跟随同一缩放基准：布局框按 m_font_scale 放大，draw_image 再
+        // 把源图缩放到该布局框。公式/mermaid 是位图，放大后不会重新渲染
+        // （略糊但无需向 RaTeX/mmdr 传不同参数），与文字比例保持一致。
+        const float s = m_font_scale;
+        sz.width  = litehtml::pixel_t((float)img->w() * s);
+        sz.height = litehtml::pixel_t((float)img->h() * s);
     }
 }
 
@@ -1279,7 +1313,12 @@ void MyContainer::on_anchor_click(const char* url, const litehtml::element::ptr&
             litehtml::position pos = el->get_placement();
             m_scroll_cb((int)pos.y);
         }
+        return;
     }
+    // 非锚点链接（http(s) / 本地相对路径）：原样交回上层。预览层不直接调
+    // ShellExecute —— 协议白名单与相对路径解析都在 MainWindow，和编辑区
+    // Ctrl+Click 用同一套规则。
+    if (url[0] != '#' && m_link_cb) m_link_cb(url);
 }
 void MyContainer::on_mouse_event(const litehtml::element::ptr&, litehtml::mouse_event) {}
 void MyContainer::set_cursor(const char*) {}
@@ -1359,6 +1398,8 @@ void ViewWidget::load_and_render(const std::string& html)
     if (!m_container) return;
     // 取消可能挂起的防抖重排——新文档已加载，旧宽度的重排无意义。
     cancel_deferred_render();
+    // 换文档/重排 = 旧文档的文本几何全部作废，选区不能跨这一代存活。
+    reset_selection();
     // Litehtml parsing and layout allocate per-node DOM structures: a huge
     // document can throw bad_alloc here. The preview no longer has a size
     // limit (see MainWindow.h), so this path is reachable — and an escaping
@@ -1566,6 +1607,7 @@ bool ViewWidget::scroll_to_anchor(const std::string& id)
 void ViewWidget::clear()
 {
     cancel_deferred_render();
+    reset_selection();
     if (m_blocks) m_blocks->clear();
     m_current_html.clear();
     if (m_container) m_container->set_document(nullptr);
@@ -1661,6 +1703,29 @@ void ViewWidget::draw()
         }
         auto dp1 = std::chrono::steady_clock::now();
         mdv_prof_ms("draw(doc->draw)", std::chrono::duration<double, std::milli>(dp1 - dp0).count());
+
+        // 文本选区高亮：必须画在 doc->draw 之后 —— litehtml 的块背景/图片会
+        // 覆盖先画的内容；外层 fl_push_clip 仍然生效，超出的部分被裁掉。
+        // 分块模式只画「选区所属块」；那块被释放或换掉时直接丢弃选区。
+        if (chunked)
+        {
+            if (m_sel_block >= 0 && (size_t)m_sel_block < m_blocks->count())
+            {
+                const pecia::BlockLayout::Block& sb = m_blocks->block((size_t)m_sel_block);
+                if (sb.doc && sb.doc.get() == m_sel.document())
+                    draw_selection(x() - m_scroll_x,
+                                   y() - m_scroll_y + m_blocks->offset_of((size_t)m_sel_block),
+                                   clip);
+                else
+                    reset_selection();
+            }
+        }
+        else
+        {
+            if (m_container->document() && m_container->document().get() == m_sel.document())
+                draw_selection(x() - m_scroll_x, y() - m_scroll_y, clip);
+        }
+
         fl_pop_clip();
 
         // 垂直滚动条
@@ -1791,6 +1856,9 @@ void ViewWidget::debounce_timer_cb(void* data)
 
 void ViewWidget::do_deferred_render()
 {
+    // 重排会改变每个字的框，选区索引必须重建 —— 直接丢掉更省事，也和
+    // 浏览器"改变窗口宽度后旧选区通常消失"的行为一致。
+    reset_selection();
     if (m_pending_render_width < 0 || !m_container)
     {
         m_pending_render_width = -1;
@@ -1836,12 +1904,479 @@ void ViewWidget::cancel_deferred_render()
     m_pending_render_width = -1;
 }
 
+bool ViewWidget::dispatch_link_click(int mx, int my)
+{
+    // draw() 把文档原点画在 (x() - m_scroll_x, y() - m_scroll_y)，所以窗口内
+    // 坐标 + 滚动量就是文档坐标。分块模式再减掉块自身偏移。
+    int cx = mx - x() + m_scroll_x;
+    int cy = my - y() + m_scroll_y;
+
+    litehtml::document::ptr doc;
+    if (m_blocks && m_blocks->active())
+    {
+        int i = m_blocks->block_at(cy);
+        if (i < 0) return false;
+        const pecia::BlockLayout::Block& blk = m_blocks->block((size_t)i);
+        if (!blk.doc) return false;   // 该块不在存活窗口里，没有 DOM 可命中
+        doc = blk.doc;
+        cy -= blk.offset;
+    }
+    else
+    {
+        doc = m_container->document();
+    }
+    if (!doc) return false;
+
+    // 必须 down + up 成对：litehtml 在 down 里记录命中元素，在 up 时确认
+    // "按下与抬起同一元素" 才触发 <a> 的 on_anchor_click。
+    litehtml::position::vector redrawBoxes;
+    const litehtml::pixel_t px = static_cast<litehtml::pixel_t>(cx);
+    const litehtml::pixel_t py = static_cast<litehtml::pixel_t>(cy);
+    doc->on_lbutton_down(px, py, px, py, redrawBoxes);
+    doc->on_lbutton_up(px, py, px, py, redrawBoxes);
+    redraw();
+    return true;
+}
+
+bool ViewWidget::element_at(int mx, int my, litehtml::element::ptr& out, int* block_out) const
+{
+    if (!m_container) return false;
+    // 与 dispatch_link_click 完全同一套坐标换算：draw() 把文档原点画在
+    // (x() - m_scroll_x, y() - m_scroll_y)，分块模式再扣块自身偏移。
+    int cx = mx - x() + m_scroll_x;
+    int cy = my - y() + m_scroll_y;
+
+    litehtml::document::ptr doc;
+    if (m_blocks && m_blocks->active())
+    {
+        int i = m_blocks->block_at(cy);
+        if (i < 0) return false;
+        const pecia::BlockLayout::Block& blk = m_blocks->block((size_t)i);
+        if (!blk.doc) return false;   // 冷块没有 DOM，命中不了
+        doc = blk.doc;
+        cy -= blk.offset;
+        if (block_out) *block_out = i;
+    }
+    else
+    {
+        doc = m_container->document();
+    }
+    if (!doc || !doc->root_render()) return false;
+
+    out = doc->root_render()->get_element_by_point(
+        static_cast<litehtml::pixel_t>(cx), static_cast<litehtml::pixel_t>(cy),
+        static_cast<litehtml::pixel_t>(cx), static_cast<litehtml::pixel_t>(cy), nullptr);
+    return true;
+}
+
+bool ViewWidget::open_image_at(int mx, int my)
+{
+    if (!m_container || !has_content() || !m_file_open_cb) return false;
+
+    litehtml::element::ptr el;
+    if (!element_at(mx, my, el)) return false;
+
+    // 图片套在链接里（[![alt](a.png)](b.md)）时单击已经是链接语义，
+    // 双击不再打开图片，否则一次双击会同时开两个东西。
+    litehtml::element::ptr img;
+    for (; el; el = el->parent())
+    {
+        const char* href = el->get_attr("href");
+        if (href && *href) return false;
+        if (!img) {
+            const char* src = el->get_attr("src");
+            if (src && *src) img = el;
+        }
+    }
+    if (!img) return false;
+
+    const std::string target = m_container->image_open_target(img->get_attr("src"));
+    if (target.empty()) return false;
+    m_file_open_cb(target);
+    return true;
+}
+
+void ViewWidget::update_hover(int mx, int my)
+{
+    // 光标是「窗口级」的，滚动条上、内容之外都必须明确给回箭头，
+    // 否则移出链接后手型会一直留到下次经过别处。
+    litehtml::element::ptr anchor;
+    litehtml::element::ptr image;
+    int block = -1;
+    if (has_content() && mx >= x() && my >= y() && mx < x() + w() && my < y() + h())
+    {
+        // 滚动条只有溢出时才存在，未出现滚动条时贴边区域也是正文。
+        const int sb = 10;
+        const bool on_vbar = (content_height() > h()) && (mx >= x() + w() - sb);
+        const bool on_hbar = (content_width() > w()) && (my >= y() + h() - sb);
+        if (!on_vbar && !on_hbar)
+        {
+            litehtml::element::ptr el;
+            if (element_at(mx, my, el, &block))
+            {
+                // 命中元素可能是 <img>/<span>，链接要沿 parent 链往上找。
+                // 同时记下最近的 <img src>：双击可直接打开本体图片（手型
+                // 光标只是"可点"提示，真正能不能打开在双击时才验存在性）。
+                for (; el; el = el->parent())
+                {
+                    const char* href = el->get_attr("href");
+                    if (href && *href) { anchor = el; break; }
+                    if (!image) {
+                        const char* src = el->get_attr("src");
+                        if (src && *src && is_openable_image_name(src)) image = el;
+                    }
+                }
+            }
+        }
+    }
+
+    const bool hand = anchor != nullptr || image != nullptr;
+    if (hand != m_hover_hand)
+    {
+        m_hover_hand = hand;
+        fl_cursor(hand ? FL_CURSOR_HAND : FL_CURSOR_ARROW);
+    }
+
+    // :hover 样式（红色）只在「进入/离开链接」时重算一次。litehtml 的
+    // document::on_mouse_over() 会把 :hover 加到命中元素及其所有祖先，并做
+    // 一次样式重算；若在同一链接内逐词移动时也调用，就等于每挪过一个词做
+    // 一次全树样式检查 —— 大文档上这是肉眼可见的卡顿。
+    litehtml::element::ptr old = m_hover_anchor.lock();
+    if (old.get() == anchor.get()) return;
+
+    if (old)
+    {
+        if (litehtml::document::ptr doc = old->get_document())
+        {
+            litehtml::position::vector boxes;
+            doc->on_mouse_leave(boxes);
+        }
+    }
+    m_hover_anchor = anchor;
+    if (!anchor) { redraw(); return; }
+
+    if (litehtml::document::ptr doc = anchor->get_document())
+    {
+        int cx = mx - x() + m_scroll_x;
+        int cy = my - y() + m_scroll_y;
+        if (block >= 0 && m_blocks) cy -= m_blocks->offset_of((size_t)block);
+        litehtml::position::vector boxes;
+        const litehtml::pixel_t px = static_cast<litehtml::pixel_t>(cx);
+        const litehtml::pixel_t py = static_cast<litehtml::pixel_t>(cy);
+        doc->on_mouse_over(px, py, px, py, boxes);
+    }
+    // 变红/还原只动链接自己的文字框；每次跨越链接才一次，整块重绘和滚动一帧
+    // 同量级，就不必为几个像素的框做坐标换算。
+    redraw();
+}
+
+// ==================== 预览文本选区 ====================
+
+// 选区高亮笔刷：1x1 半透明蓝（RGBA）预缩放成 128×128 的均匀色块，按块平铺。
+//
+// 为什么不用 fl_color + alpha：Fl_Color 没有 alpha，fl_rectf 画出来是不透明的，
+// 会把文字整片盖住。Windows GDI 下 FLTK 只有 Fl_RGB_Image(RGBA) 走真正的
+// AlphaBlend（Fl_GDI_Graphics_Driver::draw_rgb → alpha_blend_），所以高亮只能
+// 用一张 RGBA 图。而且 draw() 只在图片的「逻辑尺寸」上做混合（传 WP/HP 不等于
+// w()/h() 时不会缩放，只截取子图），所以必须先 copy() 成目标尺寸的均匀色块。
+static Fl_RGB_Image* selection_brush()
+{
+    static Fl_RGB_Image* brush = nullptr;
+    if (!brush)
+    {
+        static const unsigned char px[4] = { 0x33, 0x99, 0xFF, 0x50 };  // alpha ≈ 31%
+        Fl_RGB_Image base(px, 1, 1, 4);
+        brush = static_cast<Fl_RGB_Image*>(base.copy(128, 128));
+    }
+    return brush;
+}
+
+void ViewWidget::reset_selection()
+{
+    m_sel.clear();
+    m_sel_block = -1;
+    m_sel_dragging = false;
+    reset_find_state();
+}
+
+void ViewWidget::reset_find_state()
+{
+    m_findStart = pecia::TextSelection::Pos{};
+    m_findEnd = pecia::TextSelection::Pos{};
+    m_findNeedle.clear();
+    m_findValid = false;
+}
+
+void ViewWidget::clear_selection()
+{
+    reset_selection();
+    redraw();
+}
+
+// 预览内查找。为什么不做"源文件偏移 → 渲染位置"的映射：md → HTML → 文本
+// run 这条链没有反向信息（AGENTS 红线 7 里的"预览 → 文档定位"仍是后续
+// 计划），而预览里能搜的本来就只有渲染后的文字。所以直接在这份文字上查，
+// 命中区间交给 TextSelection 画高亮 —— 用户看到的就是他找的那一段。
+bool ViewWidget::find_text(const std::string& needle, bool caseSensitive,
+                           bool wholeWord, bool forward, bool wrap,
+                           bool* found, int* index, int* total)
+{
+    if (found) *found = false;
+    if (index) *index = 0;
+    if (total) *total = 0;
+    if (!m_container || !has_content()) return false;
+    // 分块模式没有整篇 document（块按视口实例化/释放），跨块查找属后续
+    // 工作：这里明确返回 false，让调用方退回编辑区查找，不做半截实现。
+    if (m_blocks && m_blocks->active()) return false;
+
+    litehtml::document::ptr doc = m_container->document();
+    if (!doc) return false;
+    // 索引与 document 绑定：换文档（重渲染/切标签）后重建并丢掉旧锚点。
+    if (!m_sel.valid() || m_sel.document() != doc.get()) {
+        m_sel.build(doc.get(), m_container);
+        m_sel_block = -1;
+        reset_find_state();
+    }
+    if (!m_sel.valid()) return false;
+
+    // Next 从上次命中的终点继续、Prev 从起点继续；关键词变了就从头/尾来。
+    pecia::TextSelection::Pos from;
+    if (m_findValid && m_findNeedle == needle)
+        from = forward ? m_findEnd : m_findStart;
+
+    pecia::TextSelection::Pos start, end;
+    bool wrapped = false;
+    if (!m_sel.find(needle, caseSensitive, wholeWord, forward, from, wrap,
+                    start, end, index, total, &wrapped))
+        return false;
+    if (start.run < 0) return true;   // 可搜但未命中（仍算"已处理"）
+
+    m_sel.set_range(start, end);
+    m_findStart = start;
+    m_findEnd = end;
+    m_findNeedle = needle;
+    m_findValid = true;
+    if (found) *found = true;
+
+    // 命中不在视口里才滚动，并留出三分之一屏的上下文（和浏览器一致：
+    // 已经在眼前就不动画面）。
+    std::vector<litehtml::position> rects;
+    m_sel.rects(rects);
+    if (!rects.empty()) {
+        const int top = (int)rects.front().y;
+        const int bottom = (int)rects.back().y + (int)rects.back().height;
+        if (top < m_scroll_y + 8 || bottom > m_scroll_y + h() - 8)
+            scroll_to(top - h() / 3);   // scroll_to 内部按内容高度钳制
+    }
+    redraw();
+    return true;
+}
+
+bool ViewWidget::copy_selection()
+{
+    if (!m_sel.has_range() || !m_sel.document_alive()) return false;
+    const std::string t = m_sel.text();
+    if (t.empty()) return false;
+    // clipboard=1：Windows 上就是 Ctrl+C 用的那个剪贴板。
+    Fl::copy(t.c_str(), (int)t.size(), 1);
+    return true;
+}
+
+void ViewWidget::select_all()
+{
+    if (!m_container || !has_content()) return;
+
+    litehtml::document::ptr doc;
+    int block = -1;
+    if (m_blocks && m_blocks->active())
+    {
+        // 分块模式：没有「整篇 document」，全选退化为「视口顶端所在的那一块」。
+        // 跨块选区属于后续工作，这里至少让 Ctrl+A 在超大文档里也有可见效果。
+        int i = m_blocks->block_at(m_scroll_y);
+        if (i < 0) return;
+        const pecia::BlockLayout::Block& b = m_blocks->block((size_t)i);
+        if (!b.doc) return;
+        doc = b.doc;
+        block = i;
+    }
+    else
+    {
+        doc = m_container->document();
+    }
+    if (!doc) return;
+
+    m_sel.build(doc.get(), m_container);
+    m_sel.select_all();
+    m_sel_block = block;
+    m_sel_dragging = false;
+    redraw();
+}
+
+bool ViewWidget::selection_point(int mx, int my, litehtml::pixel_t& doc_x, litehtml::pixel_t& doc_y) const
+{
+    if (!m_container) return false;
+    doc_x = (litehtml::pixel_t)(mx - x() + m_scroll_x);
+    int cy = my - y() + m_scroll_y;
+    if (m_blocks && m_blocks->active())
+    {
+        if (m_sel_block < 0 || (size_t)m_sel_block >= m_blocks->count()) return false;
+        const pecia::BlockLayout::Block& b = m_blocks->block((size_t)m_sel_block);
+        if (!b.doc || b.doc.get() != m_sel.document()) return false;
+        cy -= b.offset;
+    }
+    else if (!m_container->document() || m_container->document().get() != m_sel.document())
+    {
+        return false;
+    }
+    doc_y = (litehtml::pixel_t)cy;
+    return true;
+}
+
+bool ViewWidget::selection_begin_at(int mx, int my)
+{
+    if (!m_container || !has_content()) return false;
+
+    litehtml::document::ptr doc;
+    int block = -1;
+    int cy = my - y() + m_scroll_y;
+    if (m_blocks && m_blocks->active())
+    {
+        int i = m_blocks->block_at(cy);
+        if (i < 0) return false;
+        const pecia::BlockLayout::Block& b = m_blocks->block((size_t)i);
+        if (!b.doc) return false;
+        doc = b.doc;
+        block = i;
+        cy -= b.offset;
+    }
+    else
+    {
+        doc = m_container->document();
+    }
+    if (!doc) return false;
+
+    // 索引按 document 缓存：同一篇文档里连点几次不必重建（文字几何只在
+    // 换文档/重排时变，那两处都会 reset_selection）。
+    if (!m_sel.valid() || m_sel.document() != doc.get())
+        m_sel.build(doc.get(), m_container);
+    if (!m_sel.valid()) return false;
+
+    const litehtml::pixel_t doc_x = (litehtml::pixel_t)(mx - x() + m_scroll_x);
+    const litehtml::pixel_t doc_y = (litehtml::pixel_t)cy;
+    pecia::TextSelection::Pos pos;
+    if (!m_sel.hit_text(doc_x, doc_y, pos)) return false;   // 没落在文字上 → 保持拖拽滚动
+
+    m_sel.begin(pos);
+    m_sel_block = block;
+    m_sel_dragging = true;
+    return true;
+}
+
+bool ViewWidget::selection_extend_at(int mx, int my)
+{
+    if (!m_sel_dragging) return false;
+    litehtml::pixel_t dx = 0, dy = 0;
+    if (!selection_point(mx, my, dx, dy)) return false;
+    pecia::TextSelection::Pos pos;
+    if (!m_sel.hit(dx, dy, pos)) return false;
+    m_sel.extend(pos);
+    redraw();
+    return true;
+}
+
+void ViewWidget::draw_selection(int ox, int oy, const litehtml::position& clip)
+{
+    if (!m_sel.has_range()) return;
+    if (!m_sel.document_alive())
+    {
+        reset_selection();
+        return;
+    }
+
+    std::vector<litehtml::position> rects;
+    m_sel.rects(rects);
+    if (rects.empty()) return;
+
+    const int cx0 = (int)clip.x;
+    const int cy0 = (int)clip.y;
+    const int cx1 = cx0 + (int)clip.width;
+    const int cy1 = cy0 + (int)clip.height;
+    const int kTile = 128;   // 与 selection_brush() 的尺寸一致
+
+    Fl_RGB_Image* brush = selection_brush();
+    for (const litehtml::position& r : rects)
+    {
+        int x0 = ox + (int)r.x;
+        int y0 = oy + (int)r.y;
+        int x1 = x0 + (int)r.width;
+        int y1 = y0 + (int)r.height;
+        if (x0 < cx0) x0 = cx0;
+        if (y0 < cy0) y0 = cy0;
+        if (x1 > cx1) x1 = cx1;
+        if (y1 > cy1) y1 = cy1;
+        if (x1 <= x0 || y1 <= y0) continue;
+
+        // 平铺会画到 rect 之外：用局部裁剪把每一行压回自己的框。
+        fl_push_clip(x0, y0, x1 - x0, y1 - y0);
+        for (int ty = y0; ty < y1; ty += kTile)
+            for (int tx = x0; tx < x1; tx += kTile)
+                brush->draw(tx, ty);
+        fl_pop_clip();
+    }
+}
+
 int ViewWidget::handle(int event)
 {
     switch (event)
     {
+    case FL_FOCUS:
+    case FL_UNFOCUS:
+        // Fl_Widget 默认对 FL_FOCUS 返回 0，于是 take_focus() 失败：点击预览后
+        // 焦点仍留在编辑区，Ctrl+C / 全选 / 翻页事件永远送不到这里。
+        // 自绘控件必须显式接受焦点（FLTK 内置输入类控件都是这么做的）。
+        return 1;
+
+    case FL_ENTER:
+        update_hover(Fl::event_x(), Fl::event_y());
+        return 1;
+    case FL_LEAVE:
+    {
+        // 光标是窗口级的，离开控件必须还原，否则手型会残留到别的控件上；
+        // 同时清掉链接的 :hover，避免变红的字留在画面上。
+        if (m_hover_hand) {
+            m_hover_hand = false;
+            fl_cursor(FL_CURSOR_ARROW);
+        }
+        if (litehtml::element::ptr old = m_hover_anchor.lock()) {
+            m_hover_anchor.reset();
+            if (litehtml::document::ptr doc = old->get_document()) {
+                litehtml::position::vector boxes;
+                doc->on_mouse_leave(boxes);
+                redraw();
+            }
+        }
+        return 1;
+    }
+    case FL_MOVE:
+        // 悬停：链接 → 手型光标 + 变红（页边留白仍按原来的拖拽滚动）。
+        update_hover(Fl::event_x(), Fl::event_y());
+        return 0;   // 不吞事件：提示框等其它处理照常
     case FL_PUSH:
     {
+        // 右键不参与拖拽/滚动条逻辑，直接交给 MainWindow 组装的菜单。
+        // 坐标用窗口相对值：FLTK 的 popup() 在传了 menu_button 时会自动
+        // 叠加窗口偏移，传根坐标就会把菜单弹到屏幕左上方向外。
+        if (Fl::event_button() == FL_RIGHT_MOUSE) {
+            take_focus();
+            if (m_context_cb) m_context_cb(Fl::event_x(), Fl::event_y());
+            return 1;
+        }
+        // 点击预览即获得键盘焦点，PageUp/PageDown/Home/End 才能作用在这里。
+        take_focus();
+        // 左键点击判定的起点（见 FL_RELEASE / dispatch_link_click）。
+        m_click_x = Fl::event_x();
+        m_click_y = Fl::event_y();
+        m_click_moved = false;
         m_drag_start_x = Fl::event_x();
         m_drag_start_y = Fl::event_y();
         m_drag_start_scroll_x = m_scroll_x;
@@ -1876,12 +2411,36 @@ int ViewWidget::handle(int event)
                 return 1;
             }
         }
+        // 双击图片 → 打开本体图片（本地文件用系统默认程序，远程图还没落盘
+        // 时交给浏览器）。判在拖选之前：双击不该顺手锚定一段文字。
+        if (Fl::event_button() == FL_LEFT_MOUSE && Fl::event_clicks() > 0 &&
+            open_image_at(mx, my)) {
+            return 1;
+        }
+        // 命中文字 → 开始拖选；没命中（页边留白 / 段落空隙）保持原来的
+        // 拖拽滚动（触摸场景要靠它平移内容）。
+        if (Fl::event_button() == FL_LEFT_MOUSE && selection_begin_at(mx, my)) {
+            redraw();
+            return 1;
+        }
+        // 内容区左键也必须吃掉（返回 1）：Fl_Group::handle 只会把后续
+        // FL_DRAG / FL_RELEASE 继续送给"按下时返回 1"的控件。返回 0 的话
+        // 拖拽滚动和"单击打开链接"（在 FL_RELEASE 派发）都会收不到事件。
+        return 1;
     }
     break;
 
     case FL_DRAG:
     {
         if (!has_content()) break;
+
+        // 超过 3px 就不是点击了：触摸拖动/滚动条拖动都不能顺带打开链接。
+        {
+            int dx0 = Fl::event_x() - m_click_x;
+            int dy0 = Fl::event_y() - m_click_y;
+            if ((dx0 > 3 || dx0 < -3 || dy0 > 3 || dy0 < -3))
+                m_click_moved = true;
+        }
 
         // 垂直滚动条拖动
         if (m_dragging_vscroll) {
@@ -1909,6 +2468,12 @@ int ViewWidget::handle(int event)
             return 1;
         }
 
+        // 选字拖动：优先于内容平移（按下时命中了文字才会走到这里）。
+        if (m_sel_dragging) {
+            selection_extend_at(Fl::event_x(), Fl::event_y());
+            return 1;
+        }
+
         // 内容区域触摸拖动
         const int sb_w = 10;
         const int sb_h = 10;
@@ -1929,16 +2494,75 @@ int ViewWidget::handle(int event)
     case FL_RELEASE:
         m_dragging_vscroll = false;
         m_dragging_hscroll = false;
-        break;
+        // 选字拖动结束：拖出了区间就保留（这一步绝不顺带打开链接）；
+        // 只是点了一下文字（没形成区间）→ 折叠选区，仍然按"单击链接"处理。
+        if (m_sel_dragging) {
+            m_sel_dragging = false;
+            if (m_sel.has_range()) {
+                redraw();
+                return 1;
+            }
+            reset_selection();
+        }
+        // 左键"单击"（没拖动、没按在滚动条上）→ 让 litehtml 命中测试 <a>。
+        // 拖动是滚动内容，松手不应该顺带打开链接（与浏览器行为一致）。
+        if (Fl::event_button() == FL_LEFT_MOUSE && !m_click_moved && has_content()) {
+            const int sb_w = 10;
+            const int sb_h = 10;
+            const int mx = Fl::event_x();
+            const int my = Fl::event_y();
+            if (mx < x() + w() - sb_w && my < y() + h() - sb_h)
+                dispatch_link_click(mx, my);
+        }
+        return 1;
+
+    case FL_KEYBOARD:
+    {
+        // 选区快捷键：焦点在预览时优先处理，避免与编辑区的 Ctrl+C/A 混淆。
+        if (Fl::event_state() & FL_COMMAND) {
+            const int key = Fl::event_key();
+            if (key == 'c' || key == 'C') {
+                if (copy_selection()) return 1;
+            } else if (key == 'a' || key == 'A') {
+                select_all();
+                return 1;
+            }
+        }
+        if (Fl::event_key() == FL_Escape && m_sel.has_range()) {
+            clear_selection();
+            return 1;
+        }
+
+        // 仅预览时没有编辑器可用，键盘翻页必须由预览自己处理。
+        if (!has_content()) break;
+        const int lineStep = 40;
+        const int pageStep = std::max(lineStep, h() - lineStep);
+        int target = m_scroll_y;
+        bool handled = true;
+        switch (Fl::event_key()) {
+        case FL_Page_Down: target += pageStep; break;
+        case FL_Page_Up:   target -= pageStep; break;
+        case FL_Home:      target = 0; break;
+        case FL_End:       target = content_height() - h(); break;
+        case FL_Up:        target -= lineStep; break;
+        case FL_Down:      target += lineStep; break;
+        default:
+            if (Fl::event_key() == ' ')
+                target += (Fl::event_state() & FL_SHIFT) ? -pageStep : pageStep;
+            else
+                handled = false;
+            break;
+        }
+        if (!handled) break;
+        scroll_to(target);
+        return 1;
+    }
 
     case FL_MOUSEWHEEL:
     {
-        // Ctrl+滚轮 → 字体缩放（预览）
+        // Ctrl+滚轮 → 缩放，与编辑区同一套字号状态（+1 / -1 一级）
         if (Fl::event_ctrl()) {
-            if (m_zoom_cb) {
-                float delta = (Fl::event_dy() < 0) ? 1.1f : (1.0f / 1.1f);
-                m_zoom_cb(delta);
-            }
+            if (m_zoom_cb) m_zoom_cb(Fl::event_dy() < 0 ? +1 : -1);
             return 1;
         }
         // Shift+滚轮 或 触控板水平滚轮（event_dx != 0）→ 水平滚动

@@ -179,6 +179,11 @@ private:
     // Draw a custom scrollbar over the given Fl_Scrollbar area.
     void drawCustomScrollbar(Fl_Scrollbar *sb, bool horizontal);
 
+    // 在竖直滚动条上画一条 2px 横线，标出"光标在全文中的相对位置"。
+    // 光标被滚出视口后线仍然保留：用 mCursorAbsLine 缓存的光标绝对
+    // 显示行号换算比例，这样"滚动到别处"和"光标在哪"能同时看到。
+    void drawCursorScrollMarker();
+
     // (Re)build the style buffer to match the text buffer, then mark
     // the current line with style 'B'.
     void applyLineHighlight();
@@ -236,6 +241,16 @@ private:
     bool            m_overUrl = false;           // mouse is over a detected URL
     int             m_urlHoverStart = -1;        // hovered URL byte range [start, end)
     int             m_urlHoverEnd = -1;
+
+    // 光标绝对显示行号缓存（换行折行也按显示行计，1 基）。
+    // position_to_line() 只能给出视口内的行号；光标滚出视口后改用
+    // count_lines(0, pos, true)+1 从缓冲区头部计数（长文件里不便宜），
+    // 因此只在光标位置 / 缓冲区长度 / 换行宽度变化时重算。
+    int  mCursorAbsLine      = 0;   // 0 = 尚未计算
+    int  mCursorAbsLinePos   = -1;
+    int  mCursorAbsLineBufLen = -1;
+    int  mCursorAbsLineTextW = -1;
+    int  mCursorAbsLineLineH = -1;
 
     bool            m_compActive = false;       // IME composition in progress
     int             m_compStart = -1;           // buffer position where the composition lands

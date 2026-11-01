@@ -25,55 +25,190 @@
 #include <algorithm>
 #include <climits>
 
-// MainWindow member, defined here because Editor is also linked into the
-// match-highlight test without the rest of MainWindow_view.cpp. It copies
-// every LIVE View item before Font into `out`, so the editor's right-click
-// menu stays in sync with MenuTable automatically.
-int MainWindow::buildViewContextMenu(Fl_Menu_Item *out, int cap) const {
-    if (!out || cap < 3) return 0;
+// MainWindow 右键菜单成员，定义在这里而不是 MainWindow_preview.cpp：Editor 也被
+// match-highlight 测试单独链接（没有 MainWindow_preview.cpp），把菜单组装放在
+// Editor.cpp 保证所有链接 Editor 的目标都拿得到这两个符号。
+//
+// 设计约束（用户 2026-11-01 定）：编辑区与预览区的右键菜单必须**完全等同**
+// ——同一份函数、同一份内容（Edit 白名单 + View ▶ + Markdown ▶ 整份复刻），
+// 预览区只是把会改原文的项置灰。新增菜单项不用再改第二份清单。
 
-    Fl_Menu_Item *view = nullptr;
-    for (const MenuKeyEntry &e : m_menuKeys) {
-        if (e.key && strcmp(e.key, "menu.view") == 0) {
-            view = e.item;
-            break;
-        }
-    }
-    if (!view && m_menu) view = (Fl_Menu_Item *)m_menu->find_item("View");
-    if (!view) return 0;
+namespace {
 
+// 把一层菜单项完整复制进 out（含本层结尾的 {nullptr}），返回槽位数；
+// 容量不够返回 -1（调用方整体放弃，绝不留半截菜单）。
+//   · FL_SUBMENU（静态子菜单，如 Zoom / Auto Refresh）：子项在源数组里紧跟
+//     其后，而 popup 用的是副本数组，所以必须递归复制。
+//   · FL_SUBMENU_POINTER（如 Theme 指向 m_themeMenu）：原样保留指针，让
+//     FLTK 直接弹出源数组。cbSetTheme 靠"项地址 == m_themeMenu[i]"识别主题，
+//     复制一份会让选主题静默失效。
+//   · 回调的 user_data：源项为空的补上 owner（View 的回调直接
+//     static_cast<MainWindow*>(data)，空指针会直接 return/崩）；源项已有的
+//     必须保留（Auto Refresh 的 radio 存毫秒数）。
+int cloneMenuLevel(const Fl_Menu_Item *src, Fl_Menu_Item *out, int cap,
+                   void *owner, int depth)
+{
+    if (!src || !out || cap < 2 || depth > 3) return -1;
     int n = 0;
-    out[n++] = {view->text, 0, nullptr, nullptr, FL_SUBMENU};
-
-    // Everything from Font onwards is intentionally not copied. Match the
-    // translated label (and the original English one, in case the helper is
-    // called before applyLanguageToMenu).
-    const char *fontLabel = I18n::get("menu.view.font");
-    const Fl_Menu_Item *font = nullptr;
-    for (const Fl_Menu_Item *it = view + 1; it->text; ++it) {
-        if ((fontLabel && *fontLabel && strcmp(it->text, fontLabel) == 0) ||
-            strcmp(it->text, "Font") == 0) {
-            font = it;
-            break;
+    // next(1) 跳过子菜单内容与 FL_MENU_INVISIBLE 项：不可见项在 popup 里
+    // 会留下空行（FLTK 为每个槽位都分配行高）。
+    for (const Fl_Menu_Item *it = src; it->text; it = it->next(1)) {
+        if (it->flags & FL_MENU_INVISIBLE) continue;
+        if (n + 2 >= cap) return -1;
+        out[n] = *it;
+        if (out[n].callback_ && !out[n].user_data_) out[n].user_data_ = owner;
+        if (it->flags & FL_SUBMENU) {
+            ++n;
+            const int sub = cloneMenuLevel(it + 1, out + n, cap - n, owner,
+                                           depth + 1);
+            if (sub < 0) return -1;
+            n += sub;
+        } else {
+            ++n;
         }
     }
-
-    for (const Fl_Menu_Item *it = view + 1; it->text && it != font; ++it) {
-        if (it->flags & FL_MENU_INVISIBLE) continue;
-        if (it->flags & FL_SUBMENU) continue;   // headers would need children
-        if (n >= cap - 2) break;
-        out[n] = *it;
-        if (out[n].callback_) out[n].user_data((void *)this);
-        ++n;
-    }
-    if (n <= 1) return 0;   // no items before Font -> no empty submenu
-
-    // Word Wrap's divider separates it from Font in the main menu; there is
-    // nothing after it in this submenu, so don't leave a trailing line.
-    if (out[n - 1].flags & FL_MENU_DIVIDER)
-        out[n - 1].flags &= ~FL_MENU_DIVIDER;
-    out[n++] = {nullptr};   // end of View submenu
+    out[n++] = {nullptr};
     return n;
+}
+
+// Edit 菜单里进右键的项：无快捷键的项（Search Selection / Send to AI）+ 经典
+// 编辑快捷键。Find / Replace / Go To / Time-Date 有快捷键但不是右键常见动作，
+// 不进右键（和之前编辑区右键的白名单一致）。
+bool isContextEditItem(const Fl_Menu_Item &it)
+{
+    if (!it.text) return false;
+    const int s = it.shortcut();
+    if (s == 0) return true;
+    return s == (FL_COMMAND | 'z') || s == (FL_COMMAND | 'y') ||
+           s == (FL_COMMAND | 'x') || s == (FL_COMMAND | 'c') ||
+           s == (FL_COMMAND | 'v') || s == FL_Delete ||
+           s == (FL_COMMAND | 'a');
+}
+
+// 预览只读：只保留"不改原文"的动作（复制 / 全选 + 查找三项）。仅预览下
+// 编辑区不可见，但查找仍是刚需 —— 查找改在预览的渲染文本上执行并把命中
+// 选进预览（见 MainWindow::syncEditLock 注册的预览查找回调）；替换一律置灰。
+// 跳转行（Ctrl+G）不在白名单里，因此同样保持灰色（2026-11-01 用户定）。
+bool isReadOnlyAllowed(const Fl_Menu_Item &it)
+{
+    const int s = it.shortcut();
+    return s == (FL_COMMAND | 'c') || s == (FL_COMMAND | 'a') ||
+           s == (FL_COMMAND | 'f') || s == FL_F + 3 ||
+           s == (FL_F + 3 | FL_SHIFT);
+}
+
+}  // namespace
+
+int MainWindow::buildContextMenu(Fl_Menu_Item *out, int cap, bool readOnly) const {
+    if (!out || cap < 12 || !m_menu) return 0;
+    int n = 0;
+
+    auto itemByKey = [this](const char *key) -> const Fl_Menu_Item * {
+        for (const MenuKeyEntry &e : m_menuKeys)
+            if (e.key && strcmp(e.key, key) == 0) return e.item;
+        return nullptr;
+    };
+
+    // ── Edit 白名单（平铺，不弹子菜单：这些是高频动作）─────────────────
+    const Fl_Menu_Item *edit = itemByKey("menu.edit");
+    if (!edit) edit = (Fl_Menu_Item *)m_menu->find_item("Edit");
+    if (edit) {
+        for (const Fl_Menu_Item *it = edit + 1; it->text; ++it) {
+            if (!isContextEditItem(*it)) continue;
+            if (n + 2 >= cap) break;
+            out[n] = *it;
+            // 灰度由这里的 readOnly 重新算，不能沿用菜单栏那一刻的状态：
+            // 仅预览时菜单栏整组已被 syncEditMenuReadOnly() 置灰，照抄会让
+            // 预览右键菜单里的"复制/全选"也一起变灰、无一项可用。
+            out[n].flags &= ~FL_MENU_INACTIVE;
+            if (readOnly && !isReadOnlyAllowed(*it)) out[n].flags |= FL_MENU_INACTIVE;
+            ++n;
+        }
+    }
+    if (n > 0) out[n - 1].flags |= FL_MENU_DIVIDER;  // 与下面 View 之间一条线
+
+    // ── View ▶ / Markdown ▶：菜单栏子菜单的整份复刻 ────────────────────
+    auto addSection = [&](const char *key, const char *english) -> int {
+        const Fl_Menu_Item *head = itemByKey(key);
+        if (!head) head = (Fl_Menu_Item *)m_menu->find_item(english);
+        if (!head || !head->text || n + 2 >= cap) return -1;
+        const int start = n;
+        out[n++] = {head->text, 0, nullptr, nullptr, FL_SUBMENU};
+        const int sub = cloneMenuLevel(head + 1, out + n, cap - n, (void *)this, 1);
+        if (sub < 0) { n = start; return -1; }   // 放不下就整段放弃
+        n += sub;
+        return start;
+    };
+
+    const int viewStart = addSection("menu.view", "View");
+    // View 头带分隔线：线画在 View 行下面，正好隔开 View 与 Markdown
+    if (viewStart >= 0) out[viewStart].flags |= FL_MENU_DIVIDER;
+    addSection("menu.markdown", "Markdown");
+
+    out[n++] = {nullptr};   // 整份右键菜单的结尾
+    return n;
+}
+
+// 仅预览：编辑区被隐藏，菜单栏「编辑」里"能看见却点不动"的动作必须自己
+// 承认这一点 —— 除"复制/全选/查找三项"外一律置灰，判定与预览右键菜单
+// **同一条**（isReadOnlyAllowed），不维护第二份白名单。
+// 实现只用 FLTK 唯一那个"禁用项"开关（FL_MENU_INACTIVE，FLTK 文档原文就是
+// "Deactivate menu item (gray out)"）：它同时决定画成灰色、鼠标选不中、
+// 快捷键派发时跳过。后两者不是额外要求，而是"这一项不可用"本身 —— 动作
+// 既然被拦住，点菜单和按 Ctrl+Z 这两个入口都会失效；反过来说，只改文字
+// 颜色的话点击仍然会执行（会真去改那份看不见的文档）。快捷键**绑定**没有
+// 被改动，这里只是运行期的项状态，退出仅预览即全部恢复。
+void MainWindow::syncEditMenuReadOnly(bool readOnly)
+{
+    if (!m_menu) return;
+    const Fl_Menu_Item *edit = nullptr;
+    for (const MenuKeyEntry &e : m_menuKeys)
+        if (e.key && strcmp(e.key, "menu.edit") == 0) { edit = e.item; break; }
+    if (!edit) edit = (const Fl_Menu_Item *)m_menu->find_item("Edit");
+    if (!edit) return;
+
+    for (Fl_Menu_Item *it = (Fl_Menu_Item *)edit + 1; it->text; ++it) {
+        if (readOnly && !isReadOnlyAllowed(*it)) it->deactivate();
+        else it->activate();
+    }
+
+    // Tools > Lua Script... 置灰（脚本改写的正是这份被锁的文档）。脚本栏
+    // 不动 —— 它只是个入口按钮，写入由 executeLuaScript / insertAiText 的
+    // 能力锁兜底，连已打开的 Lua 工具窗口与命名管道（RUN / INS / APPL）
+    // 也一并拦住（2026-11-01 用户定：UI 一律不额外改造）。
+    for (const MenuKeyEntry &e : m_menuKeys) {
+        if (!e.key || strcmp(e.key, "menu.tools.lua") != 0 || !e.item) continue;
+        if (readOnly) e.item->deactivate();
+        else e.item->activate();
+        break;
+    }
+
+    m_menu->redraw();
+}
+
+// 弹出右键菜单（编辑区与预览区共用）。x/y 是窗口内坐标（Fl::event_x/y
+// 语义）：FLTK 的 popup() 在传了 menu_button 时会自动叠加窗口偏移，
+// 传根坐标就会把菜单弹到屏幕左上方向外。
+void MainWindow::showContextMenu(int x, int y, bool readOnly) {
+    if (!m_menu) return;
+    static Fl_Menu_Item popup[128];
+    const int n = buildContextMenu(
+        popup, (int)(sizeof(popup) / sizeof(popup[0])), readOnly);
+    if (n <= 0) return;
+
+    g_popupCheckColor = m_theme.colors().highlight2;  // 勾选框用主题高亮色
+    const Fl_Menu_Item *hit = popup->popup(x, y, nullptr, nullptr, m_menu);
+    g_popupCheckColor = 0;
+    if (!hit || !hit->callback_) return;
+
+    // popup() 不执行回调、也不更新 m_menu 的 mvalue（FLTK 文档明确写死）。
+    // 但主题切换（cbSetTheme）和自动刷新档位（cbSetAutoRefresh）都是从
+    // m_menu->mvalue() 取"被点的项"：不补这一步，右键选主题/换档位会读到
+    // 上一次主菜单里的旧值（或 nullptr），表现为点了没反应。
+    if (hit->flags & FL_MENU_RADIO)
+        m_menu->value(hit);
+
+    hit->do_callback(m_menu);
 }
 
 #if defined(_WIN32)
@@ -99,7 +234,7 @@ int MainWindow::buildViewContextMenu(Fl_Menu_Item *out, int cap) const {
 
 void Editor::imeCompositionStart() {
     if (!buffer()) return;
-    if (m_doc && m_doc->isReadOnly()) return;
+    if (m_doc && !m_doc->isEditable()) return;
     m_compActive = true;
     m_compStart = insert_position();
     m_compEnd = m_compStart;
@@ -114,7 +249,7 @@ void Editor::imeCompositionStart() {
 
 void Editor::imeCompositionUpdate(const char *utf8, int cursorBytes) {
     if (!buffer()) return;
-    if (m_doc && m_doc->isReadOnly()) return;
+    if (m_doc && !m_doc->isEditable()) return;
     if (!m_compActive) imeCompositionStart();
     if (!m_compActive) return;
 
@@ -136,7 +271,7 @@ void Editor::imeCompositionUpdate(const char *utf8, int cursorBytes) {
 
 void Editor::imeCompositionCommit(const char *utf8) {
     if (!buffer()) return;
-    if (m_doc && m_doc->isReadOnly()) return;
+    if (m_doc && !m_doc->isEditable()) return;
     if (!m_compActive) {
         m_compStart = insert_position();
         m_compEnd = m_compStart;
@@ -259,6 +394,68 @@ void Editor::drawCustomScrollbar(Fl_Scrollbar *sb, bool horizontal) {
     else
         fl_rectf(sx, thumb_pos, sw, thumb_len);
 
+    fl_pop_clip();
+}
+
+// 竖直滚动条上的"光标位置"指示线。
+//
+// 坐标系与 FLTK 的竖直滚动条完全一致：update_v_scrollbar() 用
+// value(mTopLineNum, mNVisibleLines, 1, total) —— value 就是顶部显示行号，
+// minimum = 1，maximum = 视口能滚到的底部行号。所以
+//   ratio = (光标绝对显示行号 - 1) / (maximum - 1)
+// 就能把光标在全文中的相对位置映射到整条轨道上（换行折行也按显示行计）。
+// 不能用像素比例：行高固定，轨道长度却随窗口高度变，两者会随窗口缩放漂移。
+//
+// 光标被滚出视口时 position_to_line() 失效，改用 count_lines(0, pos, true)
+// 从缓冲区头部算出绝对行号。这个计数在长文件里不便宜，所以缓存：光标位置、
+// 缓冲区长度、换行宽度或行高任一变才重算（用户只是滚动时完全不用重算）。
+void Editor::drawCursorScrollMarker() {
+    if (!mVScrollBar || !mVScrollBar->visible_r() || !buffer()) return;
+
+    const double minv = mVScrollBar->minimum();
+    const double maxv = mVScrollBar->maximum();
+    if (maxv <= minv) return;
+
+    const int pos = insert_position();
+    int visLine = 0;
+    int absLine = 0;
+    if (position_to_line(pos, &visLine) && visLine >= 0 && visLine < mNVisibleLines) {
+        // 视口内：直接用 FLTK 的顶部行号换算，最便宜也最准。
+        absLine = mTopLineNum + visLine;
+    } else {
+        // 光标在视口外：光标位置本身没变，绝对行号只在上述条件变化时才需要重算。
+        bool cacheValid = (mCursorAbsLine > 0 &&
+                           mCursorAbsLinePos   == pos &&
+                           mCursorAbsLineBufLen == buffer()->length() &&
+                           mCursorAbsLineTextW  == text_area.w &&
+                           mCursorAbsLineLineH  == mMaxsize);
+        absLine = cacheValid ? mCursorAbsLine : (count_lines(0, pos, true) + 1);
+    }
+
+    mCursorAbsLine       = absLine;
+    mCursorAbsLinePos    = pos;
+    mCursorAbsLineBufLen = buffer()->length();
+    mCursorAbsLineTextW  = text_area.w;
+    mCursorAbsLineLineH  = mMaxsize;
+
+    double ratio = (static_cast<double>(absLine) - minv) / (maxv - minv);
+    if (ratio < 0.0) ratio = 0.0;
+    else if (ratio > 1.0) ratio = 1.0;
+
+    const int sy = mVScrollBar->y();
+    const int sh = mVScrollBar->h();
+    const int markerH = 2;
+    if (sh < markerH) return;
+
+    int y = sy + static_cast<int>(ratio * (sh - markerH) + 0.5);
+    if (y < sy) y = sy;
+    if (y > sy + sh - markerH) y = sy + sh - markerH;
+
+    // 画在滑块之上：滑块是 background2、轨道是 background1，用主文字色
+    // 保证两种底色上都看得清。
+    fl_push_clip(mVScrollBar->x(), sy, mVScrollBar->w(), sh);
+    fl_color(m_theme ? m_theme->colors().text1 : FL_BLACK);
+    fl_rectf(mVScrollBar->x(), y, mVScrollBar->w(), markerH);
     fl_pop_clip();
 }
 
@@ -1068,6 +1265,10 @@ int Editor::handle(int event) {
     if (event == FL_UNFOCUS) ImeInPlace::detach(this);
 #endif
 
+    // 不可编辑（只读文件 / 仅预览编辑锁）：任何粘贴都不能落地。Ctrl+V 已在
+    // 下面的按键分支拦住，这里兜住直接投递的 FL_PASTE（菜单/拖放/系统入口）。
+    if (event == FL_PASTE && m_doc && !m_doc->isEditable()) return 1;
+
     // 菜单 Edit > Paste 走 Fl_Text_Editor::kf_paste → Fl::paste → 这里收到
     // FL_PASTE。剪贴板里只有位图/文件时 FLTK 什么都不会贴，由 pasteMedia()
     // 接管；有文本时它在第一行就返回 false，照常走下面的默认粘贴。
@@ -1089,52 +1290,14 @@ int Editor::handle(int event) {
         redraw();
     }
 
-    // 右键：Edit 子菜单 + 内联 View 子菜单（FL_SUBMENU_POINTER 在 popup 中不可靠）
+    // 右键：与预览区完全同一份菜单（Edit 白名单 + View ▶ + Markdown ▶）。
+    // 菜单组装在 MainWindow::showContextMenu 里，编辑区传 readOnly=false。
     if (event == FL_PUSH && Fl::event_button() == FL_RIGHT_MOUSE) {
         MainWindow *win = nullptr;
         for (Fl_Widget *w = window(); w; w = w->window()) {
             if ((win = dynamic_cast<MainWindow *>(w)) != nullptr) break;
         }
-        if (win && win->menuBar()) {
-            Fl_Menu_Item *edit = (Fl_Menu_Item *)win->menuBar()->find_item("Edit");
-            if (!edit) edit = (Fl_Menu_Item *)win->menuBar()->find_item(I18n::get("menu.edit"));
-            if (edit) {
-                // Build a self-contained popup: only VISIBLE Edit items + View submenu.
-                // Hidden items (Find/Replace/etc.) must NOT appear in the array —
-                // FLTK's menuwindow allocates itemheight per array slot even for
-                // FL_MENU_INVISIBLE items, causing empty lines.
-                static Fl_Menu_Item popup[128];
-                int n = 0;
-                // Whitelist: classic edit items + Search Selection (no shortcut)
-                auto is_visible_edit = [](const Fl_Menu_Item &it) -> bool {
-                    if (!it.text) return false;
-                    int s = it.shortcut();
-                    if (s == 0) return true;  // keep zero-shortcut items (Search Selection, Send to AI, dividers)
-                    return (s == (FL_COMMAND | 'z') || s == (FL_COMMAND | 'y') ||
-                            s == (FL_COMMAND | 'x') || s == (FL_COMMAND | 'c') ||
-                            s == (FL_COMMAND | 'v') || s == FL_Delete ||
-                            s == (FL_COMMAND | 'a'));
-                };
-                // Copy only visible Edit items
-                for (Fl_Menu_Item *it = edit + 1; it->text; it++) {
-                    if (is_visible_edit(*it)) popup[n++] = *it;
-                }
-                // Add divider on last item (instead of empty divider item
-                // which FLTK renders as a full-height empty row)
-                if (n > 0) popup[n-1].flags |= FL_MENU_DIVIDER;
-                // View submenu: built from the LIVE View menu (all items
-                // before Font), so a new toggle only needs a MenuTable entry.
-                n += win->buildViewContextMenu(
-                    popup + n, (int)(sizeof(popup) / sizeof(popup[0])) - n);
-                popup[n++] = {nullptr};  // end of popup
-                // Set popup checkbox fill color (theme highlight2)
-                g_popupCheckColor = win->m_theme.colors().highlight2;
-                const Fl_Menu_Item *hit = popup->popup(
-                    Fl::event_x(), Fl::event_y(), nullptr, nullptr, win->menuBar());
-                g_popupCheckColor = 0;  // reset
-                if (hit && hit->callback_) hit->do_callback(win->menuBar());
-            }
-        }
+        if (win) win->showContextMenu(Fl::event_x(), Fl::event_y(), false);
         return 1;
     }
 
@@ -1173,12 +1336,15 @@ int Editor::handle(int event) {
         int key = Fl::event_key();
         unsigned state = Fl::event_state() & (FL_SHIFT | FL_CTRL | FL_ALT | FL_META);
 
-        // Read-only: block any key that would modify text.
-        if (m_doc && m_doc->isReadOnly()) {
+        // 不可编辑（只读文件 / 仅预览编辑锁）：拦下一切会改文本的按键。
+        // 导航/复制/全选/查找照常放行 —— 仅预览下查找是刚需（2026-11-01 用户定）。
+        // 仅预览还必须拦回车：编辑区不可见，插进去的换行没人看得见；只读文件
+        // 保持历来的行为（回车放行）。
+        if (m_doc && !m_doc->isEditable()) {
             bool allow = false;
             if (key == FL_Left || key == FL_Right || key == FL_Up || key == FL_Down ||
-                key == FL_Home || key == FL_End || key == FL_Page_Up || key == FL_Page_Down ||
-                key == FL_Enter || key == FL_KP_Enter) allow = true;
+                key == FL_Home || key == FL_End || key == FL_Page_Up || key == FL_Page_Down) allow = true;
+            else if ((key == FL_Enter || key == FL_KP_Enter) && !m_doc->isEditLocked()) allow = true;
             else if (key == 'c' && (state & FL_CTRL)) allow = true;
             else if (key == 'a' && (state & FL_CTRL)) allow = true;
             // Viewing shortcuts: open the find/replace/go-to bars (all
@@ -1366,7 +1532,7 @@ static bool shouldLinkOnly(const std::wstring &src, const std::string &targetDir
 // ---------------------------------------------------------------------------
 bool Editor::pasteMedia() {
     if (!m_settings || !m_settings->getPasteMediaPath()) return false;
-    if (!m_doc || m_doc->isReadOnly()) return false;
+    if (!m_doc || !m_doc->isEditable()) return false;
     if (image_attach::clipboardHasText()) return false;   // 文本优先，绝不抢
 
     // 剪贴板里的两种形态：文件（资源管理器复制）优先，没有文件才取位图
@@ -1651,6 +1817,9 @@ void Editor::draw() {
         fl_rectf(mVScrollBar->x(), mHScrollBar->y(),
                  mVScrollBar->w(), mHScrollBar->h());
     }
+
+    // 最后画：光标位置指示线要压在滑块和右下角方块之上。
+    drawCursorScrollMarker();
 }
 
 
