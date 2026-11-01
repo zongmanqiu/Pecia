@@ -57,10 +57,11 @@ UpdateDialog::UpdateDialog(const Theme *theme, int uiFontSize, Config *cfg,
 
     int y = contentTop() + 14;
 
-    // Gauge pinned to the left of the status line, text always to its right: a
-    // longer translation then moves neither the gauge nor the text's start, so no
-    // elastic width is needed. Fl_Progress draws label(), not value(), so an empty
-    // label gives a clean gauge and the percentage stays in the text.
+    // No news is just the text: the gauge only exists while something is
+    // transferring (setTransferMode), so an idle row is a full-width line.
+    // Fl_Progress draws label(), not value(), so an empty label gives a clean
+    // gauge and the percentage stays in the text beside it.
+    m_statusY = y;
     m_bar = new Fl_Progress(MARGIN, y + (kStatusH - kGaugeH) / 2, kGaugeW, kGaugeH);
     m_bar->box(FL_BORDER_BOX);
     m_bar->minimum(0.0);
@@ -69,9 +70,9 @@ UpdateDialog::UpdateDialog(const Theme *theme, int uiFontSize, Config *cfg,
     m_bar->selection_color(tc.highlight2);
     m_bar->color(tc.background1);
     m_bar->label("");
+    m_bar->hide();
 
-    m_status = new Fl_Box(MARGIN + kGaugeW + GAP * 2, y,
-                          W - 2 * MARGIN - kGaugeW - GAP * 2, kStatusH);
+    m_status = new Fl_Box(MARGIN, y, W - 2 * MARGIN, kStatusH);
     m_status->box(FL_NO_BOX);
     m_status->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP);
     m_status->labelsize(uiFontSize);
@@ -223,16 +224,33 @@ void UpdateDialog::showNotes(const std::string &text) {
     m_notes->redraw();
 }
 
+// Show/hide the gauge and give the text back its full width. The text always
+// starts at a fixed x in each mode, so a long translation never moves anything:
+// idle it spans the row, transferring it begins right after the gauge.
+void UpdateDialog::setTransferMode(bool on) {
+    const int fullW = w() - 2 * MARGIN;
+    const int textX = MARGIN + kGaugeW + GAP * 2;
+    if (on) {
+        m_bar->show();
+        m_status->resize(textX, m_statusY, fullW - kGaugeW - GAP * 2, kStatusH);
+    } else {
+        m_bar->hide();
+        m_bar->value(0.0);
+        m_status->resize(MARGIN, m_statusY, fullW, kStatusH);
+    }
+    redraw();
+}
+
 void UpdateDialog::setProgress(double frac, const std::string &text) {
-    m_bar->value(static_cast<float>(frac < 0 ? 0.0 : (frac > 1.0 ? 1.0 : frac)));
+    if (frac < 0) frac = 0.0;
+    m_bar->value(static_cast<float>(frac > 1.0 ? 1.0 : frac));
     m_bar->redraw();
     setStatus(text.c_str());
 }
 
 void UpdateDialog::finishFailure(const std::string &message) {
     setBusy(false);
-    m_bar->value(0.0);          // back to an empty gauge: nothing is transferring
-    m_bar->redraw();
+    setTransferMode(false);     // nothing is transferring any more
     setStatus(message.c_str());
     setInstallable(false);
 }
@@ -358,6 +376,7 @@ void UpdateDialog::startCheck() {
 
 void UpdateDialog::applyCheckResult(const UpdateCheckResult &r) {
     setBusy(false);
+    setTransferMode(false);     // a re-check ends any leftover transfer display
     m_manifest = r.manifest;
     renderManifest(m_manifest);
 
@@ -389,6 +408,7 @@ void UpdateDialog::startDownload() {
     const std::string wantHash = m_manifest.sha256;
 
     setBusy(true);
+    setTransferMode(true);
     setProgress(0.0, I18n::get("update.downloading"));
 
     std::shared_ptr<bool> alive = m_alive;

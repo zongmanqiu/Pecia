@@ -59,6 +59,7 @@ private:
     Fl_Color dangerColour() const;
     void setBusy(bool busy);
     void setProgress(double frac, const std::string &text);
+    void setTransferMode(bool on);   // gauge in/out + status text width
     void showNotes(const std::string &text);
     void finishFailure(const std::string &message);
     Fl_Color hintColour() const;
@@ -85,7 +86,8 @@ private:
     SettingsChoice  *m_source    = nullptr;
     ThemedTextDisplay *m_notes   = nullptr;
     Fl_Text_Buffer  *m_notesBuf  = nullptr;
-    Fl_Progress     *m_bar       = nullptr;   // gauge in the status row
+    Fl_Progress     *m_bar       = nullptr;   // gauge, visible only mid-transfer
+    int              m_statusY  = 0;        // status row's y, for the resize
     HoverButton     *m_btnRefresh  = nullptr;
     HoverButton     *m_btnDownload = nullptr;
     HoverButton     *m_btnClose    = nullptr;
