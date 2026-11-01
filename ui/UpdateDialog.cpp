@@ -25,8 +25,10 @@ namespace {
 
 const int MARGIN   = 16;
 const int GAP      = 8;
-const int NOTES_H  = 170;
+const int NOTES_H  = 202;  // grew by the height of the old bottom progress row
 const int kStatusH = 40;   // two wrapped lines
+const int kGaugeW  = 120;  // fixed column: the status text always starts after it
+const int kGaugeH  = 18;
 
 // One Fl::awake hop. `alive` is cleared when the window closes, so a worker
 // that finishes afterwards drops its result instead of writing into a destroyed
@@ -55,7 +57,21 @@ UpdateDialog::UpdateDialog(const Theme *theme, int uiFontSize, Config *cfg,
 
     int y = contentTop() + 14;
 
-    m_status = new Fl_Box(MARGIN, y, W - 2 * MARGIN, kStatusH);
+    // Gauge pinned to the left of the status line, text always to its right: a
+    // longer translation then moves neither the gauge nor the text's start, so no
+    // elastic width is needed. Fl_Progress draws label(), not value(), so an empty
+    // label gives a clean gauge and the percentage stays in the text.
+    m_bar = new Fl_Progress(MARGIN, y + (kStatusH - kGaugeH) / 2, kGaugeW, kGaugeH);
+    m_bar->box(FL_BORDER_BOX);
+    m_bar->minimum(0.0);
+    m_bar->maximum(1.0);
+    m_bar->value(0.0);
+    m_bar->selection_color(tc.highlight2);
+    m_bar->color(tc.background1);
+    m_bar->label("");
+
+    m_status = new Fl_Box(MARGIN + kGaugeW + GAP * 2, y,
+                          W - 2 * MARGIN - kGaugeW - GAP * 2, kStatusH);
     m_status->box(FL_NO_BOX);
     m_status->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP);
     m_status->labelsize(uiFontSize);
@@ -125,26 +141,6 @@ UpdateDialog::UpdateDialog(const Theme *theme, int uiFontSize, Config *cfg,
     m_notes->wrap_mode(Fl_Text_Display::WRAP_AT_BOUNDS, 0);
     y += NOTES_H + 8;
 
-    // --- progress row, hidden until a download starts (absolute coords: FLTK
-    //     children are positioned in window space, joining a group does not offset) ---
-    m_progRow = new Fl_Group(MARGIN, y, W - 2 * MARGIN, rowH);
-    m_progRow->box(FL_NO_BOX);
-    m_progRow->begin();
-    m_progText = new Fl_Box(MARGIN, y, 140, rowH, nullptr);
-    m_progText->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-    m_progText->labelsize(uiFontSize);
-    m_progText->labelcolor(tc.text1);
-    m_bar = new Fl_Progress(MARGIN + 148, y + 2, W - 2 * MARGIN - 148, rowH - 4);
-    m_bar->minimum(0.0);
-    m_bar->maximum(1.0);
-    m_bar->value(0.0);
-    m_bar->selection_color(tc.highlight2);
-    m_bar->color(tc.background3);
-    m_bar->labelsize(uiFontSize - 2);
-    m_progRow->end();
-    m_progRow->hide();
-    y += rowH + 8;
-
     // --- footer: [更新][关闭]. The dismissive button stays rightmost, the
     //     same rule every other Pecia dialog follows.
     m_btnDownload = new HoverButton(0, 0, 0, rowH, I18n::get("update.page.download"));
@@ -158,7 +154,6 @@ UpdateDialog::UpdateDialog(const Theme *theme, int uiFontSize, Config *cfg,
     end();
     finalizeShell();
 
-    setProgress(0.0, std::string());
     // Nothing is installable until a manifest says so. Availability is shown by
     // dimming the LABEL only (see setInstallable) - Fl_Widget::deactivate()
     // repaints the box with an opaque grey wash, and then the hover colour is
@@ -229,16 +224,15 @@ void UpdateDialog::showNotes(const std::string &text) {
 }
 
 void UpdateDialog::setProgress(double frac, const std::string &text) {
-    m_progTextBuf = text;
-    m_progText->label(m_progTextBuf.c_str());
     m_bar->value(static_cast<float>(frac < 0 ? 0.0 : (frac > 1.0 ? 1.0 : frac)));
-    m_progRow->redraw();
+    m_bar->redraw();
+    setStatus(text.c_str());
 }
 
 void UpdateDialog::finishFailure(const std::string &message) {
     setBusy(false);
-    m_progRow->hide();
-    m_progRow->redraw();
+    m_bar->value(0.0);          // back to an empty gauge: nothing is transferring
+    m_bar->redraw();
     setStatus(message.c_str());
     setInstallable(false);
 }
@@ -395,7 +389,6 @@ void UpdateDialog::startDownload() {
     const std::string wantHash = m_manifest.sha256;
 
     setBusy(true);
-    m_progRow->show();
     setProgress(0.0, I18n::get("update.downloading"));
 
     std::shared_ptr<bool> alive = m_alive;
@@ -417,9 +410,13 @@ void UpdateDialog::startDownload() {
                     auto *j = static_cast<Job<std::pair<long long, long long>> *>(d);
                     if (*j->alive) {
                         const long long got = j->payload.first, all = j->payload.second;
-                        char buf[64];
-                        if (all > 0) snprintf(buf, sizeof(buf), "%.0f%%", 100.0 * got / all);
-                        else         snprintf(buf, sizeof(buf), "%lld KB", got / 1024);
+                        char buf[96];
+                        if (all > 0)
+                            snprintf(buf, sizeof(buf), "%s  %.0f%%",
+                                     I18n::get("update.downloading"), 100.0 * got / all);
+                        else
+                            snprintf(buf, sizeof(buf), "%s  %lld KB",
+                                     I18n::get("update.downloading"), got / 1024);
                         j->self->setProgress(all > 0 ? (double)got / (double)all : -1.0, buf);
                     }
                     delete j;

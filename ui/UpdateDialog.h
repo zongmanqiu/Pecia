@@ -85,9 +85,7 @@ private:
     SettingsChoice  *m_source    = nullptr;
     ThemedTextDisplay *m_notes   = nullptr;
     Fl_Text_Buffer  *m_notesBuf  = nullptr;
-    Fl_Group        *m_progRow   = nullptr;
-    Fl_Box          *m_progText  = nullptr;
-    Fl_Progress     *m_bar       = nullptr;
+    Fl_Progress     *m_bar       = nullptr;   // gauge in the status row
     HoverButton     *m_btnRefresh  = nullptr;
     HoverButton     *m_btnDownload = nullptr;
     HoverButton     *m_btnClose    = nullptr;
@@ -97,5 +95,4 @@ private:
     std::string m_statusBuf;
     std::string m_curVerBuf;
     std::string m_mfVerBuf;
-    std::string m_progTextBuf;
 };
