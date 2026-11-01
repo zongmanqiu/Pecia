@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""生成 / 校验 Pecia 的更新清单 update.json。
+"""生成 / 核对 Pecia 的更新清单 docs/update.json。
 
 用法：
-    python build/gen_update_json.py <发布包 zip 路径>
-    python build/gen_update_json.py --verify-remote
+    python build/gen_update_json.py                 # 出清单（不需要 zip）
+    python build/gen_update_json.py --verify-remote # 下载两镜像，比对是否同一份文件
 
-为什么要有这个脚本：清单里的 sha256 必须由实际上传的那份 zip 算出来。手抄哈希
-正是 CurSeen 在 2026-10-31 踩过的坑（手工重打的包与清单对不上，客户端只能报校验
-失败）。--verify-remote 把两个镜像都下回来逐字节比一次，上传完跑一遍就能确认
-"Gitee 和 GitHub 上是同一个文件"。
+字段与唯一来源：
+    version    <- CMakeLists.txt 的 project(Pecia VERSION ...)（开发指南 §五：权威值）
+    published  <- HISTORY.md 对应小节标题里的日期
+    notes      <- HISTORY.md 该小节的正文（中文是真源）
+    notes_en   <- docs/history/en.md 同名小节（缺小节直接报错，不静默退回中文）
+    url_*      <- 固定资产名 Pecia_x64_<版本>.zip（docs/RELEASE_CHECKLIST.md §三钉死，
+                  改名自动更新就 404）
 
-字段的唯一来源：
-    version   <- CMakeLists.txt 的 project(Pecia VERSION ...)（开发指南 §五：权威值）
-    published <- HISTORY.md 对应小节标题里的日期
-    notes     <- HISTORY.md 该小节的正文（中文是真源）
-    notes_en  <- docs/history/en.md 同名小节（缺小节直接报错，不静默退回中文）
-    sha256    <- 传进来的 zip
-    url_*     <- 固定资产名 Pecia_x64_<版本>.zip（docs/RELEASE_CHECKLIST.md §三钉死，改名自动更新就 404）
+清单里**没有哈希**：包和清单在同一个仓库，能换包的人也能改清单，哈希挡不住攻击，
+只给手动打包添一步。它唯一挡得住的是"两仓传的不是同一份文件"这类发布事故，
+所以这件事改由 --verify-remote 在发布时查一次，而不是每个客户端每次下载都查。
 """
 import hashlib
 import json
@@ -45,120 +44,100 @@ def version_from_cmake():
     return m.group(1)
 
 
-def history_section(version):
-    """返回 (日期, 正文)。小节 = '## <版本>（<日期>）' 到下一个 '## ' 之前。"""
-    text = read(os.path.join(MAIN, "HISTORY.md"))
-    pat = re.compile(r"^## %s（([0-9-]+)）\s*$" % re.escape(version), re.M)
-    m = pat.search(text)
+def section_from(text, heading_pattern, source, version):
+    """取 '## <版本>（<日期>）' 到下一个 '## ' 之前的小节，返回 (日期, 正文)。"""
+    m = re.search(heading_pattern.replace("@VERSION@", re.escape(version)), text, re.M)
     if not m:
-        sys.exit("HISTORY.md 里没有 %s 的小节（发版前先在顶部追加）" % version)
-    start = m.end()
-    nxt = re.search(r"^## ", text[start:], re.M)
-    body = text[start:start + nxt.start()] if nxt else text[start:]
-    return m.group(1), body.strip() + "\n"
-
-
-def english_section(version):
-    """docs/history/en.md 里对应版本的英文小节；没有就报错，不静默退回中文。"""
-    path = os.path.join(MAIN, "docs", "history", "en.md")
-    if not os.path.exists(path):
-        sys.exit("缺少 docs/history/en.md（更新说明的英文来源）")
-    text = read(path)
-    m = re.search(r"^## %s \([0-9-]+\)\s*$" % re.escape(version), text, re.M)
-    if not m:
-        sys.exit("docs/history/en.md 里没有 %s 的小节，先补英文再出清单" % version)
+        sys.exit("%s 里没有 %s 的小节（发版前先补上）" % (source, version))
+    date = m.group(1)
     start = m.end()
     nxt = re.search(r"^## ", text[start:], re.M)
     body = text[start:start + nxt.start()] if nxt else text[start:]
     body = body.strip()
     if body.endswith("---"):
         body = body[:-3].rstrip()
-    return body + "\n"
+    return date, body + "\n"
 
 
-def sha256_of(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def build_manifest(version, zip_path):
-    if os.path.basename(zip_path) != ASSET % version:
-        sys.exit("包名必须叫 %s，否则自动更新的下载地址对不上" % (ASSET % version))
-    published, notes = history_section(version)
+def build_manifest(version):
+    published, notes = section_from(
+        read(os.path.join(MAIN, "HISTORY.md")),
+        r"^## @VERSION@（([0-9-]+)）\s*$", "HISTORY.md", version)
+    en_path = os.path.join(MAIN, "docs", "history", "en.md")
+    if not os.path.exists(en_path):
+        sys.exit("缺少 docs/history/en.md（更新说明的英文来源）")
+    _, notes_en = section_from(read(en_path), r"^## @VERSION@ \(([0-9-]+)\)\s*$",
+                               "docs/history/en.md", version)
     return {
         "version": version,
         "published": published,
-        "sha256": sha256_of(zip_path),
         "url_gitee": "https://gitee.com/%s/releases/download/%s/%s"
                      % (GITEE_REPO, version, ASSET % version),
         "url_github": "https://github.com/%s/releases/download/%s/%s"
                       % (GITHUB_REPO, version, ASSET % version),
         "notes": notes,
-        "notes_en": english_section(version),
+        "notes_en": notes_en,
     }
 
 
-def fetch_sha256(url):
+def fetch(url):
     req = urllib.request.Request(url, headers={"User-Agent": "PeciaUpdater/1.0"})
-    h = hashlib.sha256()
-    with urllib.request.urlopen(req, timeout=120) as r:
+    digest = hashlib.sha256()
+    total = 0
+    with urllib.request.urlopen(req, timeout=300) as r:
         for chunk in iter(lambda: r.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
+            total += len(chunk)
+            digest.update(chunk)
+    return total, digest.hexdigest()
 
 
 def verify_remote(manifest_path):
+    """两镜像各下一遍，比对是不是同一个文件（清单里没有哈希，所以互相比）。"""
     m = json.loads(read(manifest_path))
-    bad = 0
+    got = {}
     for key in ("url_gitee", "url_github"):
         url = m.get(key, "")
         if not url:
             print("  %-11s 清单里没有该地址，跳过" % key)
             continue
         try:
-            got = fetch_sha256(url)
+            got[key] = fetch(url)
         except Exception as exc:                     # 连不上不等于没发布
             print("  %-11s 未取到（%s）——本机可达性问题需另判，不算失败" % (key, exc))
-            continue
-        same = got == m["sha256"]
-        bad += 0 if same else 1
-        print("  %-11s %s  %s" % (key, "一致" if same else "不一致", got[:16] + "..."))
-    print("两镜像哈希核对：%s" % ("通过" if bad == 0 else "%d 个源与清单不符" % bad))
-    return 1 if bad else 0
+    if len(got) < 2:
+        print("镜像核对：只取到 %d 个源，无法比对" % len(got))
+        return 0 if got else 1
+    (sg, hg), (sb, hb) = got["url_gitee"], got["url_github"]
+    same = hg == hb
+    print("  gitee   %d 字节 %s" % (sg, hg[:16] + "..."))
+    print("  github  %d 字节 %s" % (sb, hb[:16] + "..."))
+    print("两镜像是否同一份文件：%s" % ("一致" if same else "不一致——重传其中一个"))
+    return 0 if same else 1
 
 
 def main():
-    args = sys.argv[1:]
     out_path = os.path.join(MAIN, "docs", "update.json")
     version = version_from_cmake()
 
-    if args == ["--verify-remote"]:
+    if sys.argv[1:] == ["--verify-remote"]:
         if not os.path.exists(out_path):
-            sys.exit("先运行本脚本生成 update.json")
+            sys.exit("先运行本脚本生成 docs/update.json")
         sys.exit(verify_remote(out_path))
 
-    if len(args) != 1:
+    if sys.argv[1:]:
         sys.exit(__doc__)
-    zip_path = os.path.abspath(args[0])
-    if not os.path.exists(zip_path):
-        sys.exit("找不到发布包：%s" % zip_path)
 
-    m = build_manifest(version, zip_path)
+    m = build_manifest(version)
     text = json.dumps(m, ensure_ascii=False, indent=2) + "\n"
     # LF, no BOM: the file is served raw by both mirrors and parsed by a byte reader.
-    with open(out_path, "w", encoding="utf-8", newline="") as f:
-        f.write(text)
-    print("update.json 已生成：%s" % out_path)
-    print("  version   = %s" % m["version"])
-    print("  published = %s" % m["published"])
-    print("  sha256    = %s" % m["sha256"])
-    print("  notes     = %d 字节 (zh) / %d 字节 (en)"
+    open(out_path, "w", encoding="utf-8", newline="").write(text)
+    print("docs/update.json 已生成")
+    print("  version    = %s" % m["version"])
+    print("  published  = %s" % m["published"])
+    print("  notes      = %d 字节 (zh) / %d 字节 (en)"
           % (len(m["notes"]), len(m["notes_en"])))
     print("顺序提醒：先把 zip 传上两个 release，再推这份 update.json（反了点检查就 404）；")
-    print("          推完跑 `python build/gen_update_json.py --verify-remote` 核对两镜像。")
+    print("          推完跑 `python build/gen_update_json.py --verify-remote` 确认两仓是同一个文件。")
 
 
 if __name__ == "__main__":

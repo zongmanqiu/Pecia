@@ -309,14 +309,13 @@ void UpdateDialog::renderManifest(const UpdateManifest &m) {
     showNotes(useEn ? m.notesEn : m.notes);
 }
 
-// Installing needs three things: a version newer than ours, a URL for the
-// source the user picked, and a hash to verify against. Without the hash we
-// refuse rather than lay down an unverified package.
-// A manifest we cannot act on (no hash, or no URL for the chosen source) is
-// shown by keeping the update button dimmed - not by writing a sentence about it.
+// Two things make an update installable: a version newer than ours, and a URL
+// for the source the user picked (no package hash - see core/Updater.h).
+// A manifest we cannot act on is shown by keeping the update button dimmed, not
+// by writing a sentence about it.
 void UpdateDialog::applyInstallability(bool newer) {
     if (!newer) { setInstallable(false); return; }
-    setInstallable(!m_manifest.sha256.empty() && !downloadUrl().empty());
+    setInstallable(!downloadUrl().empty());
 }
 
 // What the last successful check left on disk. Two words say where it came from,
@@ -399,20 +398,19 @@ void UpdateDialog::applyCheckResult(const UpdateCheckResult &r) {
 void UpdateDialog::startDownload() {
     if (m_busy || !m_cfg || !m_canInstall) return;
     const std::string url = downloadUrl();
-    if (url.empty() || m_manifest.sha256.empty()) return;   // belt and braces
+    if (url.empty()) return;                            // belt and braces
 
     const std::string exeDir = getExeDirUtf8();
     std::string ver = m_manifest.version;
     if (!ver.empty() && (ver[0] == 'v' || ver[0] == 'V')) ver.erase(0, 1);
     const std::string zipPath  = exeDir + "Pecia_x64_" + ver + ".zip";
-    const std::string wantHash = m_manifest.sha256;
 
     setBusy(true);
     setTransferMode(true);
     setProgress(0.0, I18n::get("update.downloading"));
 
     std::shared_ptr<bool> alive = m_alive;
-    std::thread([this, alive, url, zipPath, wantHash, exeDir]() {
+    std::thread([this, alive, url, zipPath, exeDir]() {
         auto fail = [this, alive](const std::string &msg) {
             auto *job = new Job<std::string>{ alive, this, msg };
             Fl::awake([](void *d) {
@@ -444,16 +442,6 @@ void UpdateDialog::startDownload() {
             };
 
             if (!downloadFile(url, zipPath, progress)) {
-                fail(I18n::get("update.page.updatefailed"));
-                return;
-            }
-
-            std::string got;
-            if (!sha256FileUtf8(zipPath, got) || got != wantHash) {
-                // Mismatch = not the package the manifest describes (truncated,
-                // swapped in transit, or the two mirrors differ). Delete it: a
-                // retry must not be able to pick up the bad file.
-                deleteFileUtf8(zipPath);
                 fail(I18n::get("update.page.updatefailed"));
                 return;
             }

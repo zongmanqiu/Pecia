@@ -27,7 +27,7 @@
 | `build/5_build_pecia.bat` | 编译 FLTK+Pecia 三件套并跑 ctest(**真门禁**:测试失败即整条构建失败) | 编译流程/按需重编/依赖校验逻辑变化时 |
 | `build/_common.bat` | 编号脚本共用的路径变量、tar/curl 解析、MSVC 环境装载与 `:fetch_rust_deps` 子例程 | 路径变量定义/tool 解析/环境探测入口变化时 |
 | `build/msvc_env.bat` | MSVC/Windows SDK 环境自动探测(vswhere) | 环境探测逻辑变化时 |
-| `build/gen_update_json.py` | 生成/核对更新清单 `docs/update.json`(版本取 CMakeLists、说明取 HISTORY.md、sha256 取实际 zip；`--verify-remote` 比对两镜像哈希) | 更新清单的字段、下载地址形态、或发布资产命名规则变化时 |
+| `build/gen_update_json.py` | 生成/核对更新清单 `docs/update.json`(版本取 CMakeLists、中文说明取 HISTORY.md、英文说明取 docs/history/en.md；清单不含哈希；`--verify-remote` 逐字节比对两镜像) | 更新清单的字段、下载地址形态、或发布资产命名规则变化时 |
 | `.gitattributes` | 行尾与二进制属性(**.bat/.cmd 强制 CRLF**——cmd.exe 需要, LF 会导致解析错乱) | 新增文件类型/调整行尾策略时 |
 | `docs/RELEASE_CHECKLIST.md` | 版本发行流程清单(版本号同步/质量门禁/打包/gitee 发行/自动更新验证) | 发行步骤或自动更新地址规则变化时 |
 | `docs/STRESS_TEST_PLAN.md` | 发版前压力测试计划(大文档/大文本/极限结构/多标签/长时/异常/脚本/打包链路,含实测基线与判定边界) | 压力用例、判据、基线数据或已知问题清单变化时 |

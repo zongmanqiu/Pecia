@@ -6,14 +6,20 @@
 //                           source, fall back to the other source, then to the
 //                           local cache; compare versions.
 //   2. downloadFile()    -> download the new zip next to the running exe.
-//   3. sha256FileUtf8()  -> verify the package against the manifest hash.
-//   4. writeUpdateBat()  -> emit pecia_update.bat that replaces files + restarts.
-//   5. launchUpdater()   -> start that bat (hidden), caller then exits.
+//   3. writeUpdateBat()  -> emit pecia_update.bat that replaces files + restarts.
+//   4. launchUpdater()   -> start that bat (hidden), caller then exits.
+//
+// No package hash. The manifest and the package are served from the same
+// repository, so a hash there cannot stop anyone who could swap the package
+// anyway; it only costs the packer a step. Measured 2026-11-02: a truncated zip
+// already fails in Expand-Archive (0 files land, and the bat's "Pecia.exe is
+// missing" check catches it), while a zip with one flipped byte extracts
+// "successfully" - that case is knowingly accepted.
 //
 // Why a static manifest instead of the Gitee Releases API: a source switch then
 // costs one URL, not a second API dialect (GitHub's releases endpoint has
 // different field names and a 60 req/h unauthenticated quota), and the manifest
-// can carry the sha256 the API cannot.
+// can carry the release notes in more than one language.
 //
 // All path APIs are wide-char / UTF-8 aware so Chinese paths work end to end
 // (executable path, download path, extract path, restart path).
@@ -33,7 +39,6 @@ struct UpdateManifest {
     std::string published;    // "2026-11-05", display only
     std::string notes;        // changelog text, Chinese (HISTORY.md is the source)
     std::string notesEn;      // docs/history/en.md translation; empty = fall back
-    std::string sha256;       // lowercase hex of the zip
     std::string urlGitee;     // full download URL (not constructed here)
     std::string urlGithub;
 };
@@ -74,16 +79,6 @@ bool readCachedManifest(UpdateManifest &out, long long &ageSeconds);
 // inside the zip, or robocopy would overwrite the live cache with the build-time
 // copy on every update.
 std::string updateCachePathUtf8();
-
-// Lowercase hex SHA-256 of a file (UTF-8 path, may contain Chinese). Uses
-// bcrypt.dll loaded with LOAD_LIBRARY_SEARCH_SYSTEM32 so this single call is
-// what pins the DLL search -- no process-wide SetDefaultDllDirectories needed.
-bool sha256FileUtf8(const std::string &pathUtf8, std::string &hexLower);
-
-// Delete a file by UTF-8 path (wide API, so a Chinese install dir survives the
-// round trip). Used to throw away a package that failed its hash check, so a
-// retry can never pick up the bad file. A file that is already gone counts.
-bool deleteFileUtf8(const std::string &pathUtf8);
 
 // Progress report for downloadFile: (bytesReceived, totalBytes).
 // `total` is 0 when the server did not send a Content-Length, so callers

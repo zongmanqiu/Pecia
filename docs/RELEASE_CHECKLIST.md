@@ -45,8 +45,9 @@
 - zip 内容：`exe 三件套（Pecia / PeciaLua / PeciaAIChat）+ lang/ + theme/ +
   script/ + LICENSE + THIRD-PARTY-NOTICES.md + licenses/`。
   `build/` 里还有 `test_*.exe`，那是构建门禁产物，**不要放进发布包**；
-- ⚠️ **zip 文件名不可改**：`Updater.cpp` 用 tag 拼出确定性下载地址
-  `releases/download/<tag>/Pecia_x64_<tag>.zip`，名字对不上自动更新就 404。
+- ⚠️ **zip 文件名不可改**：清单里的下载地址由 `gen_update_json.py` 按
+  `releases/download/<tag>/Pecia_x64_<tag>.zip` 拼出（程序只读清单，不自己拼名），
+  名字对不上清单就指向 404。
 
 ## 四、gitee 发行（自动更新的生效点）
 
@@ -55,14 +56,15 @@
 2. 先在 `docs/history/en.md` 顶部补上这个版本的英文小节（标题写成
    `## <版本> (<日期>)`）——更新页的英文说明就是从这里取的，缺小节生成器会报错，
    不会悄悄退回中文；
-3. 生成更新清单：`python build/gen_update_json.py <那份 zip 的路径>` → 写
-   `docs/update.json`。版本取 CMakeLists、中文说明取 HISTORY.md、英文说明取
-   `docs/history/en.md`、**sha256 由实际上传的 zip 算出**——不要手抄；
+3. 生成更新清单：`python build/gen_update_json.py` → 写 `docs/update.json`。
+   版本取 CMakeLists、中文说明取 HISTORY.md、英文说明取 `docs/history/en.md`、
+   下载地址按 §三 的命名规则拼出；**清单里没有哈希**，所以不需要把 zip 交给生成器，
+   手动打的包也能直接写清单；
 4. **顺序要求**：先把两个 release 的附件传完，**再**推 `docs/update.json`。
    反过来推，用户在清单生效、附件还没上传的窗口里点"检查更新"就是 404；
 5. 推完跑 `python build/gen_update_json.py --verify-remote`：两个镜像各下一遍，
-   与清单哈希比对。不一致说明两仓传的不是同一个文件，客户端只会报"校验失败"，
-   用户看不出是发布侧的问题；
+   既确认清单里的两个地址都能取到这个包，也逐字节比对两仓内容。清单里没有哈希，
+   这一步就是唯一的互校；不一致说明两仓传的不是同一个文件，而客户端不会替你发现；
 6. 清单文件**不要进发布包**（包里是 exe 三件套 + lang/theme/script + 许可，见 §三）：
    程序运行时的缓存放 exe 同级的 `update.cache.json`，名字刻意不同，
    robocopy 覆盖安装目录时不会把出厂清单盖回用户机器上；
@@ -72,10 +74,13 @@
 
 1. 下载链接抽查：README（根 + 至少一个语言版）里的链接能下到新 zip；
 2. 自动更新链路：旧版本启动 → 帮助 > 检查更新 打开更新页 → 显示新版本与说明 →
-   下载 → **sha256 校验通过**（清单没哈希或哈希不符时页面应拒绝安装，这是有意的）→
-   覆盖（`robocopy /e /is /it`：同名覆盖、多余文件保留）→ 重启后关于页版本号正确；
-   失败路径也要看一眼：把 `update_url_gitee` 改成一个不存在的路径，页面应报
-   "检查更新失败：HTTP 404"，而不是谎报"已是最新版本"；
+   下载 → 进度走到 100% 并解压（清单不含哈希，包完整性只剩 zip 自身结构 + bat 里
+   「解压后 `Pecia.exe` 必须存在」这一道兜底）→ 覆盖（`robocopy /e /is /it`：同名覆盖、
+   多余文件保留）→ 重启后关于页版本号正确；
+   失败路径也要看一眼：把 `update_url_gitee` 改成一个不存在的路径，页面状态行应报
+   「联网检查失败」，而不是谎报「已是最新版本」。原因（HTTP 404 / 超时）留在
+   `UpdateCheckResult::error` 里，更新页既不显示也不落日志——短文案是刻意的，代价就是
+   发布侧排错要自己加打印；
 3. settings.ini 兼容性：新版本首启后，旧配置键保留、新增键补默认值、
    用户数据（`ai_api_key`、最近文件等）无损。
 

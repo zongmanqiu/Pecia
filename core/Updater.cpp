@@ -4,12 +4,10 @@
 
 #include <windows.h>
 #include <winhttp.h>
-#include <bcrypt.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
-#include <vector>
 #include <wchar.h>   // _wtoi64 (Content-Length parsing)
 
 #pragma comment(lib, "winhttp.lib")
@@ -159,7 +157,6 @@ bool parseManifest(const std::string &json, UpdateManifest &m) {
     findJsonString(json, "published", m.published);
     findJsonString(json, "notes", m.notes);
     findJsonString(json, "notes_en", m.notesEn);
-    findJsonString(json, "sha256", m.sha256);
     findJsonString(json, "url_gitee", m.urlGitee);
     findJsonString(json, "url_github", m.urlGithub);
     return !m.urlGitee.empty() || !m.urlGithub.empty();
@@ -505,115 +502,6 @@ UpdateCheckResult checkUpdate(const std::string &currentVersion,
     }
     r.error = lastErr;
     return r;
-}
-
-// ---------------------------------------------------------------------------
-// SHA-256 via bcrypt.dll, resolved on demand from System32 only.
-// LOAD_LIBRARY_SEARCH_SYSTEM32 is scoped to this call, which is why adding a
-// second DLL to the process does not require the process-wide
-// SetDefaultDllDirectories change the gap list asks for on new bare-name loads.
-// ---------------------------------------------------------------------------
-namespace {
-
-typedef NTSTATUS (WINAPI *OpenAlgFn)(BCRYPT_ALG_HANDLE *, LPCWSTR, LPCWSTR, ULONG);
-typedef NTSTATUS (WINAPI *GetPropFn)(BCRYPT_HANDLE, LPCWSTR, PUCHAR, ULONG, ULONG *, ULONG);
-typedef NTSTATUS (WINAPI *CreateHashFn)(BCRYPT_ALG_HANDLE, BCRYPT_HASH_HANDLE *,
-                                        PUCHAR, ULONG, PUCHAR, ULONG, ULONG);
-typedef NTSTATUS (WINAPI *HashDataFn)(BCRYPT_HASH_HANDLE, PUCHAR, ULONG, ULONG);
-typedef NTSTATUS (WINAPI *FinishHashFn)(BCRYPT_HASH_HANDLE, PUCHAR, ULONG, ULONG);
-typedef NTSTATUS (WINAPI *DestroyHashFn)(BCRYPT_HASH_HANDLE);
-typedef NTSTATUS (WINAPI *CloseAlgFn)(BCRYPT_ALG_HANDLE, ULONG);
-
-struct BcryptApi {
-    OpenAlgFn     openAlg     = nullptr;
-    GetPropFn     getProp     = nullptr;
-    CreateHashFn  createHash  = nullptr;
-    HashDataFn    hashData    = nullptr;
-    FinishHashFn  finishHash  = nullptr;
-    DestroyHashFn destroyHash = nullptr;
-    CloseAlgFn    closeAlg    = nullptr;
-    bool          ok          = false;
-    BcryptApi() {
-        HMODULE m = LoadLibraryExW(L"bcrypt.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-        if (!m) return;
-        openAlg     = (OpenAlgFn)GetProcAddress(m, "BCryptOpenAlgorithmProvider");
-        getProp     = (GetPropFn)GetProcAddress(m, "BCryptGetProperty");
-        createHash  = (CreateHashFn)GetProcAddress(m, "BCryptCreateHash");
-        hashData    = (HashDataFn)GetProcAddress(m, "BCryptHashData");
-        finishHash  = (FinishHashFn)GetProcAddress(m, "BCryptFinishHash");
-        destroyHash = (DestroyHashFn)GetProcAddress(m, "BCryptDestroyHash");
-        closeAlg    = (CloseAlgFn)GetProcAddress(m, "BCryptCloseAlgorithmProvider");
-        ok = openAlg && getProp && createHash && hashData && finishHash &&
-             destroyHash && closeAlg;
-        // The module stays loaded for the process lifetime on purpose: freeing it
-        // between calls would re-do the search every check and could unmap code a
-        // hash operation is still inside.
-    }
-};
-
-const BcryptApi &bcryptApi() {
-    static BcryptApi a;   // C++11: thread-safe init (this runs on a worker thread)
-    return a;
-}
-
-} // namespace
-
-bool sha256FileUtf8(const std::string &pathUtf8, std::string &hexLower) {
-    hexLower.clear();
-    const BcryptApi &api = bcryptApi();
-    if (!api.ok) return false;
-
-    BCRYPT_ALG_HANDLE hAlg = nullptr;
-    if (api.openAlg(&hAlg, BCRYPT_SHA256_ALGORITHM, nullptr, 0) != 0) return false;
-
-    DWORD objLen = 0, hashLen = 0, got = 0;
-    bool good = api.getProp(hAlg, BCRYPT_OBJECT_LENGTH, (PUCHAR)&objLen, sizeof(objLen),
-                            &got, 0) == 0 && objLen > 0 &&
-                api.getProp(hAlg, BCRYPT_HASH_LENGTH, (PUCHAR)&hashLen, sizeof(hashLen),
-                            &got, 0) == 0 && hashLen > 0;
-
-    std::vector<unsigned char> hashObj, hashVal;
-    BCRYPT_HASH_HANDLE hHash = nullptr;
-    if (good) {
-        hashObj.resize(objLen);
-        hashVal.resize(hashLen);
-        good = api.createHash(hAlg, &hHash, hashObj.data(), objLen, nullptr, 0, 0) == 0;
-    }
-
-    if (good) {
-        std::wstring w = utf8ToWide(pathUtf8);
-        HANDLE h = CreateFileW(w.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
-                               OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (h == INVALID_HANDLE_VALUE) {
-            good = false;
-        } else {
-            unsigned char chunk[65536];
-            DWORD read = 0;
-            while (ReadFile(h, chunk, sizeof(chunk), &read, nullptr) && read > 0) {
-                if (api.hashData(hHash, chunk, read, 0) != 0) { good = false; break; }
-            }
-            CloseHandle(h);
-            if (good) good = api.finishHash(hHash, hashVal.data(), (DWORD)hashVal.size(), 0) == 0;
-        }
-    }
-
-    if (hHash) api.destroyHash(hHash);
-    api.closeAlg(hAlg, 0);
-
-    if (!good) return false;
-    static const char *kHex = "0123456789abcdef";
-    for (unsigned char b : hashVal) {
-        hexLower += kHex[b >> 4];
-        hexLower += kHex[b & 15];
-    }
-    return true;
-}
-
-bool deleteFileUtf8(const std::string &pathUtf8) {
-    std::wstring w = utf8ToWide(pathUtf8);
-    if (w.empty()) return false;
-    if (DeleteFileW(w.c_str())) return true;
-    return GetFileAttributesW(w.c_str()) == INVALID_FILE_ATTRIBUTES;  // already gone
 }
 
 bool downloadFile(const std::string &url, const std::string &savePathUtf8,
