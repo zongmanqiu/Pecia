@@ -46,6 +46,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR cmdLine, int) {
     // 便携：禁止 FLTK 核心在 exe 之外读写 prefs（默认落在 %APPDATA%）。
     // 必须在任何 FLTK 调用之前设置，见 main.cpp 中的同类说明。
     Fl_Preferences::file_access(Fl_Preferences::APP_OK);
+    // Fl::awake() from a worker thread only repaints on the next event unless the
+    // main thread has taken the FLTK lock once (measured 2026-11-02: with no
+    // Fl::lock() the update page sat on "checking" although the result had
+    // already arrived; adding this made it land by itself). Every process here
+    // posts awake callbacks - updater, Lua pipe server, AI chat, config watcher,
+    // remote image fetch - so this belongs at the top of each entry point.
+    Fl::lock();
     // Crash handler first: capture failures during startup too.
     CrashReport::install("peciaaichat");
     std::string pipeName = parseArg(cmdLine, 0);
