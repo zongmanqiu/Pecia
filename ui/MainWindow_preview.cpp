@@ -408,6 +408,10 @@ void MainWindow::setPreviewOnly(bool on)
         togglePreview();
         syncEditLock();
         syncPreviewMenu();
+        // 第一次进入仅预览也必须转移焦点：编辑区此刻已被隐藏，焦点留在那里
+        // 用户会把字打进看不见的文档（下方分支有同样的处理）。
+        if (m_previewOnly && m_preview && m_preview->view())
+            Fl::focus(m_preview->view());
         return;
     }
     if (m_previewOnly == on) return;

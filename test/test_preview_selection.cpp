@@ -424,6 +424,34 @@ void test_preview_find()
     if (rects.size() == 1) CHECK_EQ((int)rects[0].width, 5 * 8);
 }
 
+// 复制文本的块边界与 pre 空白。两个契约：
+//   1. 相邻块（<p>、<li> 等）之间必须补换行。不能靠「行间距 > 行高」判断，
+//      因为 preprocess 已把 p+p / li+li 的外边距清零，段间距恰好等于行距。
+//      所以 build() 记录每个 run 所属的块编号，text() 按编号变化补换行。
+//   2. white-space: pre* 里的空白是内容：行首缩进、连续空格必须原样保留，
+//      否则复制出来的代码不能直接运行。
+void test_block_and_pre_text()
+{
+    StubContainer container;
+    const char* html =
+        "<html><body>"
+        "<p>First line</p><p>Second line</p>"
+        "<pre><code>if (x) {\n    y();\n}</code></pre>"
+        "</body></html>";
+    litehtml::document::ptr doc = litehtml::document::createFromString(html, &container);
+    CHECK(doc != nullptr);
+    if (!doc) return;
+    doc->render(400);
+
+    pecia::TextSelection sel;
+    sel.build(doc.get(), &container);
+    CHECK(sel.valid());
+    if (!sel.valid()) return;
+
+    sel.select_all();
+    CHECK(sel.text() == "First line\nSecond line\nif (x) {\n    y();\n}");
+}
+
 void test_empty_document()
 {
     StubContainer container;
@@ -454,6 +482,7 @@ void test_empty_document()
 int main()
 {
     test_two_line_document();
+    test_block_and_pre_text();
     test_empty_document();
     test_preview_find();
 

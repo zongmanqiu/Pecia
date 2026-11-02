@@ -102,10 +102,12 @@ UpdateDialog::UpdateDialog(const Theme *theme, int uiFontSize, Config *cfg,
     m_source->value(cfg ? cfg->getUpdateSource() : 0);
     m_source->callback(cbSource, this);
 
+    // Same look as SettingsDialog's "添加到“打开方式”菜单" button: chrome
+    // background (background2) + highlight1 on hover, and no press-colour
+    // override, so a click darkens the base like that button does.
     m_btnRefresh = new HoverButton(0, y, 0, rowH, I18n::get("update.page.refresh"));
-    m_btnRefresh->color(tc.background1);
+    m_btnRefresh->color(tc.background2);
     m_btnRefresh->selection_color(tc.highlight1);
-    m_btnRefresh->setPressColor(tc.highlight2);
     m_btnRefresh->labelcolor(tc.text1);
     m_btnRefresh->labelsize(uiFontSize);
     m_btnRefresh->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
@@ -252,7 +254,10 @@ void UpdateDialog::finishFailure(const std::string &message) {
     setBusy(false);
     setTransferMode(false);     // nothing is transferring any more
     setStatus(message.c_str());
-    setInstallable(false);
+    // Re-evaluate instead of forcing the button dim: a failed download must be
+    // retryable, and the manifest on screen still says "newer". After a failed
+    // check the manifest is empty, so this resolves to "not installable".
+    applyInstallability(compareVersions(PECIA_VERSION, m_manifest.version) > 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -282,7 +287,12 @@ void UpdateDialog::setInstallable(bool can) {
 }
 
 std::string UpdateDialog::downloadUrl() const {
-    return (m_source->value() == 1) ? m_manifest.urlGithub : m_manifest.urlGitee;
+    const bool github = m_source->value() == 1;
+    const std::string &preferred = github ? m_manifest.urlGithub : m_manifest.urlGitee;
+    if (!preferred.empty()) return preferred;
+    // A manifest may publish only one mirror. Do not dim the button (or abort a
+    // download) merely because the picker sits on the empty side.
+    return github ? m_manifest.urlGitee : m_manifest.urlGithub;
 }
 
 // One printf-shaped helper, because the status line composes two of these.
@@ -352,25 +362,32 @@ void UpdateDialog::startCheck() {
     setStatus(I18n::get("update.page.checking"));
 
     std::shared_ptr<bool> alive = m_alive;
-    std::thread([this, alive, source, g, h]() {
-        try {
-            UpdateCheckResult r = checkUpdate(PECIA_VERSION, g, h, source);
-            auto *job = new Job<UpdateCheckResult>{ alive, this, r };
-            Fl::awake([](void *d) {
-                auto *j = static_cast<Job<UpdateCheckResult> *>(d);
-                if (*j->alive) j->self->applyCheckResult(j->payload);
-                delete j;
-            }, job);
-        } catch (...) {
-            auto *job = new Job<std::string>{ alive, this,
-                                              I18n::get("update.page.failed") };
-            Fl::awake([](void *d) {
-                auto *j = static_cast<Job<std::string> *>(d);
-                if (*j->alive) j->self->finishFailure(j->payload);
-                delete j;
-            }, job);
-        }
-    }).detach();
+    // The worker body has its own catch-all; this one covers std::thread /
+    // detach failing to start at all (rule: callbacks must never throw into
+    // the FLTK event loop).
+    try {
+        std::thread([this, alive, source, g, h]() {
+            try {
+                UpdateCheckResult r = checkUpdate(PECIA_VERSION, g, h, source);
+                auto *job = new Job<UpdateCheckResult>{ alive, this, r };
+                Fl::awake([](void *d) {
+                    auto *j = static_cast<Job<UpdateCheckResult> *>(d);
+                    if (*j->alive) j->self->applyCheckResult(j->payload);
+                    delete j;
+                }, job);
+            } catch (...) {
+                auto *job = new Job<std::string>{ alive, this,
+                                                  I18n::get("update.page.failed") };
+                Fl::awake([](void *d) {
+                    auto *j = static_cast<Job<std::string> *>(d);
+                    if (*j->alive) j->self->finishFailure(j->payload);
+                    delete j;
+                }, job);
+            }
+        }).detach();
+    } catch (...) {
+        finishFailure(I18n::get("update.page.exception"));
+    }
 }
 
 void UpdateDialog::applyCheckResult(const UpdateCheckResult &r) {
@@ -388,6 +405,13 @@ void UpdateDialog::applyCheckResult(const UpdateCheckResult &r) {
     // update button; the line itself only says if the answer came from the
     // network or from the local manifest.
     setStatus(I18n::get(r.fromCache ? "update.page.local" : "update.page.ok"));
+    // A fresh manifest may have come from the FALLBACK mirror (checkUpdate tries
+    // the selected source first). Move the picker to the source that actually
+    // answered; otherwise the download would use the URL that just failed.
+    if (r.online && !r.fromCache) {
+        m_source->value(r.sourceUsed);
+        m_source->redraw();
+    }
     applyInstallability(r.hasUpdate);
 }
 
@@ -410,7 +434,7 @@ void UpdateDialog::startDownload() {
     setProgress(0.0, I18n::get("update.downloading"));
 
     std::shared_ptr<bool> alive = m_alive;
-    std::thread([this, alive, url, zipPath, exeDir]() {
+    auto work = [this, alive, url, zipPath, exeDir]() {
         auto fail = [this, alive](const std::string &msg) {
             auto *job = new Job<std::string>{ alive, this, msg };
             Fl::awake([](void *d) {
@@ -473,7 +497,14 @@ void UpdateDialog::startDownload() {
         } catch (...) {
             fail(I18n::get("update.page.exception"));
         }
-    }).detach();
+    };
+    // Same guard as startCheck: a failing std::thread/detach must not throw
+    // into the FLTK callback that called us.
+    try {
+        std::thread(work).detach();
+    } catch (...) {
+        finishFailure(I18n::get("update.page.exception"));
+    }
 }
 
 void UpdateDialog::cbRefresh(Fl_Widget *, void *data) {

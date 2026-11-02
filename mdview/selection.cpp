@@ -38,16 +38,23 @@ void TextSelection::build(litehtml::document* doc, litehtml::document_container*
     // 输入把栈打穿（嵌套 200 层以上的列表/引用）。
     // 先声明、后赋值：lambda 要递归就得先能看到自己（默认捕获模式不会带上
     // 正在定义的变量）。
-    std::function<void(const litehtml::element::ptr&, int)> walk;
-    walk = [this, &walk](const litehtml::element::ptr& el, int depth) {
+    // 第三个参数是 block 编号：每进入一个块级元素就换新号，text() 按编号变化
+    // 补换行。不能改用「行间距大于行高」判块边界——preprocess 已把 p+p /
+    // li+li 的外边距清零（见 preprocess.cpp 的 p + p, li + li 规则），段间距
+    // 与行距完全相等，那个判据永远不成立。
+    int nextBlock = 0;
+    std::function<void(const litehtml::element::ptr&, int, int)> walk;
+    walk = [this, &walk, &nextBlock](const litehtml::element::ptr& el, int depth,
+                                     int block) {
             if (!el || depth > 200) return;
             if (el->css().get_display() == litehtml::display_none) return;
 
             // <br> 是 html_tag 而不是文本元素，但复制出来的文字必须有换行。
             if (el->is_break() && !el->is_text()) {
                 Run r;
-                r.text = "\n";
-                r.brk  = true;
+                r.text  = "\n";
+                r.brk   = true;
+                r.block = block;
                 m_runs.push_back(std::move(r));
                 return;
             }
@@ -59,6 +66,13 @@ void TextSelection::build(litehtml::document* doc, litehtml::document_container*
                 r.font  = el->css().get_font();
                 r.space = el->is_space();
                 r.brk   = el->is_break();
+                r.block = block;
+                // white-space 是继承属性：<pre><code> 里的空白必须原样保留，
+                // 否则复制代码时行首缩进和连续空格全被压成一个空格。
+                const litehtml::white_space ws = el->css().get_white_space();
+                r.pre = (ws == litehtml::white_space_pre ||
+                         ws == litehtml::white_space_pre_line ||
+                         ws == litehtml::white_space_pre_wrap);
                 if (r.brk) {
                     // white-space: pre* 里的换行：没有可绘制的框，只参与复制。
                     r.text = "\n";
@@ -69,20 +83,34 @@ void TextSelection::build(litehtml::document* doc, litehtml::document_container*
                 // 框为 0 说明这个文本没有真正排版（display:none / 尚未布局），
                 // 既选不中也没必要留着占索引。
                 if (r.box.width < 0.5f || r.box.height < 0.5f) return;
-                if (r.space) {
+                if (r.space && !r.pre) {
                     // 折叠后的空白：litehtml 画的是 m_transformed_text（单个
                     // 空格），框宽就是这一个空格的宽度。用 " " 作为文本，复制
-                    // 与量宽都和实际绘制一致。
+                    // 与量宽都和实际绘制一致。pre* 里的空白保持原文。
                     r.text = " ";
                 }
                 m_runs.push_back(std::move(r));
                 return;
             }
 
-            for (const auto& c : el->children()) walk(c, depth + 1);
+            int childBlock = block;
+            switch (el->css().get_display()) {
+            case litehtml::display_block:
+            case litehtml::display_list_item:
+            case litehtml::display_table:
+            case litehtml::display_table_cell:
+            case litehtml::display_table_row:
+            case litehtml::display_table_row_group:
+            case litehtml::display_flex:
+                childBlock = ++nextBlock;
+                break;
+            default:
+                break;
+            }
+            for (const auto& c : el->children()) walk(c, depth + 1, childBlock);
         };
 
-    walk(body, 0);
+    walk(body, 0, 0);
 }
 
 void TextSelection::clear()
@@ -379,7 +407,7 @@ std::string TextSelection::text() const
     }
 
     std::string out;
-    int prevBottom = INT_MIN;
+    int prevBlock = -1;
     for (int i = a; i <= b && i < (int)m_runs.size(); ++i) {
         const Run& r = m_runs[(size_t)i];
         const int from = (i == a) ? ao : 0;
@@ -388,38 +416,36 @@ std::string TextSelection::text() const
 
         if (r.brk) {
             if (!out.empty() && out.back() != '\n') out += '\n';
+            prevBlock = r.block;
             continue;
         }
+
+        // 换块 → 补换行；行内软换行不补，和浏览器复制段落一致（复制出来的
+        // 是连贯的一句话，不是按屏幕换行断开）。块边界由 build() 记录的编号
+        // 判断，不依赖像素间距（见 build() 里的说明）。
+        if (r.block >= 0 && prevBlock >= 0 && r.block != prevBlock) {
+            while (!out.empty() && out.back() == ' ') out.pop_back();
+            if (!out.empty() && out.back() != '\n') out += '\n';
+        }
+
         if (r.space) {
-            if (!out.empty() && out.back() != ' ' && out.back() != '\n') out += ' ';
-            continue;
+            if (r.pre) {
+                // code block / pre：空白就是内容，逐字节保留（缩进、连续空格）。
+                out.append(r.text, (size_t)from, (size_t)(to - from));
+            } else if (!out.empty() && out.back() != ' ' && out.back() != '\n') {
+                out += ' ';
+            }
+        } else {
+            out.append(r.text, (size_t)from, (size_t)(to - from));
         }
-
-        // 换了一块（行间距明显大于一行）→ 补换行；行内软换行不补，和浏览器
-        // 复制段落一致（复制出来的是连贯的一句话，不是按屏幕换行断开）。
-        if (!out.empty() && prevBottom != INT_MIN) {
-            const int gap = (int)r.box.top() - prevBottom;
-            if (gap > (int)(r.box.height * 0.9f) && out.back() != '\n') out += '\n';
-        }
-        out.append(r.text, (size_t)from, (size_t)(to - from));
-        prevBottom = (int)r.box.bottom();
+        prevBlock = r.block;
     }
 
-    // 收尾：行尾空格删掉，连续空行压成一行，首尾空白去掉。
-    std::string cleaned;
-    cleaned.reserve(out.size());
-    for (char c : out) {
-        if (c == ' ' && !cleaned.empty() && cleaned.back() == '\n') continue;
-        if (c == '\n') {
-            while (!cleaned.empty() && cleaned.back() == ' ') cleaned.pop_back();
-            if (!cleaned.empty() && cleaned.back() == '\n') continue;
-            if (cleaned.empty()) continue;
-        }
-        cleaned += c;
-    }
-    while (!cleaned.empty() && (cleaned.back() == ' ' || cleaned.back() == '\n'))
-        cleaned.pop_back();
-    return cleaned;
+    // 收尾：只裁掉末尾的空格与换行。pre 块内的空白已在上面原样保留，不能
+    // 再走「行首空格全删」那套折叠规则。
+    while (!out.empty() && (out.back() == ' ' || out.back() == '\n'))
+        out.pop_back();
+    return out;
 }
 
 }  // namespace pecia

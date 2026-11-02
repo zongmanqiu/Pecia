@@ -46,8 +46,8 @@ struct UpdateManifest {
 // Outcome of one check attempt.
 // `online` is the honesty bit: only a freshly fetched manifest may be reported
 // as "you are up to date". A cache left over from an older build reads as
-// "not checked" -- claiming "latest 1.1.2" while 1.1.3 exists is a lie we have
-// seen a real product tell (CurSeen state.rs initial_status, 2026-10-31).
+// "not checked" -- claiming "latest" while a newer release exists is a lie we
+// have seen a real product tell (CurSeen state.rs initial_status, 2026-10-31).
 struct UpdateCheckResult {
     bool           online     = false;  // a manifest was fetched this call
     bool           fromCache  = false;  // verdict came from update.cache.json

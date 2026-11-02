@@ -1393,6 +1393,14 @@ ViewWidget::ViewWidget(int x, int y, int w, int h, MyContainer* container)
     }
 }
 
+ViewWidget::~ViewWidget()
+{
+    // resize() schedules a re-render 120 ms later. Closing the preview or
+    // switching tabs inside that window deletes this widget, and the pending
+    // callback would then dereference freed memory - cancel it on the way out.
+    cancel_deferred_render();
+}
+
 void ViewWidget::load_and_render(const std::string& html)
 {
     if (!m_container) return;

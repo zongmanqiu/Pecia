@@ -428,7 +428,9 @@ void Editor::drawCursorScrollMarker() {
                            mCursorAbsLinePos   == pos &&
                            mCursorAbsLineBufLen == buffer()->length() &&
                            mCursorAbsLineTextW  == text_area.w &&
-                           mCursorAbsLineLineH  == mMaxsize);
+                           mCursorAbsLineLineH  == mMaxsize &&
+                           mCursorAbsLineWrap   == mContinuousWrap &&
+                           mCursorAbsLineWrapPix == mWrapMarginPix);
         absLine = cacheValid ? mCursorAbsLine : (count_lines(0, pos, true) + 1);
     }
 
@@ -437,6 +439,8 @@ void Editor::drawCursorScrollMarker() {
     mCursorAbsLineBufLen = buffer()->length();
     mCursorAbsLineTextW  = text_area.w;
     mCursorAbsLineLineH  = mMaxsize;
+    mCursorAbsLineWrap   = mContinuousWrap;
+    mCursorAbsLineWrapPix = mWrapMarginPix;
 
     double ratio = (static_cast<double>(absLine) - minv) / (maxv - minv);
     if (ratio < 0.0) ratio = 0.0;

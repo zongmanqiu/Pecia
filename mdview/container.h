@@ -326,6 +326,7 @@ public:
     static constexpr size_t kChunkThreshold = 256 * 1024;
 
     ViewWidget(int x, int y, int w, int h, MyContainer*);
+    ~ViewWidget() override;
     void load_and_render(const std::string& html);
     void clear();
     bool has_content() const;

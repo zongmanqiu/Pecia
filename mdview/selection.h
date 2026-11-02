@@ -91,6 +91,8 @@ private:
         litehtml::uint_ptr font = 0;   // 量宽度用的字体句柄（容器持有）
         bool space = false;            // 空白元素（el_space）
         bool brk = false;              // white-space: pre* 里的换行
+        bool pre = false;              // white-space: pre*（空白是内容，必须原样保留）
+        int  block = -1;               // 所属块级元素编号（复制时块边界补换行）
     };
 
     // run 内前 byte_off 个字节的宽度（相对 run 框左缘）。

@@ -701,6 +701,9 @@ void MainWindow::applySettings(Config &cfg) {
         m_baseFontSize = fontSize;
         m_editorFontSize = fontSize;
         m_cfg->setEditorZoomSize(0);
+        // 基准字号变了，预览比例 = 字号/基准字号 也随之改变（新基准下就是
+        // 1.0）；不调用的话预览会停在旧比例，字号与编辑区不一致。
+        syncPreviewFontScale();
     }
     bool ln = cfg.getLineNumbers();
     bool wrap = cfg.getWrap();

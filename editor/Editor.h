@@ -251,6 +251,8 @@ private:
     int  mCursorAbsLineBufLen = -1;
     int  mCursorAbsLineTextW = -1;
     int  mCursorAbsLineLineH = -1;
+    int  mCursorAbsLineWrap  = -1;  // 折行开关（mContinuousWrap）
+    int  mCursorAbsLineWrapPix = -1; // 折行边距（mWrapMarginPix）
 
     bool            m_compActive = false;       // IME composition in progress
     int             m_compStart = -1;           // buffer position where the composition lands

@@ -303,13 +303,19 @@ bool httpGetBody(const std::string &url, int timeoutMs, std::string &out, std::s
             if (outStatus) *outStatus = status;
         }
         char buf[16384];
-        DWORD read = 0;
         out.clear();
-        while (WinHttpReadData(hR, buf, sizeof(buf), &read) && read > 0) {
-            out.append(buf, read);
-            read = 0;
+        bool readOk = true;
+        for (;;) {
+            DWORD chunk = 0;
+            // TRUE + 0 bytes = the server finished sending. FALSE = the
+            // connection broke mid-body: a truncated manifest must not be
+            // handed to the JSON parser as if it were complete.
+            if (!WinHttpReadData(hR, buf, sizeof(buf), &chunk)) { readOk = false; break; }
+            if (chunk == 0) break;
+            out.append(buf, chunk);
         }
         WinHttpCloseHandle(hR); WinHttpCloseHandle(hC); WinHttpCloseHandle(hS);
+        if (!readOk) { err = "download interrupted"; return false; }
         return true;
     }
     err = "too many redirects";
@@ -390,22 +396,46 @@ bool httpDownload(const std::string &url, const std::wstring &savePathW,
             }
         }
         char buf[16384];
-        DWORD read = 0, written = 0;
+        DWORD written = 0;
         long long received = 0;
         bool good = true;
+        bool readOk = true;
         if (progress) progress(received, total);
-        while (WinHttpReadData(hR, buf, sizeof(buf), &read) && read > 0) {
-            if (!WriteFile(hf, buf, read, &written, nullptr) || written != read) { good = false; break; }
-            received += read;
+        for (;;) {
+            DWORD chunk = 0;
+            // TRUE + 0 bytes = the body ended normally. FALSE = the link broke;
+            // the old loop treated that as success, so a half-downloaded zip
+            // reached the updater and the UI claimed "download complete".
+            if (!WinHttpReadData(hR, buf, sizeof(buf), &chunk)) { readOk = false; break; }
+            if (chunk == 0) break;
+            if (!WriteFile(hf, buf, chunk, &written, nullptr) || written != chunk) {
+                good = false;
+                break;
+            }
+            received += chunk;
             if (progress) progress(received, total);
-            read = 0;
         }
         CloseHandle(hf);
+        WinHttpCloseHandle(hR); WinHttpCloseHandle(hC); WinHttpCloseHandle(hS);
         if (!good) {
             err = "write failed";
-            WinHttpCloseHandle(hR); WinHttpCloseHandle(hC); WinHttpCloseHandle(hS); return false;
+            DeleteFileW(savePathW.c_str());
+            return false;
         }
-        WinHttpCloseHandle(hR); WinHttpCloseHandle(hC); WinHttpCloseHandle(hS);
+        if (!readOk) {
+            err = "download interrupted";
+            DeleteFileW(savePathW.c_str());
+            return false;
+        }
+        // A clean EOF is not proof of a complete file: when the server sent a
+        // Content-Length, the received size must match it. CDN chunked
+        // responses have no length (total == 0) and rely on the EOF above.
+        if (total > 0 && received != total) {
+            err = "truncated download (" + std::to_string(received) + " of " +
+                  std::to_string(total) + " bytes)";
+            DeleteFileW(savePathW.c_str());
+            return false;
+        }
         return true;
     }
     err = "too many redirects";
@@ -553,15 +583,24 @@ bool writeUpdateBat(const std::string &exeDirUtf8, const std::string &zipPathUtf
     b += L(">>\"!LOG!\" echo APP=!APP!");
     b += L(">>\"!LOG!\" echo ZIP=!ZIP!");
 
-    // 4. close the running program (user's step 4)
+    // 4. close this installation's processes: Pecia + the Lua console + the AI
+    //    chat window. Scope by ExecutablePath, NOT by image name: the old
+    //    "taskkill /f /im Pecia.exe" killed every Pecia.exe on the machine
+    //    (this program allows multi-instance use, and another copy lives in
+    //    another directory), and its retry loop had no bound - a process that
+    //    refused to die hung the updater forever.
     b += L("echo [1/6] Closing Pecia...");
     b += L(">>\"!LOG!\" echo [1/6] closing");
+    b += L("set \"TRIES=0\"");
     b += L(":waitkill");
-    b += L("tasklist /fi \"ImageName eq Pecia.exe\" 2>nul | find \"Pecia.exe\" >nul");
-    b += L("if errorlevel 1 goto killed");
-    b += L("taskkill /f /im Pecia.exe >nul 2>nul");
-    b += L("timeout /t 1 /nobreak >nul");
-    b += L("goto waitkill");
+    b += L("set /a TRIES+=1");
+    b += L("if !TRIES! GTR 10 goto killfail");
+    b += L("powershell -NoProfile -ExecutionPolicy Bypass -Command \"$ps=@(Get-CimInstance Win32_Process | Where-Object { @('Pecia.exe','PeciaLua.exe','PeciaAIChat.exe') -contains $_.Name -and $_.ExecutablePath -and ([IO.Path]::GetDirectoryName($_.ExecutablePath) -ieq $env:APPD) }); foreach($p in $ps){ Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }; if($ps.Count -gt 0){ exit 1 } else { exit 0 }\"");
+    b += L("if errorlevel 1 (timeout /t 1 /nobreak >nul & goto waitkill)");
+    b += L("goto killed");
+    b += L(":killfail");
+    b += L(">>\"!LOG!\" echo could not close every process of this installation after 10 tries");
+    b += L("set \"FAIL=1\"");
     b += L(":killed");
     b += L("timeout /t 3 /nobreak >nul");   // let the file lock settle
     b += L("if exist \"!APP!Pecia.exe\" (>>\"!LOG!\" echo exe-present) else (>>\"!LOG!\" echo exe-MISSING)");
