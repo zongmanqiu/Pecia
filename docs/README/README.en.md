@@ -4,7 +4,7 @@
 
 # Pecia — Minimalist Text Editor
 
-**[⬇️ Download 1.1.2 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ **[⬇️ Download 1.1.2 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ [Gitee Repo](https://gitee.com/qiuzongman/pecia) ｜ [GitHub Mirror](https://github.com/zongmanqiu/Pecia) | [Bilibili Demo](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ Download 1.1.3 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ Download 1.1.3 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Gitee Repo](https://gitee.com/qiuzongman/pecia) ｜ [GitHub Mirror](https://github.com/zongmanqiu/Pecia) | [Bilibili Demo](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 A lightweight text editor for Windows built with C++17 + FLTK. Multi-tab, instant opening of large files, multiple encoding support, Lua scripting extensions. New: side panel (file tree / outline), font picker dialog, window shadows; chunked Markdown preview for very large documents.
 
@@ -48,7 +48,7 @@ A lightweight text editor for Windows built with C++17 + FLTK. Multi-tab, instan
 REM After downloading the source, just double-click this single script.
 REM It runs everything in sequence: 1 check toolchain → 2 download 6 third-party libraries → 3 apply patches →
 REM 4 cargo fetch + compile two Rust FFI libraries → 5 compile FLTK + CMake builds Pecia trio →
-REM run 27 unit tests.
+REM run 33 unit tests.
 REM First build time depends on network and machine; subsequent builds reuse the cache, incremental compile + test takes about 1-2 minutes.
 build\full.bat
 ```

@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ Unduh 1.1.2 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ **[⬇️ Unduh 1.1.2 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ [Repo Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Mirror GitHub](https://github.com/zongmanqiu/Pecia) | [Demo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ Unduh 1.1.3 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ Unduh 1.1.3 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Repo Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Mirror GitHub](https://github.com/zongmanqiu/Pecia) | [Demo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 Editor teks ringan untuk Windows berbasis C++17 + FLTK. Mendukung multi-tab, membuka file besar secara instan, multi-encoding, dan ekstensi skrip Lua. Baru: panel samping (pohon berkas/kerangka), dialog pemilih font, bayangan jendela; pratinjau Markdown merender dokumen sangat besar per blok.
 
@@ -49,7 +49,7 @@ Editor teks ringan untuk Windows berbasis C++17 + FLTK. Mendukung multi-tab, mem
 FTER mengunduh source code, cukup klik dua kali script ini.
 REM Ini menjalankan secara berurutan: 1 pengecekan toolchain → 2 mengunduh 6 pustaka pihak ketiga → 3 menerapkan patch →
 REM 4 cargo fetch + mengkompilasi dua Rust FFI → 5 mengkompilasi FLTK + CMake Pecia tiga paket →
-REM menjalankan 26 unit test.
+REM menjalankan 33 unit test.
 REM Waktu pertama bergantung pada kecepatan internet dan komputer; setelah itu menggunakan cache, kompilasi increment + test sekitar 1-2 menit.
 build\full.bat
 ```

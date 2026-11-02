@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ Скачать 1.1.2 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ **[⬇️ Скачать 1.1.2 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ [Репозиторий Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Зеркало GitHub](https://github.com/zongmanqiu/Pecia) | [Демо на Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ Скачать 1.1.3 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ Скачать 1.1.3 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Репозиторий Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Зеркало GitHub](https://github.com/zongmanqiu/Pecia) | [Демо на Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 Легковесный текстовый редактор для Windows на базе C++17 + FLTK. Много вкладок, мгновенное открытие больших файлов, поддержка множества кодировок, расширение скриптами на Lua. Новое: боковая панель (дерево файлов/структура), диалог выбора шрифта, тени окон; предпросмотр Markdown рендерит очень большие документы по блокам.
 
@@ -48,7 +48,7 @@
 REM После скачивания исходного кода просто дважды щёлкните по этому скрипту.
 REM Он последовательно выполняет: 1 проверка цепочки инструментов → 2 загрузка 6 сторонних библиотек → 3 применение патчей →
 REM 4 cargo fetch + сборка двух Rust FFI → 5 сборка FLTK + CMake сборка Pecia →
-REM запуск 26 unit-тестов.
+REM запуск 33 unit-тестов.
 REM Время первой сборки зависит от сети и мощности ПК; повторные сборки используют кэш, инкрементальная сборка + тесты занимают ~1-2 минуты.
 build\full.bat
 ```

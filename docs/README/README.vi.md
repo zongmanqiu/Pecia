@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ Tải 1.1.2 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ **[⬇️ Tải 1.1.2 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ [Kho Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Mirror GitHub](https://github.com/zongmanqiu/Pecia) | [Demo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ Tải 1.1.3 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ Tải 1.1.3 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Kho Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Mirror GitHub](https://github.com/zongmanqiu/Pecia) | [Demo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 Trình soạn thảo văn bản nhẹ cho Windows, dựa trên C++17 + FLTK. Hỗ trợ nhiều tab, mở file lớn tức thì, đa mã hóa, mở rộng bằng script Lua. Mới: bảng bên (cây tệp/dàn ý), hộp thoại chọn phông chữ, đổ bóng cửa sổ; xem trước Markdown kết xuất tài liệu rất lớn theo khối.
 
@@ -48,7 +48,7 @@ Trình soạn thảo văn bản nhẹ cho Windows, dựa trên C++17 + FLTK. H�
 REM Sau khi tải mã nguồn, chỉ cần click đôi script này.
 REM Nó chạy lần lượt: 1 kiểm tra công cụ build → 2 tải 6 thư viện bên thứ ba → 3 áp dụng patch →
 REM 4 cargo fetch + biên dịch 2 Rust FFI → 5 biên dịch FLTK + CMake biên dịch bộ ba Pecia →
-REM chạy 26 unit test.
+REM chạy 33 unit test.
 REM Thời gian lần đầu phụ thuộc vào mạng và máy; sau đó dùng lại cache, build tăng dần + test khoảng 1-2 phút.
 build\full.bat
 ```

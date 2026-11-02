@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ 下載 1.1.2 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ **[⬇️ 下載 1.1.2 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ [Gitee 主倉](https://gitee.com/qiuzongman/pecia) ｜ [GitHub 鏡像](https://github.com/zongmanqiu/Pecia) | [B 站影片示範](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ 下載 1.1.3 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ 下載 1.1.3 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Gitee 主倉](https://gitee.com/qiuzongman/pecia) ｜ [GitHub 鏡像](https://github.com/zongmanqiu/Pecia) | [B 站影片示範](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 基於 C++17 + FLTK 的 Windows 輕量級文字編輯器。多標籤、大檔案秒開、多編碼支援、Lua 腳本擴充。新增：側邊欄（檔案樹/大綱）、字型選擇對話方塊、視窗陰影；Markdown 預覽對超大檔案分塊渲染。
 
@@ -53,7 +53,7 @@
 REM 下載原始碼後，只需按兩下這一個腳本。
 REM 它按順序跑完：1 體檢工具鏈 → 2 下載 6 個第三方庫 → 3 套用補丁 →
 REM 4 cargo fetch + 編兩個 Rust FFI → 5 編 FLTK + CMake 編 Pecia 三件套 →
-REM 運行 26 個單測。
+REM 運行 33 個單測。
 REM 首次耗時取決於網路與機器；之後複用快取，增量編譯 + 測試約 1-2 分鐘。
 build\full.bat
 ```

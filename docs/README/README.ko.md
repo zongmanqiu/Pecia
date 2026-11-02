@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ 1.1.2 다운로드 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ **[⬇️ 1.1.2 다운로드 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ [Gitee 저장소](https://gitee.com/qiuzongman/pecia) ｜ [GitHub 미러](https://github.com/zongmanqiu/Pecia) | [Bilibili 데모](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ 1.1.3 다운로드 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ 1.1.3 다운로드 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Gitee 저장소](https://gitee.com/qiuzongman/pecia) ｜ [GitHub 미러](https://github.com/zongmanqiu/Pecia) | [Bilibili 데모](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 C++17 + FLTK 기반 Windows 경량 텍스트 편집기. 멀티 탭, 대용량 파일 즉시 열기, 다중 인코딩 지원, Lua 스크립트 확장. 새 기능: 사이드 패널(파일 트리/개요), 글꼴 선택 대화상자, 창 그림자. Markdown 미리보기는 초대형 문서를 분할 렌더링합니다.
 
@@ -48,7 +48,7 @@ C++17 + FLTK 기반 Windows 경량 텍스트 편집기. 멀티 탭, 대용량 �
 REM 소스 코드를 다운로드한 후 이 스크립트 하나만 더블클릭하면 됩니다.
 REM 순서대로 실행됩니다: 1 도구 체인 검사 → 2 서드파티 라이브러리 6개 다운로드 → 3 패치 적용 →
 REM 4 cargo fetch + Rust FFI 2개 컴파일 → 5 FLTK 컴파일 + CMake로 Pecia 3종 세트 컴파일 →
-REM 단위 테스트 26개 실행.
+REM 단위 테스트 33개 실행.
 REM 최초 소요 시간은 네트워크와 컴퓨터 사양에 따라 다릅니다; 이후 캐시를 재사용하여
 REM 증분 컴파일 + 테스트 시 약 1-2분 소요.
 build\full.bat

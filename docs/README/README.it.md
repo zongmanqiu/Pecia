@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ Scarica 1.1.2 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ **[⬇️ Scarica 1.1.2 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ [Repo Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Mirror GitHub](https://github.com/zongmanqiu/Pecia) | [Demo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ Scarica 1.1.3 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ Scarica 1.1.3 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Repo Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Mirror GitHub](https://github.com/zongmanqiu/Pecia) | [Demo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 Editor di testo leggero per Windows basato su C++17 + FLTK. Supporto multi-schede, apertura istantanea di file di grandi dimensioni, supporto multiplo per le codifiche, estensione tramite script Lua. Novità: pannello laterale (albero dei file/struttura), finestra di scelta del font, ombre delle finestre; l'anteprima Markdown esegue il rendering a blocchi dei documenti molto grandi.
 
@@ -48,7 +48,7 @@ Editor di testo leggero per Windows basato su C++17 + FLTK. Supporto multi-sched
 Scarico il sorgente, poi basta un doppio clic su questo script.
 Esegue in sequenza: 1 verifica della toolchain → 2 download di 6 librerie di terze parti → 3 applicazione delle patch →
 4 cargo fetch + compilazione di due FFI Rust → 5 compilazione FLTK + CMake per i tre componenti Pecia →
-esecuzione di 26 unit test.
+esecuzione di 33 unit test.
 La durata della prima build dipende dalla rete e dalla potenza della workstation; le build successive sfruttano la cache, con compilazione incrementale + test in ~1-2 minuti.
 build\full.bat
 ```

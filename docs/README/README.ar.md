@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ تنزيل 1.1.2 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ **[⬇️ تنزيل 1.1.2 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ [مستودع Gitee](https://gitee.com/qiuzongman/pecia) ｜ [مرآة GitHub](https://github.com/zongmanqiu/Pecia) | [عرض فيديو Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ تنزيل 1.1.3 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ تنزيل 1.1.3 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [مستودع Gitee](https://gitee.com/qiuzongman/pecia) ｜ [مرآة GitHub](https://github.com/zongmanqiu/Pecia) | [عرض فيديو Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 محرر نصوص خفيف الوزن للنظام التشغيلي Windows مبني على C++17 + FLTK. دعم علامات تبويب متعددة، فتح الملفات الكبيرة فوراً، ترميزات متعددة، وامتدادات سكريبت Lua. جديد: لوحة جانبية (شجرة الملفات/المخطط)، مربع حوار اختيار الخط، ظلال النوافذ؛ معاينة Markdown تعرض المستندات الضخمة على شكل أقسام.
 
@@ -53,7 +53,7 @@
 REM بعد تنزيل الكود المصدري، فقط انقر نقرة مزدوجة على هذا السكريبت.
 REM يعمل بالترتيب: 1 فحص سلسلة الأدوات ← 2 تنزيل 6 مكتبات خارجية ← 3 تطبيق الرقع ←
 REM 4 cargo fetch + ترجمة مكتبتين Rust FFI ← 5 ترجمة FLTK + CMake ترجمة حزمة Pecia ←
-REM تشغيل 26 اختباراً.
+REM تشغيل 33 اختباراً.
 REM يعتمد وقت البناء الأول على سرعة الإنترنت والجهاز؛ بعدها يُعاد استخدام الكاش، والترجمة التدريجية + الاختبارات تستغرق حوالي 1-2 دقيقة.
 build\full.bat
 ```

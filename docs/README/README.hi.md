@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ 1.1.2 डाउनलोड करें (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ **[⬇️ 1.1.2 डाउनलोड करें (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ [Gitee रिपॉज़िटरी](https://gitee.com/qiuzongman/pecia) ｜ [GitHub मिरर](https://github.com/zongmanqiu/Pecia) | [Bilibili डेमो](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ 1.1.3 डाउनलोड करें (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ 1.1.3 डाउनलोड करें (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Gitee रिपॉज़िटरी](https://gitee.com/qiuzongman/pecia) ｜ [GitHub मिरर](https://github.com/zongmanqiu/Pecia) | [Bilibili डेमो](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 C++17 + FLTK आधारित Windows हल्का पाठ संपादक। मल्टी-टैब, बड़ी फ़ाइलें तुरंत खुलती हैं, बहु-एन्कोडिंग समर्थन, Lua स्क्रिप्ट एक्सटेंशन। नया: साइड पैनल (फ़ाइल ट्री/रूपरेखा), फ़ॉन्ट चयन संवाद, विंडो छाया; Markdown पूर्वावलोकन बहुत बड़े दस्तावेज़ों को खंडों में प्रस्तुत करता है।
 
@@ -49,7 +49,7 @@ C++17 + FLTK आधारित Windows हल्का पाठ संपा�
 REM स्रोत कोड डाउनलोड करने के बाद, बस इस एक स्क्रिप्ट पर डबल-क्लिक करें।
 REM या क्रम में चलाता है: 1 टूलचेन जाँच → 2 छह तृतीय-पक्ष लाइब्रेरी डाउनलोड → 3 पैच लागू →
 REM 4 cargo fetch + दो Rust FFI कंपाइल → 5 FLTK + CMake Pecia तीन पैकेज कंपाइल →
-REM 26 यूनिट टेस्ट चलाएँ।
+REM 33 यूनिट टेस्ट चलाएँ।
 REM पहली बार का समय इंटरनेट और मशीन पर निर्भर; बाद में कैश पुनः उपयोग, इंक्रीमेंटल कंपाइल + टेस्ट लगभग 1-2 मिनट।
 build\full.bat
 ```

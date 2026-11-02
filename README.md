@@ -20,8 +20,8 @@
 
 ---
 
-**[⬇️ 下载 1.1.2 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)**
- ｜ **[⬇️ 下载 1.1.2 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)**
+**[⬇️ 下载 1.1.3 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)**
+ ｜ **[⬇️ 下载 1.1.3 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)**
  ｜ [Gitee主仓](https://gitee.com/qiuzongman/pecia)
  ｜ [GitHub镜像](https://github.com/zongmanqiu/Pecia)
  ｜ [B站视频演示](https://www.bilibili.com/video/BV144Yo6oEz9/)
@@ -72,7 +72,7 @@
 REM 下载源码后,只需双击这一个脚本。
 REM 它按顺序跑完:1 体检工具链 → 2 下载 6 个第三方库 → 3 应用补丁 →
 REM 4 cargo fetch + 编两个 Rust FFI → 5 编 FLTK + CMake 编 Pecia 三件套 →
-REM 运行 26 个单测。
+REM 运行 33 个单测。
 REM 首次耗时取决于网络与机器;之后复用缓存,增量编译 + 测试约 1-2 分钟。
 build\full.bat
 ```

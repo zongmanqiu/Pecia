@@ -2,7 +2,7 @@
 
 # Pecia — Editor de texto minimalista
 
-**[⬇️ Descargar 1.1.2 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ **[⬇️ Descargar 1.1.2 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ [Repo de Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Espejo de GitHub](https://github.com/zongmanqiu/Pecia) | [Demo en Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ Descargar 1.1.3 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ Descargar 1.1.3 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Repo de Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Espejo de GitHub](https://github.com/zongmanqiu/Pecia) | [Demo en Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 Un editor de texto ligero para Windows basado en C++17 + FLTK. Con pestañas múltiples, apertura instantánea de archivos grandes, soporte multi-codificación y extensiones mediante scripts Lua. Nuevo: panel lateral (árbol de archivos/esquema), diálogo de selección de fuente, sombras de ventana; la vista previa de Markdown renderiza por bloques los documentos muy grandes.
 
@@ -46,7 +46,7 @@ Un editor de texto ligero para Windows basado en C++17 + FLTK. Con pestañas mú
 # Después de descargar el código fuente, basta con hacer doble clic en este script.
 # Ejecuta en orden: 1 verificación de la cadena de herramientas → 2 descarga de 6 bibliotecas de terceros → 3 aplicación de parches →
 # 4 cargo fetch + compilación de dos FFI Rust → 5 compilación de FLTK + build CMake del trío Pecia →
-# ejecución de 26 pruebas unitarias.
+# ejecución de 33 pruebas unitarias.
 # La duración de la primera compilación depende de la red y el equipo; después se reutiliza la caché, compilación incremental + prueba ≈ 1-2 minutos.
 build\full.bat
 ```

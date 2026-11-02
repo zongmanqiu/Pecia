@@ -2,7 +2,7 @@
 
 # Pecia — Éditeur de texte minimaliste
 
-**[⬇️ Télécharger 1.1.2 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ **[⬇️ Télécharger 1.1.2 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ [Dépôt Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Miroir GitHub](https://github.com/zongmanqiu/Pecia) | [Démo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ Télécharger 1.1.3 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ Télécharger 1.1.3 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Dépôt Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Miroir GitHub](https://github.com/zongmanqiu/Pecia) | [Démo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 Un éditeur de texte léger pour Windows basé sur C++17 + FLTK. Onglets multiples, ouverture rapide de gros fichiers, support multi-encodage et extensions par scripts Lua. Nouveau : panneau latéral (arborescence/plan), boîte de dialogue de choix de police, ombres de fenêtre ; aperçu Markdown par blocs pour les très gros documents.
 
@@ -46,7 +46,7 @@ Un éditeur de texte léger pour Windows basé sur C++17 + FLTK. Onglets multipl
 # Après le téléchargement du code source, il suffit de double-cliquer sur ce script.
 # Il exécute dans l'ordre : 1 vérification de la chaîne d'outils → 2 téléchargement de 6 bibliothèques tierces → 3 application des patches →
 # 4 cargo fetch + compilation de deux FFI Rust → 5 compilation FLTK + build CMake du trio Pecia →
-# exécution de 27 tests unitaires.
+# exécution de 33 tests unitaires.
 # La durée du premier build dépend de la connexion et de la machine ; les builds suivants réutilisent le cache, compilation incrémentale + test ≈ 1-2 minutes.
 build\full.bat
 ```

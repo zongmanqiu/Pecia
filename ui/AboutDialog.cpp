@@ -29,33 +29,52 @@
 
 namespace {
 
-// Clickable URL hyperlink widget for the About dialog.
-class UrlWidget : public Fl_Widget {
+// Clickable repository row for the About dialog: "<localized prefix> Gitee |
+// GitHub". The prefix is localized (it carries the language's own colon
+// convention); the two repository names are brand names and stay as-is. Each
+// name is its own hit region, so both URLs are reachable from the row.
+class RepoLinksWidget : public Fl_Widget {
 public:
-    UrlWidget(int X, int Y, int W, int H, const char *label, const char *url, const Theme *theme)
-        : Fl_Widget(X, Y, W, H), m_label(label), m_url(url ? url : ""), m_theme(theme) {
+    RepoLinksWidget(int X, int Y, int W, int H, const char *prefix,
+                    const char *giteeUrl, const char *githubUrl, const Theme *theme)
+        : Fl_Widget(X, Y, W, H), m_prefix(prefix ? prefix : ""), m_theme(theme) {
         box(FL_NO_BOX);
+        m_link[0].label = "Gitee";
+        m_link[0].url = giteeUrl ? giteeUrl : "";
+        m_link[1].label = "GitHub";
+        m_link[1].url = githubUrl ? githubUrl : "";
     }
+
+    // Full row text as one string; AboutPanel::contentWidth() measures it so
+    // the window is wide enough for the whole row. The leading space mirrors
+    // the fixed prefix gap used by layout().
+    static std::string fullLabel(const char *prefix) {
+        return std::string(prefix ? prefix : "") + " Gitee | GitHub";
+    }
+
     int handle(int event) override {
         switch (event) {
         case FL_ENTER:
-            m_hover = true;
-            redraw();
+        case FL_MOVE: {
+            const int hit = hitAt(Fl::event_x());
+            if (hit != m_hover) { m_hover = hit; redraw(); }
             return 1;
+        }
         case FL_LEAVE:
-            m_hover = false;
-            redraw();
+            if (m_hover != -1) { m_hover = -1; redraw(); }
             return 1;
         case FL_PUSH:
             return 1;
-        case FL_RELEASE:
-            if (Fl::event_inside(this)) {
+        case FL_RELEASE: {
+            if (!Fl::event_inside(this)) return 0;
+            const int hit = hitAt(Fl::event_x());
 #if defined(_WIN32)
-                ShellExecuteA(nullptr, "open", m_url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            if (hit >= 0 && !m_link[hit].url.empty())
+                ShellExecuteA(nullptr, "open", m_link[hit].url.c_str(), nullptr,
+                              nullptr, SW_SHOWNORMAL);
 #endif
-                return 1;
-            }
-            return 0;
+            return 1;
+        }
         }
         return 0;
     }
@@ -64,27 +83,61 @@ public:
         // Clear background first so antialiased text edges blend with a clean
         // surface instead of bleeding colors from the parent panel beneath.
         fl_rectf(x(), y(), w(), h(), m_theme ? m_theme->colors().background1 : FL_WHITE);
-        const Fl_Color textCol = m_hover
-            ? (m_theme ? m_theme->colors().highlight3 : FL_BLUE)
-            : (m_theme ? m_theme->colors().text1 : FL_BLACK);
-        fl_font(FL_HELVETICA, m_fs);
-        fl_color(textCol);
-        const int tw = (int)fl_width(m_label);
-        const int tx = x() + w() / 2 - tw / 2;
-        const int ty = y() + m_fs;
-        fl_draw(m_label, tx, ty);
-        fl_line_style(FL_SOLID, 1);
-        fl_color(textCol);
-        fl_line(tx, ty + 2, tx + tw, ty + 2);
-        fl_line_style(0);
+        const Fl_Color base = m_theme ? m_theme->colors().text1 : FL_BLACK;
+        const Fl_Color hot = m_theme ? m_theme->colors().highlight3 : FL_BLUE;
+        int tx = 0, ty = 0, segX[2] = {0, 0}, segW[2] = {0, 0};
+        layout(&tx, &ty, segX, segW);
+        fl_color(base);
+        fl_draw(m_prefix.c_str(), tx, ty);
+        for (int i = 0; i < 2; ++i) {
+            if (i == 1) {
+                fl_color(base);
+                fl_draw(m_sep, segX[0] + segW[0], ty);
+            }
+            const Fl_Color col = (i == m_hover) ? hot : base;
+            fl_color(col);
+            fl_draw(m_link[i].label.c_str(), segX[i], ty);
+            fl_line_style(FL_SOLID, 1);
+            fl_color(col);
+            fl_line(segX[i], ty + 2, segX[i] + segW[i], ty + 2);
+            fl_line_style(0);
+        }
         fl_pop_clip();
     }
     void setFontSize(int fs) { m_fs = fs; }
 private:
-    const char *m_label;
-    std::string m_url;
+    struct Link { std::string label, url; };
+    // Centered row geometry; both draw() and hitAt() use this so the painted
+    // links and their clickable regions can never drift apart. The prefix value
+    // is trimmed by the I18n loader, so the space between the (language's own)
+    // colon and "Gitee" is a fixed gap here rather than trailing whitespace.
+    void layout(int *tx, int *ty, int segX[2], int segW[2]) const {
+        fl_font(FL_HELVETICA, m_fs);
+        const int pw  = (int)fl_width(m_prefix.c_str());
+        const int lw0 = (int)fl_width(m_link[0].label.c_str());
+        const int lw1 = (int)fl_width(m_link[1].label.c_str());
+        const int sw  = (int)fl_width(m_sep);
+        const int gap = 4;   // one space at 14px
+        const int total = pw + gap + lw0 + sw + lw1;
+        *tx = x() + (w() - total) / 2;
+        *ty = y() + m_fs;
+        segX[0] = *tx + pw + gap;
+        segW[0] = lw0;
+        segX[1] = segX[0] + lw0 + sw;
+        segW[1] = lw1;
+    }
+    int hitAt(int px) const {
+        int tx = 0, ty = 0, segX[2] = {0, 0}, segW[2] = {0, 0};
+        layout(&tx, &ty, segX, segW);
+        for (int i = 0; i < 2; ++i)
+            if (px >= segX[i] && px < segX[i] + segW[i]) return i;
+        return -1;
+    }
+    std::string m_prefix;
+    const char *m_sep = " | ";
+    Link m_link[2];
     const Theme *m_theme;
-    bool m_hover = false;
+    int m_hover = -1;
     int m_fs = 14;
 };
 
@@ -187,8 +240,8 @@ public:
     static constexpr int kMinW     = 2 * kQrSize + kQrGap + 2 * kSidePad;  // = 368
     static constexpr int kMinH     = 490;
     // Index (0-based) of the line reserved for the clickable repository
-    // link. The text itself is empty - UrlWidget is placed over it - so both
-    // the panel layout and the widget must agree on this index.
+    // row. The text itself is empty - RepoLinksWidget is placed over it - so
+    // both the panel layout and the widget must agree on this index.
     static constexpr size_t kUrlLineIndex = 6;
     // Desired breathing room between the QR block and the window's bottom
     // border line (used when computing the adaptive window height).
@@ -384,7 +437,10 @@ public:
         std::string copyright = zh ? "Copyright © 2026 邱宗满"
                                    : "Copyright © 2026 Qiu Zongman";
         std::string license = I18n::getOr("about.licenseLine", "Licensed under AGPL-3.0");
-        std::string project = "https://gitee.com/qiuzongman/pecia";
+        // Both repositories are reachable from the one row: Gitee is primary,
+        // GitHub is its automatic mirror.
+        const std::string repoGitee = "https://gitee.com/qiuzongman/pecia";
+        const std::string repoGithub = "https://github.com/zongmanqiu/Pecia";
         const char *donateRaw = I18n::get("about.donate");
         std::string donate = (donateRaw && *donateRaw && strcmp(donateRaw, "about.donate") != 0)
                                  ? std::string(donateRaw) : "";
@@ -405,15 +461,17 @@ public:
         m_panel->setQrCaptions(I18n::getOr("about.wechat", "微信"),
                                I18n::getOr("about.alipay", "支付宝"));
 
-        // Clickable URL hyperlink. Y comes from AboutPanel's own layout math
+        // Clickable repository row. Y comes from AboutPanel's own layout math
         // (lineTopY) instead of being recomputed here, so it stays on the
         // drawn line even if lines are added or the slogan is empty.
         {
-            const char *repoLabel = I18n::getOr("about.project", "Gitee");
-            m_panel->setUrlLabel(repoLabel);
-            m_urlWidget = new UrlWidget(0,
-                                        TITLE_H + m_panel->lineTopY(AboutPanel::kUrlLineIndex),
-                                        W, fs + 8, repoLabel, project.c_str(), theme);
+            const char *repoPrefix = I18n::getOr("about.project", "项目仓库：");
+            const std::string rowLabel = RepoLinksWidget::fullLabel(repoPrefix);
+            m_panel->setUrlLabel(rowLabel.c_str());
+            m_urlWidget = new RepoLinksWidget(0,
+                                              TITLE_H + m_panel->lineTopY(AboutPanel::kUrlLineIndex),
+                                              W, fs + 8, repoPrefix,
+                                              repoGitee.c_str(), repoGithub.c_str(), theme);
             m_urlWidget->setFontSize(fs);
         }
 
@@ -452,7 +510,7 @@ public:
 
 private:
     AboutPanel *m_panel = nullptr;
-    UrlWidget *m_urlWidget = nullptr;
+    RepoLinksWidget *m_urlWidget = nullptr;
 };
 
 } // namespace

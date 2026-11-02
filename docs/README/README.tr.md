@@ -4,7 +4,7 @@
 
 ---
 
-**[⬇️ 1.1.2 indir (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ **[⬇️ 1.1.2 indir (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ [Gitee Deposu](https://gitee.com/qiuzongman/pecia) ｜ [GitHub Aynası](https://github.com/zongmanqiu/Pecia) | [Bilibili Demosu](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ 1.1.3 indir (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ 1.1.3 indir (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Gitee Deposu](https://gitee.com/qiuzongman/pecia) ｜ [GitHub Aynası](https://github.com/zongmanqiu/Pecia) | [Bilibili Demosu](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 C++17 + FLTK tabanlı Windows için hafif metin düzenleyici. Çoklu sekme, büyük dosyaları anında açma, çoklu kodlama desteği, Lua betik genişletme desteği. Yeni: yan panel (dosya ağacı/ana hat), yazı tipi seçim iletişim kutusu, pencere gölgeleri; Markdown önizlemesi çok büyük belgeleri bloklar hâlinde işler.
 
@@ -48,7 +48,7 @@ C++17 + FLTK tabanlı Windows için hafif metin düzenleyici. Çoklu sekme, büy
 REM Kaynak kodunu indirdikten sonra, yalnızca bu betiği çift tıklayın.
 REM Sırasıyla şunları çalıştırır: 1 araç zinciri kontrolü → 2 altı üçüncü taraf kütüphanesi indirme → 3 yamaları uygulama →
 REM 4 cargo fetch + iki Rust FFI derleme → 5 FLTK + CMake ile Pecia üçlüsünü derleme →
-REM 26 birim testini çalıştırma.
+REM 33 birim testini çalıştırma.
 REM İlk çalışma süresi internet ve bilgisayara bağlıdır; bundan sonra önbellek kullanılır, artımlı derleme + test yaklaşık 1-2 dakika sürer.
 build\full.bat
 ```

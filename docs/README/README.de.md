@@ -2,7 +2,7 @@
 
 # Pecia — Minimalistischer Texteditor
 
-**[⬇️ 1.1.2 herunterladen (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ **[⬇️ 1.1.2 herunterladen (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.2/Pecia_x64_1.1.2.zip)** ｜ [Gitee-Repo](https://gitee.com/qiuzongman/pecia) ｜ [GitHub-Spiegel](https://github.com/zongmanqiu/Pecia) | [Bilibili-Demo](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**[⬇️ 1.1.3 herunterladen (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ 1.1.3 herunterladen (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Gitee-Repo](https://gitee.com/qiuzongman/pecia) ｜ [GitHub-Spiegel](https://github.com/zongmanqiu/Pecia) | [Bilibili-Demo](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 Ein leichtgewichtiger Windows-Texteditor auf Basis von C++17 + FLTK. Mit mehreren Tabs, schnellem Öffnen großer Dateien, Unterstützung für verschiedene Codierungen und Lua-Skripterweiterungen. Neu: Seitenleiste (Dateibaum/Gliederung), Schriftauswahl-Dialog, Fensterschatten; Markdown-Vorschau rendert sehr große Dokumente blockweise.
 
@@ -46,7 +46,7 @@ Ein leichtgewichtiger Windows-Texteditor auf Basis von C++17 + FLTK. Mit mehrere
 REM Nach dem Herunterladen des Quellcodes einfach dieses eine Skript doppelklicken.
 REM Es führt der Reihe nach aus: 1 Toolchain-Check → 2 Herunterladen von 6 Drittanbieter-Bibliotheken → 3 Anwenden von Patches →
 REM 4 cargo fetch + Kompilieren zweier Rust-FFIs → 5 Kompilieren von FLTK + CMake-Kompilierung des Pecia-Dreierpacks →
-REM Ausführen von 26 Unit-Tests.
+REM Ausführen von 33 Unit-Tests.
 REM Die Dauer des ersten Builds hängt von Netzwerk und Hardware ab; danach wird Cache wiederverwendet, inkrementelle Kompilierung + Test dauert ca. 1-2 Minuten.
 build\full.bat
 ```
