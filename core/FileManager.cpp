@@ -58,9 +58,10 @@ bool FileManager::save(Document *doc, int /*tabIndex*/,
 
 bool FileManager::saveAs(Document *doc, Config *cfg, Fl_Window *parent) {
     if (!doc) return false;
-    (void)parent;
 
-    std::string path = showSaveDialog(cfg, nullptr);
+    // Forward the real parent: the chooser must not lose its modality
+    // relationship with the window that requested Save As.
+    std::string path = showSaveDialog(cfg, parent);
     if (path.empty()) return false;
 
     bool ok = doc->saveFile(path.c_str());
@@ -70,8 +71,13 @@ bool FileManager::saveAs(Document *doc, Config *cfg, Fl_Window *parent) {
     return ok;
 }
 
-std::string FileManager::showSaveDialog(Config *cfg, Fl_Window * /*parent*/) {
-    // Use FLTK's native file chooser
+std::string FileManager::showSaveDialog(Config *cfg, Fl_Window *parent) {
+    // Use FLTK's native file chooser. Fl_File_Chooser has no public parent
+    // setter; FLTK places/owns a new modal relative to Fl::first_window(),
+    // so promote the requesting window to that slot for the duration of the
+    // dialog. No FLTK/third-party API is added or patched.
+    if (parent && parent->shown()) Fl::first_window(parent);
+
     const char *filter = "Text Files (*.txt)\t*.txt\n"
                          "All Files (*)\t*";
 

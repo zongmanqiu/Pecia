@@ -11,6 +11,7 @@
 
 
 #include "resource.h"
+#include "core/OpLog.h"
 #include "core/Theme.h"
 #include "ui/DialogBase.h"
 #include "ui/NativeSubclass.h"
@@ -77,8 +78,10 @@ static unsigned int toolBorderColour(Fl_Window *win) {
 
 static LRESULT WINAPI toolSubclassProc(HWND hwnd, UINT msg,
                                        WPARAM wp, LPARAM lp) {
+    // 原生回调边界：异常不能逃出 WndProc（AGENTS.md 一.6 / 开发指南十.2）。
+    try {
     // Main window broadcasts: keep this tool process in step with the two
-    // View toggles that affect every Pecia window (PeciaLua / PeciaAIChat).
+    // View toggles broadcast to every Pecia window, including other instances.
     static const UINT kRoundedMsg = windowChrome::roundedCornersMessage();
     if (kRoundedMsg && msg == kRoundedMsg) {
         windowChrome::reapplyRoundedCorners(wp != 0);
@@ -106,10 +109,15 @@ static LRESULT WINAPI toolSubclassProc(HWND hwnd, UINT msg,
     }
 
     case WM_DESTROY:
-    case WM_NCDESTROY:
+    case WM_NCDESTROY: {
+        // detachAll() 会删掉整条子类链；之后函数末尾的 forward() 就找不到
+        // FLTK 原 wndproc，只能落到 DefWindowProcW —— FLTK 收不到销毁消息。
+        // 所以先把消息转给下家，再拆链与阴影窗口。
+        LRESULT ret = nativeSubclass::forward(hwnd, toolSubclassProc, msg, wp, lp);
         windowShadow::detachHwnd(reinterpret_cast<void *>(hwnd));
         nativeSubclass::detachAll(hwnd);
-        break;
+        return ret;
+    }
     case WM_NCCALCSIZE:
         if (wp == TRUE) {
             if (IsZoomed(hwnd)) return 0;  // no border when maximized
@@ -186,6 +194,10 @@ static LRESULT WINAPI toolSubclassProc(HWND hwnd, UINT msg,
     }
     }
     return nativeSubclass::forward(hwnd, toolSubclassProc, msg, wp, lp);
+    } catch (...) {
+        opLog("toolSubclassProc: unknown exception");
+        return 0;
+    }
 }
 #endif
 

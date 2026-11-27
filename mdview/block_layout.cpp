@@ -259,7 +259,10 @@ bool BlockLayout::split(const std::string& html)
         if (!n || n->type != GUMBO_NODE_ELEMENT) continue;   // 空白/裸文本/注释跳过
         unsigned start = n->v.element.start_pos.offset;
         size_t end = element_end_offset(html, n);
-        if (start == 0 || end <= start || end > html.size()) continue;
+        // 不能用 start==0 过滤 parser-inserted 节点：源码里真实位于偏移 0
+        // 的顶层元素也会被一起丢掉。element_end_offset 已对
+        // (start==0 && end==0) 的插入节点返回 0，下面这条同样能过滤它们。
+        if (end <= (size_t)start || end > html.size()) continue;
         // 超预算的 <pre>（几千行的代码块）在顶层断刀切不开，必须按行内部切。
         // 否则整篇「一个代码块」的文档永远只有 2 个 span，连分块门槛都过不去。
         if (n->v.element.tag == GUMBO_TAG_PRE &&
@@ -430,7 +433,9 @@ void BlockLayout::set_width(int w)
     m_width = w;
     // 换宽后所有实测高度都作废（行数变了）。释放 document 省内存；实测样本
     // 保留在 realHeight 里但被 renderWidth 判定为失效，等视口块重排后再采信。
-    for (Block& b : m_blocks) b.doc.reset();
+    // 同时清掉 failed：失败是"那一次排版"的结果，换宽后必须重试，否则整块
+    // 永远空白（原代码只 reset doc，ensure_window 见到 failed 直接跳过）。
+    for (Block& b : m_blocks) { b.doc.reset(); b.failed = false; }
     rebuild_geometry();
 }
 

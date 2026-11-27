@@ -12,6 +12,15 @@ public:
     explicit UiBridgeImpl(const Theme *theme, int uiFontSize)
         : m_theme(theme), m_fontSize(uiFontSize) {}
 
+    // installUiBridge() runs again after every theme / font change. This is
+    // an internal helper (not part of the UiBridge interface): refresh the
+    // stored values so dialogs use the CURRENT theme/size, not the first
+    // caller's.
+    void update(const Theme *theme, int uiFontSize) {
+        m_theme = theme;
+        m_fontSize = uiFontSize;
+    }
+
     void message(const char *title, const char *msg, const char *button) override {
         ConfirmDialog(title, msg, button, nullptr, nullptr, m_theme, m_fontSize).run();
     }
@@ -36,5 +45,6 @@ private:
 
 void installUiBridge(const Theme *theme, int uiFontSize) {
     static UiBridgeImpl impl(theme, uiFontSize);
+    impl.update(theme, uiFontSize);
     setUiBridge(&impl);
 }

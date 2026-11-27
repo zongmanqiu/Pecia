@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cwchar>
 #include <string>
+#include <utility>
 #include <vector>
 
 #ifndef NOMINMAX
@@ -236,7 +237,10 @@ bool http_get_once(const std::string& url, const std::string& dest)
         HINTERNET hq = hc ? WinHttpOpenRequest(hc, L"GET", path.c_str(), nullptr,
                                                WINHTTP_NO_REFERER,
                                                WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                               uc.nPort == 443 ? WINHTTP_FLAG_SECURE : 0)
+                                               // 安全标志取决于 scheme，不是端口：
+                                               // https://host:8443 同样要 TLS。
+                                               uc.nScheme == INTERNET_SCHEME_HTTPS
+                                                   ? WINHTTP_FLAG_SECURE : 0)
                           : nullptr;
         DWORD status = 0;
         bool gotResponse = hq &&
@@ -250,6 +254,7 @@ bool http_get_once(const std::string& url, const std::string& dest)
         }
 
         bool ok = false;
+        bool redirected = false;
         if (gotResponse && status >= 300 && status < 400) {
             // Redirect: read Location, resolve it, retry on the next hop.
             wchar_t loc[4096];
@@ -260,7 +265,11 @@ bool http_get_once(const std::string& url, const std::string& dest)
                 if (n > 0) {
                     std::string location((size_t)n - 1, '\0');
                     WideCharToMultiByte(CP_UTF8, 0, loc, -1, &location[0], n, nullptr, nullptr);
-                    if (resolve_redirect(cur, location, cur)) continue;
+                    // Do NOT `continue` here: the three WinHTTP handles are
+                    // only closed at the bottom of this scope, and a bare
+                    // continue leaked hs/hc/hq on every redirect hop
+                    // (gitee raw answers 302 as a matter of routine).
+                    redirected = resolve_redirect(cur, location, cur);
                 }
             }
         } else if (gotResponse && status >= 200 && status < 300) {
@@ -271,8 +280,9 @@ bool http_get_once(const std::string& url, const std::string& dest)
                 DWORD got = 0, total = 0;
                 while (WinHttpReadData(hq, buf, sizeof(buf), &got) && got) {
                     DWORD written = 0;
-                    if (!WriteFile(f, buf, got, &written, nullptr)) break;
-                    total += got;
+                    // 短写也是失败：按实际写入量累加并核对，不能拿请求量当成功。
+                    if (!WriteFile(f, buf, got, &written, nullptr) || written != got) break;
+                    total += written;
                 }
                 CloseHandle(f);
                 ok = (total > 0);
@@ -282,7 +292,7 @@ bool http_get_once(const std::string& url, const std::string& dest)
         if (hc) WinHttpCloseHandle(hc);
         WinHttpCloseHandle(hs);
         if (ok) return true;
-        if (gotResponse && status >= 300 && status < 400) continue;  // hop handled
+        if (redirected) continue;  // hop consumed, handles already closed
         return false;
     }
     return false;   // too many redirects
@@ -324,7 +334,16 @@ std::string url_basename(const std::string& url, const std::string& ext)
     if (dot != std::string::npos) base = base.substr(0, dot);
     base = sanitize_file_name(base);
     if (base.empty()) return {};
-    if (base.size() > 60) base.resize(60);
+    if (base.size() > 60) {
+        base.resize(60);
+        // Do not cut a multi-byte UTF-8 character in half: a stray lead
+        // byte at the end makes widen()/the filesystem name invalid.
+        while (!base.empty() &&
+               (static_cast<unsigned char>(base.back()) & 0xC0) == 0x80)
+            base.pop_back();
+        if (!base.empty() && static_cast<unsigned char>(base.back()) >= 0xC0)
+            base.pop_back();
+    }
     // 纯数字不是问题：picsum.photos/320/180.jpg 这种"尺寸即文件名"的图床
     // 很常见，180.jpg 比哈希名好得多。真正要挡的只是"看着像版本号"的
     // 名字（v1.2、20240101 之类）—— 那多半是路径末段被误当成了文件名，
@@ -335,24 +354,62 @@ std::string url_basename(const std::string& url, const std::string& ext)
     return base + ext;
 }
 
+// '>' that closes the tag starting at lt, skipping '>' inside quoted values.
+size_t tag_end(const std::string& html, size_t lt)
+{
+    char quote = 0;
+    for (size_t i = lt + 1; i < html.size(); ++i) {
+        char c = html[i];
+        if (quote) { if (c == quote) quote = 0; }
+        else if (c == '"' || c == '\'') quote = c;
+        else if (c == '>') return i;
+    }
+    return std::string::npos;
+}
+
+// 在当前 <img ...> 标签的 [lt, gt) 内找 src="..."，返回属性值区间。
+// srcPos 前必须是空白：既不会把 data-src 当 src，也不会跨到下一个标签。
+bool img_src_value(const std::string& html, size_t lt, size_t gt,
+                   size_t& valueBegin, size_t& valueEnd)
+{
+    auto sep = [](unsigned char c) {
+        return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
+    };
+    size_t p = lt + 4;                       // 跳过 "<img"
+    while (p < gt) {
+        size_t at = html.find("src=\"", p);
+        if (at == std::string::npos || at >= gt) return false;
+        if (at > lt + 4 && sep((unsigned char)html[at - 1])) {
+            size_t e = html.find('"', at + 5);
+            if (e == std::string::npos || e > gt) return false;
+            valueBegin = at + 5;
+            valueEnd = e;
+            return true;
+        }
+        p = at + 1;
+    }
+    return false;
+}
+
 // Pass 1 of localization, also reused by count_remote_image_srcs(): collect
 // the de-duplicated http(s) <img src> attribute values, still HTML-escaped.
-// Collecting up front keeps pass 2 free of any cursor bookkeeping across
-// replacements, which change the string length.
+// Both passes stay inside each <img ...> tag; a script <script src> or a
+// body/href occurrence of the same string must never be touched.
 std::vector<std::string> collect_remote_img_srcs(const std::string& html)
 {
     std::vector<std::string> attrs;
     size_t scan = 0;
     while ((scan = html.find("<img", scan)) != std::string::npos) {
-        size_t srcPos = html.find("src=\"", scan);
-        if (srcPos == std::string::npos) break;
-        size_t srcEnd = html.find('"', srcPos + 5);
-        if (srcEnd == std::string::npos) break;
-        std::string attr = html.substr(srcPos + 5, srcEnd - srcPos - 5);
-        scan = srcEnd + 1;
-        if ((attr.rfind("http://", 0) == 0 || attr.rfind("https://", 0) == 0) &&
-            std::find(attrs.begin(), attrs.end(), attr) == attrs.end())
-            attrs.push_back(attr);
+        size_t gt = tag_end(html, scan);
+        if (gt == std::string::npos) break;
+        size_t vb = 0, ve = 0;
+        if (img_src_value(html, scan, gt, vb, ve)) {
+            std::string attr = html.substr(vb, ve - vb);
+            if ((attr.rfind("http://", 0) == 0 || attr.rfind("https://", 0) == 0) &&
+                std::find(attrs.begin(), attrs.end(), attr) == attrs.end())
+                attrs.push_back(attr);
+        }
+        scan = gt + 1;                       // 逐标签前进，不跨标签找 src
     }
     return attrs;
 }
@@ -491,6 +548,7 @@ void localize_remote_images(std::string& html, const std::string& build_dir,
     // Keep a set of taken names and disambiguate with a numeric suffix, the
     // way a browser would when saving a folder full of downloads.
     std::vector<std::string> taken;
+    std::vector<std::pair<std::string, std::string>> replacements;  // attr -> local name
 
     for (const std::string& attr : attrs) {
         std::string url = decode_attr_entities(attr);
@@ -517,11 +575,34 @@ void localize_remote_images(std::string& html, const std::string& build_dir,
             if (!file_has_bytes(dest)) continue;   // fetch claimed success but wrote
         }                                         // nothing (urlmon did this)
 
-        // Same picture may appear more than once: replace every occurrence of
-        // the original attribute value.
-        for (size_t p = html.find(attr); p != std::string::npos;
-             p = html.find(attr, p + unique.size()))
-            html.replace(p, attr.size(), unique);
+        replacements.emplace_back(attr, unique);
+    }
+
+    // 只改 <img ...> 内的 src="<attr>"：带属性上下文替换，逐次从替换末尾
+    // 继续。正文、href、<script src> 里即使出现同样的字符串也一律不动。
+    size_t scan = 0;
+    while (scan < html.size()) {
+        size_t lt = html.find("<img", scan);
+        if (lt == std::string::npos) break;
+        size_t gt = tag_end(html, lt);
+        if (gt == std::string::npos) break;
+        size_t vb = 0, ve = 0;
+        bool replaced = false;
+        if (img_src_value(html, lt, gt, vb, ve) && vb >= 5 &&
+            html.compare(vb - 5, 5, "src=\"") == 0 &&
+            ve < html.size() && html[ve] == '"') {
+            std::string attr = html.substr(vb, ve - vb);
+            for (const auto& rep : replacements) {
+                if (rep.first != attr) continue;
+                const std::string from = "src=\"" + attr + "\"";
+                const std::string to   = "src=\"" + rep.second + "\"";
+                html.replace(vb - 5, from.size(), to);
+                scan = vb - 5 + to.size();       // 从替换末尾继续
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) scan = gt + 1;
     }
 }
 

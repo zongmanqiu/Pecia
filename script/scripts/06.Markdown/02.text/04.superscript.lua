@@ -11,7 +11,7 @@
 -- @name.pt-BR Sobrescrito
 -- @name.it Apice
 -- @name.ar مرفوع
--- @name.hi अधोलेख
+-- @name.hi ऊर्ध्वलेख
 -- @name.id Superskrip
 -- @name.tr Üst Simge
 -- @name.vi Chữ viết trên

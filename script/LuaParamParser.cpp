@@ -91,8 +91,7 @@ LuaParamSet luaParseParams(const std::string &script, const std::string &langCod
                 lineStart = (nl == std::string::npos) ? script.size() + 1 : nl + 1;
                 continue;
             }
-            // 能走到这里，上面的分支已保证是 "//" 注释行开头：
-            // 恒真判断（旧代码 p+1<size && line[p]=='-' && line[p+1]=='-'）删除。
+            // 上面的分支已保证这是 "--" 行注释开头；跳过这两个短横线。
             p += 2;
                 while (p < line.size() &&
                        (line[p] == ' ' || line[p] == '\t' || line[p] == '!')) ++p;

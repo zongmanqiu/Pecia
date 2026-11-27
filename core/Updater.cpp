@@ -149,11 +149,26 @@ void parseVersion(const std::string &v, int &maj, int &min, int &pat) {
     }
 }
 
+// The manifest's `version` is concatenated into a download/落盘 file name by
+// the UI layer. Reject anything that could become a path component here: this
+// is the first line of defence against a hostile update manifest. Allowed:
+// [0-9A-Za-z._-], no ".." (covers '/' '\\' ':' and traversal).
+static bool safeVersionTag(const std::string &v) {
+    if (v.empty() || v == "." || v == ".." || v.find("..") != std::string::npos)
+        return false;
+    for (unsigned char c : v) {
+        const bool ok = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+                        (c >= 'a' && c <= 'z') || c == '.' || c == '_' || c == '-';
+        if (!ok) return false;
+    }
+    return true;
+}
+
 // Flat "key":"value" manifest reader. `version` and at least one package URL
 // are mandatory: without a URL the check can be displayed but never acted on,
 // which is worse than reporting the manifest as unusable.
 bool parseManifest(const std::string &json, UpdateManifest &m) {
-    if (!findJsonString(json, "version", m.version) || m.version.empty()) return false;
+    if (!findJsonString(json, "version", m.version) || !safeVersionTag(m.version)) return false;
     findJsonString(json, "published", m.published);
     findJsonString(json, "notes", m.notes);
     findJsonString(json, "notes_en", m.notesEn);
@@ -172,8 +187,15 @@ bool readWholeFile(const std::string &pathUtf8, std::string &out) {
     if (h == INVALID_HANDLE_VALUE) return false;
     char buf[16384];
     DWORD got = 0;
-    while (ReadFile(h, buf, sizeof(buf), &got, nullptr) && got > 0) out.append(buf, got);
-    bool ok = (got == 0);   // ReadFile returning 0 bytes is EOF, the normal exit
+    bool eof = false;
+    while (ReadFile(h, buf, sizeof(buf), &got, nullptr)) {
+        if (got == 0) { eof = true; break; }
+        out.append(buf, got);
+    }
+    // ReadFile returning FALSE with data pending is a real I/O error, not
+    // EOF - a truncated local read must not masquerade as a complete file
+    // (same stance as the download path below).
+    bool ok = eof;
     CloseHandle(h);
     return ok;
 }
@@ -209,15 +231,19 @@ bool splitUrl(const std::string &url, std::string &host, std::string &path,
     else                                  { tls = true; }
     size_t colon = u.find(':');
     size_t slash = u.find('/');
+    bool explicitPort = false;
     if (colon != std::string::npos && (slash == std::string::npos || colon < slash)) {
         long p = atol(u.c_str() + colon + 1);
-        if (p > 0 && p <= 65535) port = (INTERNET_PORT)p;
+        if (p > 0 && p <= 65535) { port = (INTERNET_PORT)p; explicitPort = true; }
         u = u.substr(0, colon) + (slash != std::string::npos ? u.substr(slash) : std::string());
         slash = u.find('/');
     }
     if (slash != std::string::npos) { host = u.substr(0, slash); path = u.substr(slash); }
     else                           { host = u; path = "/"; }
-    if (!tls && port == INTERNET_DEFAULT_HTTPS_PORT) port = INTERNET_DEFAULT_HTTP_PORT;
+    // Only normalize the DEFAULTS (an unset port arrives as 443). A port the
+    // user typed explicitly must survive, even http://host:443.
+    if (!tls && !explicitPort && port == INTERNET_DEFAULT_HTTPS_PORT)
+        port = INTERNET_DEFAULT_HTTP_PORT;
     return !host.empty();
 }
 
@@ -226,6 +252,15 @@ bool splitUrl(const std::string &url, std::string &host, std::string &path,
 // desktop WinHTTP SDK on this machine does not expose WINHTTP_OPTION_ENABLE_
 // REDIRECTS, so we handle it ourselves (also avoids silently following endless
 // redirect loops). Returns false (err set) on a redirect we cannot follow.
+// WinHttpQueryHeaders reports the buffer length INCLUDING the terminating
+// NUL. Constructing std::wstring with that raw count leaves a trailing L'\0'
+// inside the string; strip it before parsing the header value.
+static std::wstring headerString(const wchar_t *buf, DWORD byteLen) {
+    size_t n = byteLen / sizeof(wchar_t);
+    while (n > 0 && buf[n - 1] == L'\0') --n;
+    return std::wstring(buf, n);
+}
+
 bool followRedirect(const std::wstring &wloc, std::string &host, std::string &path,
                     bool &tls, INTERNET_PORT &port) {
     // Location may be relative ("/x/y") or absolute ("https://...").
@@ -282,7 +317,7 @@ bool httpGetBody(const std::string &url, int timeoutMs, std::string &out, std::s
                 wchar_t loc[4096]; DWORD lsz = sizeof(loc);
                 if (WinHttpQueryHeaders(hR, WINHTTP_QUERY_LOCATION, WINHTTP_HEADER_NAME_BY_INDEX,
                                         loc, &lsz, nullptr) &&
-                    followRedirect(std::wstring(loc, lsz / sizeof(wchar_t) ? lsz / sizeof(wchar_t) : 0),
+                    followRedirect(headerString(loc, lsz),
                                    host, path, tls, port)) {
                     // Rebuild an absolute URL for the next hop.
                     std::string scheme = tls ? "https://" : "http://";
@@ -360,7 +395,7 @@ bool httpDownload(const std::string &url, const std::wstring &savePathW,
                 wchar_t loc[4096]; DWORD lsz = sizeof(loc);
                 if (WinHttpQueryHeaders(hR, WINHTTP_QUERY_LOCATION, WINHTTP_HEADER_NAME_BY_INDEX,
                                         loc, &lsz, nullptr) &&
-                    followRedirect(std::wstring(loc, lsz / sizeof(wchar_t) ? lsz / sizeof(wchar_t) : 0),
+                    followRedirect(headerString(loc, lsz),
                                    host, path, tls, port)) {
                     std::string scheme = tls ? "https://" : "http://";
                     int p = (tls && port == INTERNET_DEFAULT_HTTPS_PORT) ? -1
@@ -391,7 +426,7 @@ bool httpDownload(const std::string &url, const std::wstring &savePathW,
             wchar_t clen[64]; DWORD clsz = sizeof(clen);
             if (WinHttpQueryHeaders(hR, WINHTTP_QUERY_CONTENT_LENGTH,
                                     WINHTTP_HEADER_NAME_BY_INDEX, clen, &clsz, nullptr)) {
-                std::wstring ws(clen, clsz / sizeof(wchar_t));
+                std::wstring ws = headerString(clen, clsz);
                 total = _wtoi64(ws.c_str());
             }
         }
@@ -453,9 +488,15 @@ std::string getExeDirUtf8() {
     if (GetModuleFileNameW(nullptr, exe, MAX_PATH) == 0) return std::string();
     wchar_t *slash = wcsrchr(exe, L'\\');
     if (slash) *(slash + 1) = 0;   // keep trailing backslash
-    char buf[MAX_PATH * 2];
-    int n = WideCharToMultiByte(CP_UTF8, 0, exe, -1, buf, (int)sizeof(buf), nullptr, nullptr);
-    return n > 0 ? std::string(buf) : std::string();
+    char buf[8192];
+    // UTF-8 of a long CJK path needs up to 3 bytes per wchar; a fixed
+    // MAX_PATH*2 char buffer could silently fail and hand callers an empty
+    // exe dir (cache/zip/bat would then land in the working directory).
+    int n = WideCharToMultiByte(CP_UTF8, 0, exe, -1, nullptr, 0, nullptr, nullptr);
+    if (n <= 0 || n > (int)sizeof(buf)) return std::string();
+    if (WideCharToMultiByte(CP_UTF8, 0, exe, -1, buf, n, nullptr, nullptr) <= 0)
+        return std::string();
+    return std::string(buf);
 }
 
 int compareVersions(const std::string &cur, const std::string &latest) {
@@ -595,7 +636,7 @@ bool writeUpdateBat(const std::string &exeDirUtf8, const std::string &zipPathUtf
     b += L(":waitkill");
     b += L("set /a TRIES+=1");
     b += L("if !TRIES! GTR 10 goto killfail");
-    b += L("powershell -NoProfile -ExecutionPolicy Bypass -Command \"$ps=@(Get-CimInstance Win32_Process | Where-Object { @('Pecia.exe','PeciaLua.exe','PeciaAIChat.exe') -contains $_.Name -and $_.ExecutablePath -and ([IO.Path]::GetDirectoryName($_.ExecutablePath) -ieq $env:APPD) }); foreach($p in $ps){ Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }; if($ps.Count -gt 0){ exit 1 } else { exit 0 }\"");
+    b += L("powershell -NoProfile -ExecutionPolicy Bypass -Command \"$ps=@(Get-CimInstance Win32_Process | Where-Object { @('Pecia.exe') -contains $_.Name -and $_.ExecutablePath -and ([IO.Path]::GetDirectoryName($_.ExecutablePath) -ieq $env:APPD) }); foreach($p in $ps){ Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }; if($ps.Count -gt 0){ exit 1 } else { exit 0 }\"");
     b += L("if errorlevel 1 (timeout /t 1 /nobreak >nul & goto waitkill)");
     b += L("goto killed");
     b += L(":killfail");

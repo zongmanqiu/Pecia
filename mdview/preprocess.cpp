@@ -67,6 +67,35 @@ static std::wstring widen(const std::string& utf8)
     return w;
 }
 
+// CreateDirectoryW 只建一层：build_dir 本身可能还不存在（首次预览/导出）。
+// 先逐段建父目录，最后建目标；已存在时 ERROR_ALREADY_EXISTS 无副作用。
+static void create_dirs_recursive(const std::string& dir)
+{
+    if (dir.empty()) return;
+    std::wstring w = widen(dir);
+    for (size_t i = 0; i < w.size(); ++i) {
+        if (w[i] == L'\\' || w[i] == L'/') {
+            if (i > 0) CreateDirectoryW(std::wstring(w.data(), i).c_str(), NULL);
+        }
+    }
+    CreateDirectoryW(w.c_str(), NULL);
+}
+
+// base_font 来自字体对话框/配置，直接拼进 CSS 的单引号字符串会破坏样式表
+// （引号闭合、反斜杠转义、< 提前闭合 <style>）。转义引号与反斜杠、剔除
+// < > 和控制字符；字体名本身仍按原样进 CSS 转义序列。
+static std::string css_font_literal(const std::string& name)
+{
+    std::string out;
+    out.reserve(name.size());
+    for (unsigned char c : name) {
+        if (c == '<' || c == '>' || c < 0x20 || c == 0x7f) continue;
+        if (c == '\\' || c == '\'') { out += '\\'; out += (char)c; continue; }
+        out += (char)c;
+    }
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // Browser-copy HTML sanitizer.
 // Markdown may embed raw HTML (<script>, <iframe>, on* handlers, javascript:
@@ -85,6 +114,35 @@ static bool ieq(const std::string& hay, size_t pos, const char* needle)
         ++n;
     }
     return true;
+}
+
+// HTML 属性分隔符：空白 + ASCII 控制字符。净化时只认 ' ' 会让
+// <div\tonclick=...> / 换行分隔的属性/大写 ONCLICK 绕过。
+static bool html_attr_sep(unsigned char c)
+{
+    return c <= ' ' || c == 0x7f;
+}
+
+static int hex_digit(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+// 标签结尾：跳过引号内的 '>'。否则 title=">" onclick="..." 会把后面的
+// 属性藏到标签外，按 find('>') 截断的净化就看不见它了。
+static size_t tag_end(const std::string& html, size_t lt)
+{
+    char quote = 0;
+    for (size_t i = lt + 1; i < html.size(); ++i) {
+        char c = html[i];
+        if (quote) { if (c == quote) quote = 0; }
+        else if (c == '"' || c == '\'') quote = c;
+        else if (c == '>') return i;
+    }
+    return std::string::npos;
 }
 
 // Remove one <tag ...> ... </tag> block (case-insensitive), including
@@ -132,45 +190,49 @@ static void stripEventHandlers(std::string& html)
     while (i < html.size()) {
         size_t lt = html.find('<', i);
         if (lt == std::string::npos) break;
-        size_t gt = html.find('>', lt);
+        size_t gt = tag_end(html, lt);      // 引号内的 '>' 不算标签结尾
         if (gt == std::string::npos) break;
         // Work inside [lt, gt] only: " onxxx=..." attributes.
         //
-        // The search for " on" must be bounded by gt. It used to be
+        // The search must be bounded by gt. It used to be
         // html.find(" on", p) over the whole document, so for every tag it
         // scanned all remaining bytes until it either found an attribute or hit
         // the end of the document. A 1.5 MB document with no on* attributes at
         // all (the normal case) paid a full-document scan per tag — ~50k tags
         // meant ~6 s. A tag is tens of bytes, so compare byte by byte instead.
-        size_t p = lt;
+        // 分隔符用 html_attr_sep（空白/控制字符）+ 大小写不敏感的 "on"。
+        size_t p = lt + 1;
         bool changed = false;
-        while (p + 3 < gt) {
-            if (!(html[p] == ' ' && html[p + 1] == 'o' && html[p + 2] == 'n')) {
-                ++p;
-                continue;
-            }
-            size_t nameEnd = p + 3;
+        while (p < gt) {
+            if (!html_attr_sep((unsigned char)html[p])) { ++p; continue; }
+            size_t ns = p;
+            while (ns < gt && html_attr_sep((unsigned char)html[ns])) ++ns;
+            if (ns + 2 >= gt) { p = ns; continue; }
+            if (toupper((unsigned char)html[ns]) != 'O' ||
+                toupper((unsigned char)html[ns + 1]) != 'N') { p = ns; continue; }
+            size_t nameEnd = ns + 2;
             while (nameEnd < gt && (isalnum((unsigned char)html[nameEnd]) ||
                                     html[nameEnd] == '_' || html[nameEnd] == '-'))
                 ++nameEnd;
-            if (nameEnd == p + 3) { p += 3; continue; }   // "on" not an attribute name
+            if (nameEnd == ns + 2) { p = nameEnd; continue; }   // "on" not an attribute name
             size_t eq = nameEnd;
-            while (eq < gt && (html[eq] == ' ' || html[eq] == '\t')) ++eq;
+            while (eq < gt && html_attr_sep((unsigned char)html[eq])) ++eq;
             if (eq >= gt || html[eq] != '=') { p = nameEnd; continue; }
             size_t v = eq + 1;
-            while (v < gt && (html[v] == ' ' || html[v] == '\t')) ++v;
+            while (v < gt && html_attr_sep((unsigned char)html[v])) ++v;
             if (v >= gt) break;
             char quote = (html[v] == '"' || html[v] == '\'') ? html[v] : 0;
             size_t end;
             if (quote) {
                 end = html.find(quote, v + 1);
                 if (end == std::string::npos || end > gt) break;
+                ++end;                       // 连同结尾引号一起删
             } else {
                 // Unquoted value: ends at whitespace or '>'.
                 end = v;
-                while (end < gt && html[end] != ' ' && html[end] != '\t') ++end;
+                while (end < gt && !html_attr_sep((unsigned char)html[end])) ++end;
             }
-            html.erase(p, end - p + (quote ? 1 : 0));
+            html.erase(p, end - p);
             changed = true;
             break;
         }
@@ -179,19 +241,155 @@ static void stripEventHandlers(std::string& html)
     }
 }
 
-// Neutralize javascript: URLs in href/src (case-insensitive).
+// URL 属性里的 HTML 实体解码（只需覆盖 scheme 判断用到的 ASCII 范围）。
+// 数值实体（&#106; / &#x6a;）与 amp/lt/gt/quot/apos/colon/sol 都还原成字节；
+// 非 ASCII 保持原样，scheme 判定只看 ASCII。
+static std::string decode_url_entities(const std::string& s)
+{
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size();) {
+        if (s[i] != '&' || i + 1 >= s.size()) { out += s[i++]; continue; }
+        size_t semi = s.find(';', i + 1);
+        if (semi == std::string::npos || semi - i > 12) { out += s[i++]; continue; }
+        std::string e = s.substr(i + 1, semi - i - 1);
+        int cp = -1;
+        if (!e.empty() && e[0] == '#') {
+            const bool isHex = e.size() > 2 && (e[1] == 'x' || e[1] == 'X');
+            const size_t st = isHex ? 2 : 1;
+            long v = 0;
+            bool good = st < e.size();
+            for (size_t k = st; k < e.size() && good; ++k) {
+                int d = isHex ? hex_digit(e[k])
+                              : (e[k] >= '0' && e[k] <= '9' ? e[k] - '0' : -1);
+                if (d < 0) good = false;
+                else v = v * (isHex ? 16 : 10) + d;
+            }
+            if (good && v <= 0x7f) cp = (int)v;
+        } else if (e == "amp") cp = '&';
+        else if (e == "lt") cp = '<';
+        else if (e == "gt") cp = '>';
+        else if (e == "quot") cp = '"';
+        else if (e == "apos") cp = '\'';
+        else if (e == "colon") cp = ':';
+        else if (e == "sol") cp = '/';
+        if (cp >= 0) { out += (char)cp; i = semi + 1; continue; }
+        out += s[i++];
+    }
+    return out;
+}
+
+// 归一化只用于 scheme 判定：丢空白/控制字符、解 %XX。判定结果只决定要不要
+// 中和，安全 URL 的属性值原样保留 —— 相对链接/图片、带空格的文件名都不受影响。
+static std::string normalize_url_for_scheme(const std::string& raw)
+{
+    std::string dec = decode_url_entities(raw);
+    std::string out;
+    out.reserve(dec.size());
+    for (size_t i = 0; i < dec.size(); ++i) {
+        unsigned char c = (unsigned char)dec[i];
+        if (html_attr_sep(c)) continue;
+        if (c == '%' && i + 2 < dec.size()) {
+            int hi = hex_digit(dec[i + 1]), lo = hex_digit(dec[i + 2]);
+            if (hi >= 0 && lo >= 0) { out += (char)((hi << 4) | lo); i += 2; continue; }
+        }
+        out += (char)c;
+    }
+    return out;
+}
+
+// 只在 "scheme:" 出现在开头（前面没有 / ? #）时才算 scheme：
+// "./a:b.png" 这类相对文件名不能被误判成自定义协议。
+static std::string url_scheme_of(const std::string& u)
+{
+    size_t colon = u.find(':');
+    if (colon == std::string::npos || colon == 0) return {};
+    for (size_t i = 0; i < colon; ++i) {
+        unsigned char c = (unsigned char)u[i];
+        if (!(isalnum(c) || c == '+' || c == '-' || c == '.')) return {};
+    }
+    if (!isalpha((unsigned char)u[0])) return {};
+    std::string s = u.substr(0, colon);
+    for (char& c : s) c = (char)tolower((unsigned char)c);
+    return s;
+}
+
+static bool safe_url_scheme(const std::string& u)
+{
+    std::string s = url_scheme_of(u);
+    if (s.empty()) return true;                   // 相对路径 / 锚点 / 无 scheme
+    if (s == "http" || s == "https" || s == "mailto" || s == "tel" ||
+        s == "about")                              // about:blank 是中和后的值
+        return true;
+    if (s == "data") {                            // 只放行图片，不放行 text/html
+        size_t colon = u.find(':');
+        return colon != std::string::npos && ieq(u, colon + 1, "image/");
+    }
+    return false;                                 // javascript: / vbscript: / file: / 未知协议
+}
+
+static bool is_url_attr(const std::string& name)
+{
+    return name == "href" || name == "src" || name == "action" ||
+           name == "formaction" || name == "poster" || name == "background" ||
+           name == "cite" || name == "longdesc" || name == "data" ||
+           name == "xlink:href";
+}
+
+// Neutralize script-bearing URLs in href/src/... (scheme whitelist after
+// entity decoding + normalization). 只改属性值，安全链接与图片原样保留。
 static void neutralizeScriptUrls(std::string& html)
 {
-    const char needle[] = "javascript:";
-    const size_t nlen = sizeof(needle) - 1;
     size_t i = 0;
-    while ((i = html.find('j', i)) != std::string::npos) {
-        if (ieq(html, i, needle)) {
-            html.replace(i, nlen, "about:blank");
-            i += 11;
-        } else {
-            i += 1;
+    while (i < html.size()) {
+        size_t lt = html.find('<', i);
+        if (lt == std::string::npos) break;
+        size_t gt = tag_end(html, lt);
+        if (gt == std::string::npos) break;
+        size_t p = lt + 1;
+        bool changed = false;
+        while (p < gt) {
+            if (!html_attr_sep((unsigned char)html[p])) { ++p; continue; }
+            size_t ns = p;
+            while (ns < gt && html_attr_sep((unsigned char)html[ns])) ++ns;
+            size_t ne = ns;
+            while (ne < gt && (isalnum((unsigned char)html[ne]) || html[ne] == '_' ||
+                               html[ne] == '-' || html[ne] == ':')) ++ne;
+            if (ne == ns) { p = (ns > p) ? ns : p + 1; continue; }
+            std::string name = html.substr(ns, ne - ns);
+            for (char& c : name) c = (char)tolower((unsigned char)c);
+            size_t eq = ne;
+            while (eq < gt && html_attr_sep((unsigned char)html[eq])) ++eq;
+            if (eq >= gt || html[eq] != '=') { p = ne; continue; }
+            size_t v = eq + 1;
+            while (v < gt && html_attr_sep((unsigned char)html[v])) ++v;
+            if (v >= gt) break;
+            char quote = (html[v] == '"' || html[v] == '\'') ? html[v] : 0;
+            size_t vs, ve;
+            if (quote) {
+                vs = v + 1;
+                ve = html.find(quote, vs);
+                if (ve == std::string::npos || ve > gt) break;
+            } else {
+                vs = v;
+                ve = vs;
+                while (ve < gt && !html_attr_sep((unsigned char)html[ve])) ++ve;
+            }
+            if (is_url_attr(name)) {
+                std::string norm = normalize_url_for_scheme(html.substr(vs, ve - vs));
+                if (!safe_url_scheme(norm)) {
+                    const size_t oldLen = ve - vs;
+                    html.replace(vs, oldLen, "about:blank");
+                    gt = gt - oldLen + 11;         // 替换后标签尾随长度缩短
+                    p = vs + 11;                   // 从替换末尾继续
+                    changed = true;
+                    continue;
+                }
+            }
+            p = quote ? ve + 1 : ve;
         }
+        if (changed) continue;      // 边界变了，从当前标签重新扫
+        i = gt + 1;
     }
 }
 
@@ -455,7 +653,7 @@ static bool render_formulas(const std::vector<FormulaItem>& formulas,
 {
     if (formulas.empty()) return false;
 
-    CreateDirectoryW(widen(out_dir).c_str(), NULL);
+    create_dirs_recursive(out_dir);   // build_dir 可能尚未存在（递归建父目录）
 
     // 哈希命名缓存：内容未变的公式命中 <hash>.png 直接跳过 FFI 渲染；
     // 渲染失败写 <hash>.fail（内容变了哈希变 → 自然重试）。
@@ -495,11 +693,14 @@ static bool render_formulas(const std::vector<FormulaItem>& formulas,
             goto fail;
         {
             MmdrBitmap bmp = {0};
-            if (mmdr_svg_to_png(svg, 0, 0, &bmp) == 0 &&
-                bmp.pixels && bmp.width > 0 && bmp.height > 0) {
-                char out_path[MAX_PATH];
-                snprintf(out_path, sizeof(out_path), "%s\\%016llx.png", out_dir.c_str(), (unsigned long long)tk.hash);
-                ok = write_png_file(out_path, bmp.pixels, bmp.width, bmp.height, bmp.stride);
+            // 返回 0 即取得位图所有权：即便像素/尺寸校验不通过也必须 free，
+            // 否则这条失败路径会泄漏 FFI 分配的内存。校验只决定是否写 PNG。
+            if (mmdr_svg_to_png(svg, 0, 0, &bmp) == 0) {
+                if (bmp.pixels && bmp.width > 0 && bmp.height > 0) {
+                    char out_path[MAX_PATH];
+                    snprintf(out_path, sizeof(out_path), "%s\\%016llx.png", out_dir.c_str(), (unsigned long long)tk.hash);
+                    ok = write_png_file(out_path, bmp.pixels, bmp.width, bmp.height, bmp.stride);
+                }
                 mmdr_bitmap_free(&bmp);
             }
         }
@@ -559,7 +760,14 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
             formula.erase(formula.begin());
         while (!formula.empty() && (formula.back() == '\n' || formula.back() == ' '))
             formula.pop_back();
-        if (formula.empty()) { md.erase(pos, end - pos + 2); continue; }
+        if (formula.empty()) {
+            md.erase(pos, end - pos + 2);
+            // The erase shifted every later byte: rescan the fenced ranges
+            // before the next in_any_fence() test, otherwise the stale
+            // coordinates let a $$ inside a code block be extracted.
+            fences = find_fenced_ranges(md);
+            continue;
+        }
         // 行内判定：$$ 前本行有文字，或结束标记后本行还有文字
         bool isInline = false;
         {
@@ -575,6 +783,10 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
         formulas.push_back({formula, !isInline});
         std::string placeholder = "\xFF\xFE_FORMULA_" + std::to_string(formulas.size()) + "_\xFF\xFE";
         md.replace(pos, end - pos + 2, placeholder);
+        // The document bytes after the placeholder moved; the fenced ranges
+        // must be re-derived from the CURRENT md before the next fence test
+        // (a stale list lets a code-block $$ pass as ordinary text).
+        fences = find_fenced_ranges(md);
         pos += placeholder.size();
     }
 
@@ -787,7 +999,7 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
     std::string mermaid_dir = build_dir + "\\mermaid";
     std::vector<uint64_t> mermaid_hashes;
     if (!mermaid_blocks.empty()) {
-        CreateDirectoryW(widen(mermaid_dir).c_str(), NULL);
+        create_dirs_recursive(mermaid_dir);
         struct MTask { std::string key; uint64_t hash; };
         std::vector<MTask> mtasks;
         mermaid_hashes.resize(mermaid_blocks.size());
@@ -805,11 +1017,13 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
             const MTask& tk = mtasks[idx];
             MmdrBitmap bmp = {0};
             bool ok = false;
-            if (mmdr_mermaid_to_png(tk.key.c_str(), 0, 0, &bmp) == 0 &&
-                bmp.pixels && bmp.width > 0 && bmp.height > 0) {
-                char out_path[MAX_PATH];
-                snprintf(out_path, sizeof(out_path), "%s\\%016llx.png", mermaid_dir.c_str(), (unsigned long long)tk.hash);
-                ok = write_png_file(out_path, bmp.pixels, bmp.width, bmp.height, bmp.stride);
+            // 同上：返回 0 就无条件释放，校验只决定要不要落盘。
+            if (mmdr_mermaid_to_png(tk.key.c_str(), 0, 0, &bmp) == 0) {
+                if (bmp.pixels && bmp.width > 0 && bmp.height > 0) {
+                    char out_path[MAX_PATH];
+                    snprintf(out_path, sizeof(out_path), "%s\\%016llx.png", mermaid_dir.c_str(), (unsigned long long)tk.hash);
+                    ok = write_png_file(out_path, bmp.pixels, bmp.width, bmp.height, bmp.stride);
+                }
                 mmdr_bitmap_free(&bmp);
             }
             if (!ok) {
@@ -860,8 +1074,11 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
     std::string body_fonts = "'Microsoft YaHei', 'Segoe UI', Arial, Helvetica, sans-serif";
     std::string code_fonts = "'Consolas', 'Courier New', monospace";
     if (!base_font.empty()) {
-        body_fonts = "'" + base_font + "', " + body_fonts;
-        code_fonts = "'" + base_font + "', " + code_fonts;
+        std::string safe_font = css_font_literal(base_font);
+        if (!safe_font.empty()) {
+            body_fonts = "'" + safe_font + "', " + body_fonts;
+            code_fonts = "'" + safe_font + "', " + code_fonts;
+        }
     }
     std::ostringstream html;
     html << "<!DOCTYPE html>\n<html>\n<head>\n"
@@ -1082,13 +1299,8 @@ std::string md_to_html(const std::string& markdown, const std::string& build_dir
             std::string dstPath = build_dir + "\\" + rel;
             auto slash = dstPath.find_last_of("\\");
             if (slash != std::string::npos) {
-                std::string sub = dstPath.substr(0, slash);
-                size_t p = build_dir.size() + 1;
-                while ((p = sub.find("\\", p)) != std::string::npos) {
-                    CreateDirectoryW(widen(sub.substr(0, p)).c_str(), NULL);
-                    p++;
-                }
-                CreateDirectoryW(widen(sub).c_str(), NULL);
+            std::string sub = dstPath.substr(0, slash);
+            create_dirs_recursive(sub);
             }
             // 目标已存在且大小相同 → 跳过复制（刷新不再重复拷贝未变化的图片）
             DWORD da = GetFileAttributesW(widen(dstPath).c_str());

@@ -1,5 +1,5 @@
 // CrashReport.h - shared top-level exception handler for all three
-// Pecia executables (Pecia, PeciaLua, PeciaAIChat).
+// Pecia.exe (m025: the Lua console and the AI chat are windows in it).
 //
 // install() must be called at the very start of main() (before any
 // window or config setup) so failures during startup are captured too.

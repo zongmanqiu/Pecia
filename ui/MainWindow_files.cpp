@@ -54,6 +54,29 @@ static void notifyRecentDocs(const char *path) {
     SHAddToRecentDocs(SHARD_PATHW, widen(path).c_str());
 }
 
+// 把本地化文案里的唯一占位符换成已经格式化好的参数值。
+//
+// 语言文件里的句子带 %d / %lld / %s，但译文绝不能直接当 snprintf 的
+// 格式串：任何一条译文里出现孤立的 '%'（比如 "100%"）都会被当成转换符，
+// 读到不存在的参数，属于未定义行为；16 种语言的文本也无法由编译器校验。
+// 这里只把译文当纯文本：定位项目实际使用的三种占位符，前后两段都作为
+// %s 参数交给代码内的字面量格式串拼接，不新增任何 I18n 键。
+static std::string fillI18nArg(const char *tpl, const std::string &value) {
+    if (!tpl) return {};
+    static const char *const marks[] = { "%lld", "%d", "%s" };
+    for (const char *mark : marks) {
+        const char *p = strstr(tpl, mark);
+        if (!p) continue;
+        const std::string prefix(tpl, p);
+        const std::string suffix(p + strlen(mark));
+        char out[1024];
+        snprintf(out, sizeof(out), "%s%s%s",
+                 prefix.c_str(), value.c_str(), suffix.c_str());
+        return std::string(out);
+    }
+    return tpl;   // 没有占位符：译文原样返回
+}
+
 
 
 void MainWindow::newFile() {
@@ -132,7 +155,12 @@ bool MainWindow::closeCurrentTab() {
     delete t.page;
     delete t.doc;
 
-    switchToTab(activeTabIndex() < 0 ? 0 : activeTabIndex());
+    // Fl_Tabs::value_ still points at the deleted page after remove(), so
+    // activeTabIndex() is -1 here and "fallback 0" made every close jump to
+    // the first tab. Pick the successor by position instead: the tab that
+    // took the closed one's slot, or the new last tab if one was cut off.
+    int target = i >= (int)m_tabsList.size() ? (int)m_tabsList.size() - 1 : i;
+    switchToTab(target);
     syncTitleBar();
     redraw();
     return true;
@@ -157,7 +185,8 @@ void MainWindow::closeTab(int index) {
     delete t.page;
     delete t.doc;
 
-    switchToTab(activeTabIndex() < 0 ? 0 : activeTabIndex());
+    int target = index >= (int)m_tabsList.size() ? (int)m_tabsList.size() - 1 : index;
+    switchToTab(target);   // see closeCurrentTab: activeTabIndex() is stale after remove()
     syncTitleBar();
     redraw();
 }
@@ -171,6 +200,14 @@ bool MainWindow::spawnWindowWithFile(const char *path) {
     // 宽字符路径：中文安装目录下 GetModuleFileNameA/CreateProcessA 失效。
     wchar_t exePathW[MAX_PATH];
     GetModuleFileNameW(nullptr, exePathW, MAX_PATH);
+    // Only the product may spawn a copy of ITSELF. A test or probe binary
+    // would otherwise spawn ITSELF - and that copy would spawn another one
+    // (the copy reaches the same code path), which is how the smoke test
+    // used to end in a self-perpetuating process tree. The product's exe is
+    // "Pecia.exe" (a renamed build still starts with "Pecia").
+    const wchar_t *base = wcsrchr(exePathW, L'\\');
+    base = base ? base + 1 : exePathW;
+    if (_wcsnicmp(base, L"Pecia", 5) != 0) return false;
     std::wstring cmd = std::wstring(L"\"") + exePathW + L"\" \"" +
                        widen(path) + L"\"";
     // 让新进程相对当前窗口层叠：否则它会读到同一个已保存位置，
@@ -194,19 +231,24 @@ bool MainWindow::spawnWindowWithFile(const char *path) {
 // --------------------------------------------------------------------------
 
 void MainWindow::autoPreviewCb(void *data) {
-    MainWindow *self = static_cast<MainWindow *>(data);
-    if (!self) return;
-    // 延后一帧期间用户可能已经自己开了（或关了）预览、甚至关了窗口，
-    // 所以这里再判一次；setPreviewOnly() 是幂等的"设定目标状态"，
-    // 不会把用户手动开的预览又翻回去。
-    const int mode = self->m_pendingAutoPreviewMode;
-    self->m_pendingAutoPreviewMode = Config::AutoPreviewNone;
-    if (mode == Config::AutoPreviewNone) return;
-    self->setPreviewOnly(mode == Config::AutoPreviewOnly);
+    // 定时器回调边界：异常不能逃出事件循环（AGENTS.md 一.6 / 开发指南十.2）。
+    try {
+        MainWindow *self = static_cast<MainWindow *>(data);
+        if (!self) return;
+        // 延后一帧期间用户可能已经自己开了（或关了）预览、甚至关了窗口，
+        // 所以这里再判一次；setPreviewOnly() 是幂等的"设定目标状态"，
+        // 不会把用户手动开的预览又翻回去。
+        const int mode = self->m_pendingAutoPreviewMode;
+        self->m_pendingAutoPreviewMode = Config::AutoPreviewNone;
+        if (mode == Config::AutoPreviewNone) return;
+        self->setPreviewOnly(mode == Config::AutoPreviewOnly);
+    } catch (...) {
+        opLog("autoPreviewCb: unknown exception");
+    }
 }
 
 void MainWindow::openFile(const char *path) {
-    bool multi = m_cfg->getMultiTab();
+    if (!path || !*path) return;
 
     // Reuse an existing tab if the file is already open
     int existing = findTabByPath(path);
@@ -222,6 +264,7 @@ void MainWindow::openFile(const char *path) {
     // minutes/crash for hundreds of MB. Always load into a fresh Document
     // (no display attached) and mount it afterwards.
 
+    const bool multi = m_cfg->getMultiTab();
     if (!multi) {
         // Single-tab mode: never silently replace an open document. If the
         // current tab already holds content, open the new file in its own
@@ -240,55 +283,169 @@ void MainWindow::openFile(const char *path) {
         if (i >= 0 && m_tabsList[i].doc->isDirty()) {
             if (!checkSaveBeforeClose(i)) return;  // user cancelled
         }
-        if (i >= 0) {
-            Tab t = m_tabsList[i];
-            m_tabsList.erase(m_tabsList.begin() + i);
-            m_tabs->remove(t.page);
-            // Detach the old editor from its buffer and destroy the page
-            // BEFORE deleting the document: the old editor may still be the
-            // focused widget and would otherwise touch the freed buffer on
-            // the next FL_UNFOCUS (use-after-free -> intermittent crash).
-            t.editor->buffer(nullptr);
-            delete t.page;
-            delete t.doc;
-        }
-        Document *doc = new Document();
-        if (!doc->loadFile(path)) {
-            delete doc;
-            // If load failed, we still need at least one tab
-            newFile();
-            return;
-        }
-        addTab(doc, fl_filename_name(path));
+        if (!replaceActiveTabWithFile(path)) return;
     } else {
-        // Multi-tab mode: create a new tab for the file.
-        Document *doc = new Document();
-        if (!doc->loadFile(path)) {
-            delete doc;
-            return;
-        }
-        addTab(doc, fl_filename_name(path));
+        if (!addFileAsNewTab(path)) return;
+    }
+    afterFileOpened(path);
+}
 
-        // If the only other tab is an untouched "Unnamed" placeholder from
-        // startup (no text, not dirty, no file path), close it so launching
-        // "Pecia.exe <file>" doesn't leave an empty Unnamed tab behind.
-        if (m_tabsList.size() >= 2) {
-            Tab &t0 = m_tabsList[0];
-            Document *d0 = t0.doc;
-            if (!d0->isDirty() && !d0->filePath()[0] &&
-                d0->buffer() && d0->buffer()->length() == 0) {
-                // Switch to the new tab first, then remove index 0.
-                switchToTab((int)m_tabsList.size() - 1);
-                m_tabs->remove(t0.page);
-                t0.editor->buffer(nullptr);
-                delete t0.page;
-                delete t0.doc;
-                m_tabsList.erase(m_tabsList.begin());
-                layoutTabs();
-                syncTitleBar();
-            }
+// ---------------------------------------------------------------------------
+// Host/agent open (core/HostOps "doc.open").
+//
+// The agent is connected to THIS window, so the file must open HERE. The
+// normal openFile() would, in single-tab mode, hand the file to a SECOND
+// Pecia process (spawnWindowWithFile) and leave the agent editing the
+// previous document while another window shows the new one - the op would
+// then report success for something that did not happen here.
+//
+// Never spawns a process, never opens a modal dialog: when the active
+// document has unsaved changes the call REFUSES instead of discarding them.
+// ---------------------------------------------------------------------------
+bool MainWindow::openFileForHost(const char *path, std::string *err) {
+    if (!path || !*path) {
+        if (err) *err = "bad_arg: empty path";
+        return false;
+    }
+    int existing = findTabByPath(path);
+    if (existing >= 0) {
+        switchToTab(existing);
+        return true;
+    }
+    int i = activeTabIndex();
+    if (i >= 0 && m_tabsList[i].doc && m_tabsList[i].doc->isDirty()) {
+        if (err) *err = "unsaved_changes: the active document has unsaved changes; "
+                        "save it first (doc.save) before opening another file";
+        return false;
+    }
+    if (!replaceActiveTabWithFile(path)) {
+        if (err) *err = "io: cannot open the file";
+        return false;
+    }
+    afterFileOpened(path);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Host/agent new (core/HostOps "doc.new"): same "no modal, no data loss"
+// contract as openFileForHost.
+// ---------------------------------------------------------------------------
+bool MainWindow::newFileForHost(std::string *err) {
+    if (!m_cfg->getMultiTab()) {
+        int i = activeTabIndex();
+        if (i >= 0 && m_tabsList[i].doc && m_tabsList[i].doc->isDirty()) {
+            if (err) *err = "unsaved_changes: the active document has unsaved changes; "
+                            "save it first (doc.save) before starting a new one";
+            return false;
         }
     }
+    newFile();
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Host/agent save (core/HostOps "doc.save"): never opens a modal. An
+// untitled document has no path to save into, and the Save-As chooser is a
+// blocking modal - refuse instead of stalling the UI thread behind it.
+// ---------------------------------------------------------------------------
+bool MainWindow::doSaveForHost(int tabIndex, std::string *err) {
+    if (tabIndex < 0 || tabIndex >= (int)m_tabsList.size() ||
+        !m_tabsList[tabIndex].doc) {
+        if (err) *err = "not_found: no active document";
+        return false;
+    }
+    Document *doc = m_tabsList[tabIndex].doc;
+    if (doc->isReadOnly()) {
+        if (err) *err = "read_only: the document cannot be overwritten";
+        return false;
+    }
+    if (!doc->filePath()[0]) {
+        if (err) *err = "no_path: the document has no file path; "
+                        "give it a name before saving";
+        return false;
+    }
+    // A legacy/ANSI target cannot represent every character. The interactive
+    // path asks the user ("save as UTF-8?"); the agent path refuses, because
+    // a confirmation dialog would block the whole UI thread.
+    if (!doc->canEncode(doc->encoding())) {
+        if (err) *err = "encoding: saving in the current encoding would lose data; "
+                        "convert the document to UTF-8 first";
+        return false;
+    }
+    const bool ok = doc->saveFile();
+    if (ok) {
+        updateTabLabel(tabIndex);
+        updateTitle();
+        updateStatusBar();
+    } else if (err) {
+        *err = "io: cannot write the file";
+    }
+    return ok;
+}
+
+// ---------------------------------------------------------------------------
+// Shared open-file plumbing
+// ---------------------------------------------------------------------------
+
+// Load the file and put it in place of the active tab. The file is loaded
+// FIRST: the old order erased the tab before loading, so a failed load
+// destroyed the document that was open (and left an empty one behind).
+bool MainWindow::replaceActiveTabWithFile(const char *path) {
+    Document *doc = new Document();
+    if (!doc->loadFile(path)) {
+        delete doc;
+        return false;
+    }
+    int i = activeTabIndex();
+    if (i >= 0) {
+        Tab t = m_tabsList[i];
+        m_tabsList.erase(m_tabsList.begin() + i);
+        m_tabs->remove(t.page);
+        // Detach the old editor from its buffer and destroy the page
+        // BEFORE deleting the document: the old editor may still be the
+        // focused widget and would otherwise touch the freed buffer on
+        // the next FL_UNFOCUS (use-after-free -> intermittent crash).
+        t.editor->buffer(nullptr);
+        delete t.page;
+        delete t.doc;
+    }
+    addTab(doc, fl_filename_name(path));
+    return true;
+}
+
+// Load the file into a brand new tab (multi-tab mode).
+bool MainWindow::addFileAsNewTab(const char *path) {
+    Document *doc = new Document();
+    if (!doc->loadFile(path)) {
+        delete doc;
+        return false;
+    }
+    addTab(doc, fl_filename_name(path));
+
+    // If the only other tab is an untouched "Unnamed" placeholder from
+    // startup (no text, not dirty, no file path), close it so launching
+    // "Pecia.exe <file>" doesn't leave an empty Unnamed tab behind.
+    if (m_tabsList.size() >= 2) {
+        Tab &t0 = m_tabsList[0];
+        Document *d0 = t0.doc;
+        if (!d0->isDirty() && !d0->filePath()[0] &&
+            d0->buffer() && d0->buffer()->length() == 0) {
+            // Switch to the new tab first, then remove index 0.
+            switchToTab((int)m_tabsList.size() - 1);
+            m_tabs->remove(t0.page);
+            t0.editor->buffer(nullptr);
+            delete t0.page;
+            delete t0.doc;
+            m_tabsList.erase(m_tabsList.begin());
+            layoutTabs();
+            syncTitleBar();
+        }
+    }
+    return true;
+}
+
+// The tail every successful open shares.
+void MainWindow::afterFileOpened(const char *path) {
     // Add to recent files
     m_cfg->recentAdd(path);
     notifyRecentDocs(path);
@@ -315,6 +472,9 @@ void MainWindow::openFile(const char *path) {
         const int mode = m_cfg->getAutoPreviewMode();
         if (mode != Config::AutoPreviewNone) {
             m_pendingAutoPreviewMode = mode;
+            // 连续打开多个 md 时会连续入队同一个回调；不去重就会排队执行
+            // 多次 setPreviewOnly（最后一次覆盖前面用户手动改的布局）。
+            Fl::remove_timeout(autoPreviewCb, this);
             Fl::add_timeout(0.0, autoPreviewCb, this);
         }
     }
@@ -555,7 +715,6 @@ void MainWindow::updateStatusBar() {
         snprintf(sizeStr, sizeof(sizeStr), "%.2f MB", bytes / (1024.0 * 1024.0));
     }
 
-    char buf2[256];
     // Read-only notice (large files open read-only) appears only when
     // needed, appended after Size - keeping the normal layout untouched
     // so the enc/Size spacing stays single when not read-only.
@@ -568,15 +727,78 @@ void MainWindow::updateStatusBar() {
     // 仅预览时编辑区被隐藏、光标不存在，行列号只是"上一个光标"的陈旧值：
     // 整段去掉，与菜单栏「编辑」的置灰状态保持一致（2026-11-01 用户定）。
     // 缩放/编码/大小描述的是文档本身，照旧显示。
-    const char *ro = t->doc->isReadOnly() ? "     Read-only" : "";
-    if (m_previewOnly) {
-        snprintf(buf2, sizeof(buf2), "%d%%     %s     Size %s%s",
-                 pct, enc, sizeStr, ro);
-    } else {
-        snprintf(buf2, sizeof(buf2), "%d:%d     %d%%     %s     Size %s%s",
-                 line, col, pct, enc, sizeStr, ro);
+    //
+    // Every WORD on this bar comes from the language file. It used to carry
+    // hardcoded English ("Read-only", "Size", "AI") in an otherwise fully
+    // translated UI - the only part of the status line the user could not
+    // read in their own language.
+    std::string ro;
+    if (t->doc->isReadOnly())
+        ro = std::string("     ") + I18n::get("status.readonly");
+    // Last script-run result (m037): short verb + the run's wall-clock cost,
+    // same conditional append style as the read-only notice, so the normal
+    // spacing is untouched when nothing has run. renderNotice() renders the
+    // stored KEY in the CURRENT language, so switching the language
+    // re-renders the notice instead of leaving the old wording on screen.
+    const std::string notice = m_scriptNotice.empty()
+                             ? std::string()
+                             : std::string("     ") + renderNotice(m_scriptNotice);
+    // While the AI column has a request in flight its elapsed seconds belong
+    // here: the pane has no title bar of its own any more (m039), and the
+    // number is the only thing the wait is worth describing.
+    std::string aiSeg;
+    if (m_aiChatDocked && m_aiChatElapsed >= 0) {
+        char num[32];
+        snprintf(num, sizeof(num), "%lld", m_aiChatElapsed);
+        aiSeg = std::string("     ")
+              + fillI18nArg(I18n::get("status.ai_elapsed"), num);
     }
-    m_status->value(buf2);
+    // The bar is assembled as a string, not through one big snprintf: the
+    // localized segments have very different lengths, and a fixed buffer
+    // would silently cut the tail (the script notice lives there) in the
+    // languages that need more room.
+    std::string bar;
+    if (!m_previewOnly) {
+        char posSeg[32];
+        snprintf(posSeg, sizeof(posSeg), "%d:%d", line, col);
+        bar += posSeg;
+        bar += "     ";
+    }
+    char pctSeg[16];
+    snprintf(pctSeg, sizeof(pctSeg), "%d%%", pct);
+    bar += pctSeg;
+    bar += "     ";
+    bar += enc;
+    bar += "     ";
+    bar += I18n::get("status.size");
+    bar += " ";
+    bar += sizeStr;
+    bar += ro;
+    bar += notice;
+    bar += aiSeg;
+    m_status->value(bar.c_str());
+}
+
+// The text the status line currently shows. A test asserts on it through
+// this accessor instead of hunting for the right Fl_Output in the widget
+// tree: the bar's content is localized, so a content-sniffing lookup would
+// only work in one language.
+std::string MainWindow::statusBarText() const {
+    if (!m_status) return std::string();
+    const char *v = m_status->value();
+    return v ? std::string(v) : std::string();
+}
+
+// Render a status notice in the CURRENT UI language. The notice keeps its
+// i18n key (see MainWindow::StatusNotice), so this is the single place
+// where its wording is decided - and it runs on every repaint, which is
+// what makes a language switch re-render the notice.
+std::string MainWindow::renderNotice(const StatusNotice &n) const {
+    if (n.key.empty()) return std::string();
+    if (!n.hasArg) return std::string(I18n::get(n.key.c_str()));
+    char num[32];
+    snprintf(num, sizeof(num), "%lld", n.arg);
+    return fillI18nArg(I18n::get(n.key.c_str()), num);
 }
 
 void MainWindow::tick() {
@@ -614,9 +836,10 @@ bool MainWindow::confirmUnsavedBeforeUpdate() {
     }
     if (dirty.empty()) return true;
 
-    char msg[320];
-    snprintf(msg, sizeof(msg), I18n::get("update.unsaved.msg"), (int)dirty.size());
-    int r = ConfirmDialog(I18n::get("update.unsaved.title"), msg,
+    char num[32];
+    snprintf(num, sizeof(num), "%d", (int)dirty.size());
+    const std::string msg = fillI18nArg(I18n::get("update.unsaved.msg"), num);
+    int r = ConfirmDialog(I18n::get("update.unsaved.title"), msg.c_str(),
                           I18n::get("dlg.save"), I18n::get("dlg.cancel"), nullptr,
                           &m_theme, m_cfg->getUiFontSize()).run();
     if (r != 0) return false;   // cancelled
@@ -642,10 +865,9 @@ bool MainWindow::resolveLossyEncoding(Document *doc, Encoding &enc) {
                        I18n::get("dlg.ok"));
         return false;
     }
-    char msg[512];
-    snprintf(msg, sizeof(msg), I18n::get("confirm.lossy_save.msg"),
-             encodingDisplayName(enc));
-    int r = ConfirmDialog(I18n::get("confirm.lossy_save.title"), msg,
+    const std::string msg = fillI18nArg(I18n::get("confirm.lossy_save.msg"),
+                                        encodingDisplayName(enc));
+    int r = ConfirmDialog(I18n::get("confirm.lossy_save.title"), msg.c_str(),
                           I18n::get("dlg.save_as_utf8"), I18n::get("dlg.cancel"),
                           nullptr, &m_theme, m_cfg->getUiFontSize()).run();
     if (r != 0) return false;   // cancelled / closed
@@ -660,11 +882,10 @@ bool MainWindow::doSave(int tabIndex) {
     // the user may still use Save As to export a copy. Say so: a silent
     // "nothing happened" on Ctrl+S reads like the save succeeded.
     if (doc->isReadOnly()) {
-        char _msg[512];
-        snprintf(_msg, sizeof(_msg), I18n::get("error.readonly_save"),
-                 doc->filePath());
+        const std::string _msg = fillI18nArg(I18n::get("error.readonly_save"),
+                                             doc->filePath());
         if (UiBridge *b = uiBridge())
-            b->message(I18n::get("error.title"), _msg, I18n::get("dlg.ok"));
+            b->message(I18n::get("error.title"), _msg.c_str(), I18n::get("dlg.ok"));
         return false;
     }
     if (doc->filePath()[0]) {

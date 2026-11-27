@@ -13,6 +13,8 @@ class Fl_Check_Button;
 class Fl_Button;
 class Fl_Int_Input;
 class Fl_Input;
+class Fl_Group;
+class SettingsNav;
 class Config;
 class Theme;
 
@@ -51,6 +53,15 @@ public:
     // Dialogs menu to inspect the window's UI and translations.
     void openExtensionsForTest();
 
+    // m040 S3: the page gate walks the switcher and the page groups; the
+    // widgets themselves stay private.
+    int pageCount() const { return (int)m_pages.size(); }
+    Fl_Group *pageAt(int i) const {
+        return (i >= 0 && i < (int)m_pages.size()) ? m_pages[i] : nullptr;
+    }
+    Fl_Group *contentGroup() const { return m_content; }
+    class SettingsNav *nav() const { return m_nav; }
+
 
 
 private:
@@ -77,6 +88,18 @@ private:
     Fl_Check_Button *m_cleanupTempChk;   // Exit: clean 7-day-old temp files
     Fl_Int_Input    *m_longLineInput;    // 0 = off, >0 = column
     Fl_Input        *m_searchUrlInput;   // 搜索引擎 URL 模板（%s = 选中内容）
+    // m040: the AI endpoint / model / key live here and nowhere else. The
+    // chat pane used to open AIChatSettingsDialog for the same three keys.
+    Fl_Input        *m_aiEndpoint = nullptr;
+    Fl_Input        *m_aiModel = nullptr;
+    Fl_Input        *m_aiKey = nullptr;
+    Fl_Int_Input    *m_aiContext = nullptr;   // context turns (int, clamped)
+    // m040 S3: vertical page switcher. The controls are built ONCE and live
+    // in their page group; switching a page only shows/hides, so loadFrom /
+    // saveTo never learn about pages and cannot lose a value on a switch.
+    class SettingsNav *m_nav = nullptr;
+    Fl_Group        *m_content = nullptr;
+    std::vector<Fl_Group *> m_pages;
     Fl_Button       *m_okBtn;
     Fl_Button       *m_cancelBtn;
     const Theme    *m_theme = nullptr;
@@ -95,4 +118,7 @@ private:
     static void cbOk(Fl_Widget *w, void *data);
     static void cbCancel(Fl_Widget *w, void *data);
     static void cbChooseExts(Fl_Widget *w, void *data);
+
+    // Show one page and hide the rest (also syncs the switcher's active cell).
+    void showPage(int i);
 };

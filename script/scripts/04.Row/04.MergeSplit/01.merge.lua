@@ -65,7 +65,7 @@ if #input == 0 then
 end
 
 local sep = params.sep
-if sep == nil then sep = " " end  -- empty string = no separator
+if sep == nil or sep == "" then sep = " " end  -- default param arrives as ""
 
 local parts = {}
 local start = 1

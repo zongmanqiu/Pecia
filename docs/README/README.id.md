@@ -1,14 +1,16 @@
-> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
-
 # Pecia — Editor Teks yang Sangat Sederhana
+> Editor teks Windows: sangat ringan, multi-tab, file besar langsung terbuka, ekstensi skrip Lua, dan pratinjau Markdown.
+
+> **🌐 Languages**: [中文](../../README.md) | [繁體中文](README.zh-TW.md) | [English](README.en.md) | [日本語](README.ja.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [한국어](README.ko.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 ---
 
-**[⬇️ Unduh 1.1.3 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ Unduh 1.1.3 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Repo Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Mirror GitHub](https://github.com/zongmanqiu/Pecia) | [Demo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**⬇️ Unduh 1.2.0: [Gitee](https://gitee.com/qiuzongman/pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
+ ｜ **[GitHub](https://github.com/zongmanqiu/Pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
 
-Editor teks ringan untuk Windows berbasis C++17 + FLTK. Mendukung multi-tab, membuka file besar secara instan, multi-encoding, dan ekstensi skrip Lua. Baru: panel samping (pohon berkas/kerangka), dialog pemilih font, bayangan jendela; pratinjau Markdown merender dokumen sangat besar per blok.
+> Repo: [Gitee](https://gitee.com/qiuzongman/pecia) | [GitHub](https://github.com/zongmanqiu/Pecia)
 
-> **Dukungan Platform**: Hanya mendukung **Windows x64 (64-bit)**. Tidak menyediakan versi 32-bit, dan tidak lagi memelihara lintas platform (Linux/Mac/32-bit). Script build sudah memiliki pengecekan 64-bit bawaan (lihat bagian atas CMakeLists), jika salah mengatur 32-bit akan langsung error.
+> Demo: [Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 ## Antarmuka Perangkat Lunak
 
@@ -22,10 +24,6 @@ Editor teks ringan untuk Windows berbasis C++17 + FLTK. Mendukung multi-tab, mem
   - ![3.选项](3.选项.png)
 - Pengaturan pintasan
   - ![4.快捷键](4.快捷键.png)
-- Obrolan AI
-  - ![5.AI对话](5.AI对话.png)
-- Konsol Lua
-  - ![6.Lua控制台](6.Lua控制台.gif)
 - Skrip Lua
   - ![7.Lua脚本](7.Lua脚本.gif)
 
@@ -49,7 +47,7 @@ Editor teks ringan untuk Windows berbasis C++17 + FLTK. Mendukung multi-tab, mem
 FTER mengunduh source code, cukup klik dua kali script ini.
 REM Ini menjalankan secara berurutan: 1 pengecekan toolchain → 2 mengunduh 6 pustaka pihak ketiga → 3 menerapkan patch →
 REM 4 cargo fetch + mengkompilasi dua Rust FFI → 5 mengkompilasi FLTK + CMake Pecia tiga paket →
-REM menjalankan 33 unit test.
+REM menjalankan 36 unit test.
 REM Waktu pertama bergantung pada kecepatan internet dan komputer; setelah itu menggunakan cache, kompilasi increment + test sekitar 1-2 menit.
 build\full.bat
 ```
@@ -75,8 +73,8 @@ main/
 ├── core/               Logika inti murni (tanpa UI)
 ├── editor/             Kontrol editor
 ├── ui/                 Jendela / dialog / toolbar
-├── LuaTool/            Alat mandiri PeciaLua (jendela / entry / server pipe)
-├── AIChat/             Alat mandiri PeciaAIChat (jendela / entry)
+├── AIChat/             Panel obrolan AI (kolom sendiri) + log obrolan
+├── agent/              Endpoint MCP stdio (daftar tool dari registri host)
 ├── script/             Engine skrip Lua
 ├── DOCS_MANIFEST.md    Daftar dokumen (periksa satu per satu setelah mengubah kode, gerbang test_docs; hanya untuk pengembangan, tidak disertakan dengan exe)
 ├── image/              Sumber daya gambar (pecia.ico / ai_bot.ico / lua.ico …)

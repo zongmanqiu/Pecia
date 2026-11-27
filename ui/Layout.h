@@ -47,8 +47,7 @@ extern int STATUS_H;   // Status bar height
 
 constexpr int TABS_H     = 0;     // Fl_Tabs tab strip (hidden; tabs drawn by TitleBar)
 
-// Initial window size shared by all three processes (Pecia, Lua console,
-// AI chat): every window opens at the same 800x600.
+// Initial window size for the main window and the dialogs that mirror it.
 constexpr int DEFAULT_WIN_W = 800;
 constexpr int DEFAULT_WIN_H = 600;
 

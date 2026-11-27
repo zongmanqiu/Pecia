@@ -421,9 +421,9 @@ public:
         const int W = AboutPanel::kMinW;
         const int H = AboutPanel::kMinH;
 
-        const char *appName = I18n::get("app.name");
-        std::string title = (appName && *appName && strcmp(appName, "app.name") != 0)
-                                ? std::string(appName) : "Pecia";
+        // "app.name" 在 16 份语言文件中都不存在；直接用产品名常量，
+        // 不为一句品牌名新增 16 个键（其它回退逻辑保持不变）。
+        std::string title = "Pecia";
 // PECIA_VERSION comes from CMake (main target only). test_ui_smoke also
 // compiles this file, so fall back when the macro is absent.
 #ifndef PECIA_VERSION

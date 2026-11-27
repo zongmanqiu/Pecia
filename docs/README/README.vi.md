@@ -1,14 +1,16 @@
-> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
-
 # Pecia — Trình soạn thảo văn bản tối giản
+> Trình soạn thảo văn bản Windows: cực kỳ nhẹ, nhiều tab, mở tức thì tệp lớn, mở rộng bằng script Lua và xem trước Markdown.
+
+> **🌐 Languages**: [中文](../../README.md) | [繁體中文](README.zh-TW.md) | [English](README.en.md) | [日本語](README.ja.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [한국어](README.ko.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 ---
 
-**[⬇️ Tải 1.1.3 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ Tải 1.1.3 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Kho Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Mirror GitHub](https://github.com/zongmanqiu/Pecia) | [Demo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**⬇️ Tải 1.2.0: [Gitee](https://gitee.com/qiuzongman/pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
+ ｜ **[GitHub](https://github.com/zongmanqiu/Pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
 
-Trình soạn thảo văn bản nhẹ cho Windows, dựa trên C++17 + FLTK. Hỗ trợ nhiều tab, mở file lớn tức thì, đa mã hóa, mở rộng bằng script Lua. Mới: bảng bên (cây tệp/dàn ý), hộp thoại chọn phông chữ, đổ bóng cửa sổ; xem trước Markdown kết xuất tài liệu rất lớn theo khối.
+> Kho: [Gitee](https://gitee.com/qiuzongman/pecia) | [GitHub](https://github.com/zongmanqiu/Pecia)
 
-> **Định vị nền tảng**: Chỉ hỗ trợ **Windows x64 (64-bit)**. Không cung cấp phiên bản 32-bit và không còn duy trì đa nền tảng (Linux/mac/32-bit). Script build có sẵn kiểm tra 64-bit (xem đầu CMakeLists), nếu thiết lập nhầm 32-bit sẽ báo lỗi ngay.
+> Demo: [Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 ## Giao diện phần mềm
 
@@ -22,10 +24,6 @@ Trình soạn thảo văn bản nhẹ cho Windows, dựa trên C++17 + FLTK. H�
   - ![3.选项](3.选项.png)
 - Cài đặt phím tắt
   - ![4.快捷键](4.快捷键.png)
-- Trò chuyện AI
-  - ![5.AI对话](5.AI对话.png)
-- Bảng điều khiển Lua
-  - ![6.Lua控制台](6.Lua控制台.gif)
 - Kịch bản Lua
   - ![7.Lua脚本](7.Lua脚本.gif)
 
@@ -48,7 +46,7 @@ Trình soạn thảo văn bản nhẹ cho Windows, dựa trên C++17 + FLTK. H�
 REM Sau khi tải mã nguồn, chỉ cần click đôi script này.
 REM Nó chạy lần lượt: 1 kiểm tra công cụ build → 2 tải 6 thư viện bên thứ ba → 3 áp dụng patch →
 REM 4 cargo fetch + biên dịch 2 Rust FFI → 5 biên dịch FLTK + CMake biên dịch bộ ba Pecia →
-REM chạy 33 unit test.
+REM chạy 36 unit test.
 REM Thời gian lần đầu phụ thuộc vào mạng và máy; sau đó dùng lại cache, build tăng dần + test khoảng 1-2 phút.
 build\full.bat
 ```
@@ -74,8 +72,8 @@ main/
 ├── core/               Logic thuần lõi (không UI)
 ├── editor/             Widget trình soạn thảo
 ├── ui/                 Cửa sổ / hộp thoại / thanh công cụ
-├── LuaTool/            Công cụ độc lập PeciaLua (cửa sổ / điểm vào / pipe server)
-├── AIChat/             Công cụ độc lập PeciaAIChat (cửa sổ / điểm vào)
+├── AIChat/             Bảng trò chuyện AI (cột riêng) + nhật ký trò chuyện
+├── agent/              Điểm cuối MCP stdio (danh sách công cụ từ đăng ký máy chủ)
 ├── script/             Script engine Lua
 ├── DOCS_MANIFEST.md    Danh sách tài liệu (kiểm tra từng mục sau khi sửa code, cổng test_docs; chỉ dùng phát triển, không phát hành kèm exe)
 ├── image/              Tài nguyên hình ảnh (pecia.ico / ai_bot.ico / lua.ico …)

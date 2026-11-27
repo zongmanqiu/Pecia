@@ -32,7 +32,7 @@ $newest = ($headers | Sort-Object LastWriteTime -Descending |
 $cmakeFiles = Join-Path $BuildDir 'CMakeFiles'
 if (-not (Test-Path -LiteralPath $cmakeFiles)) { exit 0 }
 
-$dirs = @('Pecia.dir', 'PeciaLua.dir', 'PeciaAIChat.dir')
+$dirs = @('Pecia.dir')
 $dirs += Get-ChildItem -LiteralPath $cmakeFiles -Directory -Filter 'test_*.dir' |
          ForEach-Object Name
 

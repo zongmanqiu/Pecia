@@ -104,7 +104,7 @@ struct ShortcutAction {
     int         group;     // ShortcutGroup
 };
 
-// Static actions: window operations + the two standalone tools.
+// Static actions: window operations + the two tool windows (console / chat).
 // Menu actions (dynamic) and script actions (dynamic) are added by
 // MainWindow when building the dialog row list.
 extern const ShortcutAction g_shortcutActions[];
@@ -118,6 +118,11 @@ const ShortcutAction *shortcutFindAction(const char *id);
 // Config is read once and cached; used by modal dialogs so the OK button
 // can be triggered by a user-assignable shortcut.
 bool dialogOkShortcutMatches(int key, unsigned mods);
+
+// Drop the process-cached "win.button.ok" combo so the next query re-reads
+// settings.ini. Call after any Config::reloadFromDisk() / shortcut save,
+// otherwise changing the OK combo only takes effect after a restart.
+void shortcutCore_resetDialogOkCache();
 
 // Whether a shortcut change for this action can be applied by a
 // non-main window (tool windows handle win.* and their own group only).

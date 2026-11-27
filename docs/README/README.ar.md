@@ -1,15 +1,16 @@
-> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
-
 # Pecia — محرر نصوص بسيط للغاية
+> محرر نصوص لـ Windows: خفيف للغاية، علامات تبويب متعددة، فتح فوري للملفات الكبيرة، امتدادات Lua، ومعاينة Markdown.
+
+> **🌐 Languages**: [中文](../../README.md) | [繁體中文](README.zh-TW.md) | [English](README.en.md) | [日本語](README.ja.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [한국어](README.ko.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 ---
 
-**[⬇️ تنزيل 1.1.3 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ تنزيل 1.1.3 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [مستودع Gitee](https://gitee.com/qiuzongman/pecia) ｜ [مرآة GitHub](https://github.com/zongmanqiu/Pecia) | [عرض فيديو Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**⬇️ تنزيل 1.2.0: [Gitee](https://gitee.com/qiuzongman/pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
+ ｜ **[GitHub](https://github.com/zongmanqiu/Pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
 
-محرر نصوص خفيف الوزن للنظام التشغيلي Windows مبني على C++17 + FLTK. دعم علامات تبويب متعددة، فتح الملفات الكبيرة فوراً، ترميزات متعددة، وامتدادات سكريبت Lua. جديد: لوحة جانبية (شجرة الملفات/المخطط)، مربع حوار اختيار الخط، ظلال النوافذ؛ معاينة Markdown تعرض المستندات الضخمة على شكل أقسام.
+> مستودع: [Gitee](https://gitee.com/qiuzongman/pecia) | [GitHub](https://github.com/zongmanqiu/Pecia)
 
-> **نظام التشغيل المدعوم**: يدعم فقط **Windows x64 (64 بت)**. لا يوجد نسخة 32 بت، ولا تتم صيانة عبر المنصات
-> (Linux/Mac/32 بت). تحتوي سكريبتات البناء على فحص 64 بت مدمج (انظر أعلى CMakeLists)، وسيُظهر خطأ عند تكوين 32 بت عن غير قصد.
+> فيديو: [Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 ## واجهة البرنامج
 
@@ -23,10 +24,6 @@
   - ![3.选项](3.选项.png)
 - إعدادات الاختصارات
   - ![4.快捷键](4.快捷键.png)
-- محادثة AI
-  - ![5.AI对话](5.AI对话.png)
-- وحدة تحكم Lua
-  - ![6.Lua控制台](6.Lua控制台.gif)
 - نصوص Lua
   - ![7.Lua脚本](7.Lua脚本.gif)
 
@@ -53,7 +50,7 @@
 REM بعد تنزيل الكود المصدري، فقط انقر نقرة مزدوجة على هذا السكريبت.
 REM يعمل بالترتيب: 1 فحص سلسلة الأدوات ← 2 تنزيل 6 مكتبات خارجية ← 3 تطبيق الرقع ←
 REM 4 cargo fetch + ترجمة مكتبتين Rust FFI ← 5 ترجمة FLTK + CMake ترجمة حزمة Pecia ←
-REM تشغيل 33 اختباراً.
+REM تشغيل 36 اختباراً.
 REM يعتمد وقت البناء الأول على سرعة الإنترنت والجهاز؛ بعدها يُعاد استخدام الكاش، والترجمة التدريجية + الاختبارات تستغرق حوالي 1-2 دقيقة.
 build\full.bat
 ```
@@ -79,8 +76,8 @@ main/
 ├── core/               المنطق الأساسي النقي (بدون واجهة مستخدم)
 ├── editor/             عناصر تحكم المحرر
 ├── ui/                 النوافذ/مربعات الحوار/شريط الأدوات
-├── LuaTool/            أداة PeciaLua المستقلة (نافذة/نقطة دخول/خادم أنبوب)
-├── AIChat/             أداة PeciaAIChat المستقلة (نافذة/نقطة دخول)
+├── AIChat/             لوحة دردشة الذكاء الاصطناعي (عمود مستقل) + سجل الدردشة
+├── agent/              نقطة نهاية MCP stdio (قائمة الأدوات من سجل المضيف)
 ├── script/             محرك سكريبت Lua
 ├── DOCS_MANIFEST.md    قائمة الوثائق (للتحقق بعد تغيير الكود، بوابة test_docs؛ للتطوير فقط، لا تُرسل مع exe)
 ├── image/              موارد الصور (pecia.ico / ai_bot.ico / lua.ico …)

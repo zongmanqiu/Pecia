@@ -41,8 +41,8 @@ bool I18n::load(const char *code) {
     if (!code || !code[0]) return false;
 
     // Try, in order:
-    //   1. <exe dir>/lang/<code>.txt  - works regardless of CWD
-    //   2. lang/<code>.txt            - relative to CWD (legacy fallback)
+    //   1. <exe dir>/lang/<code>.ini  - works regardless of CWD
+    //   2. lang/<code>.ini            - relative to CWD (legacy fallback)
     // The exe-dir lookup mirrors Config::getExeDir() so lang files and
     // settings.ini always resolve to the same directory. Without it,
     // launching Pecia from anywhere other than build/ causes I18n::load
@@ -132,10 +132,10 @@ const char *I18n::detectSystemLang() {
         case 0x0009:                       candidate = "en";    break; // en
         case 0x0409:                       candidate = "en";    break; // en-US
         case 0x0804:                       candidate = "zh-CN"; break; // zh-CN
-        case 0x0404:                       candidate = "zh-CN"; break; // zh-TW (no zh-TW.txt; zh-CN is closest shipped)
+        case 0x0404:                       candidate = "zh-CN"; break; // zh-TW (no zh-TW.ini; zh-CN is closest shipped)
         default:
             // Any other Chinese sublanguage (zh-HK, zh-SG, ...) has no
-            // file; zh-CN is the closest match we ship.
+            // .ini file; zh-CN is the closest match we ship.
             if ((id & 0xFF) == LANG_CHINESE) candidate = "zh-CN";
             break;
     }

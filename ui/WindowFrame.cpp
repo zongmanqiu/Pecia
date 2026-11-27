@@ -377,7 +377,7 @@ bool paintNonClientFrame(Fl_Window *win, unsigned int borderColour) {
     ReleaseDC(hwnd, hdc);
     return true;
 #else
-    (void)win; (void)borderColour; (void)fallbackFill;
+    (void)win; (void)borderColour;
     return false;
 #endif
 }

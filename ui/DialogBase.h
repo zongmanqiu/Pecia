@@ -73,6 +73,14 @@ public:
     // corners / icon / taskbar behavior (same as the old setupToolChrome).
     void applyToolChrome();
 
+    // m025 "谁建界面谁登记": a dialog the host shows ON A SCRIPT'S BEHALF
+    // publishes itself to the WidgetRegistry so the ui.* host ops (and
+    // therefore an external agent) can see its widget tree. Modal dialogs
+    // that only serve the human UI stay unregistered - the registry is the
+    // script-surface contract, not a window list.
+    void enableInspection(const char *kind);
+    int  inspectionId() const { return m_inspectId; }
+
     // Apply the process-wide rounded-corner setting once the HWND exists
     // (modal dialogs have no ToolChrome subclass to do it for them).
     void show() FL_OVERRIDE;
@@ -136,4 +144,6 @@ private:
     bool m_titleBarDragging = false;  // true while user drags the title bar
     // Owned theme (tool-window mode): DialogBase loads & deletes it.
     Theme *m_ownedTheme = nullptr;
+    // WidgetRegistry handle (0 = not inspectable), see enableInspection().
+    int m_inspectId = 0;
 };

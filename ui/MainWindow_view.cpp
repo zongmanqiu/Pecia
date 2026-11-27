@@ -163,13 +163,14 @@ void MainWindow::cbToggleRoundedCorners(Fl_Widget * /*w*/, void *data) {
     // The ramp follows the corner radius, so every glow has to be rebuilt
     // even though no window geometry changed.
     windowShadow::syncAll();
-    // Already-running tool processes (PeciaLua / PeciaAIChat).
+    // Other Pecia instances (settings.ini is shared; m025 removed the
+    // separate tool processes, so this is the only cross-process hop left).
     windowChrome::broadcastRoundedCorners(on);
 }
 
 // View > Window Shadow - toggle the outer glow on every app window.
-// One process-wide switch: this window, any open dialog, and the two tool
-// processes (PeciaLua / PeciaAIChat, reached by the broadcast).
+// One process-wide switch: this window, any open dialog, and (via the
+// broadcast) the windows of other running Pecia instances.
 void MainWindow::cbToggleWindowShadow(Fl_Widget * /*w*/, void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
     if (!self) return;

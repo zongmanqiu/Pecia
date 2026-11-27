@@ -23,6 +23,8 @@
 // vscroll_reach, export_e2e, match_highlight).
 
 #include "test_assert.h"
+#include "core/HostOps.h"
+#include <map>
 
 #include "core/Config.h"
 #include "core/I18n.h"
@@ -32,7 +34,9 @@
 #include "editor/Document.h"
 #include "editor/Editor.h"
 #include "ui/SidePanel.h"
+#include "AIChat/AIChatPane.h"
 #include "ui/SmokeTest.h"
+#include "ui/ScriptDialogs.h"
 #include "mdview/container.h"
 #include "mdview/preview_panel.h"
 
@@ -42,6 +46,9 @@
 #include <FL/Fl_Output.H>
 #include <FL/Fl_Text_Editor.H>
 #include <FL/Fl_Tabs.H>
+#include <FL/Fl_Button.H>
+#include <FL/Fl_Check_Button.H>
+#include <vector>
 #include <FL/Fl_Menu_Item.H>
 #include <FL/Fl_Preferences.H>
 #include <FL/Fl_RGB_Image.H>
@@ -153,6 +160,284 @@ private:
 // fixTaskbarCb, which finish the frame + shadow hand-off) actually run. Using
 // Fl::wait with a small timeout keeps the test headless-ish: no user input.
 static void settle(double seconds = 0.05) { Fl::wait(seconds); }
+
+// ---------------------------------------------------------------------------
+// m025 gate: a window that dies with its preview OPEN must take the panel
+// down with it. PreviewPanel owns its view as a CHILD OF THE WINDOW and arms a
+// 30 ms pump timer pointing at itself; if only the window is destroyed, FLTK
+// frees the widget, the panel survives with the timer armed, and the next tick
+// runs pump() -> Fl_Widget::damage() on freed memory. That fault surfaces in
+// whichever event loop happens to run next - it is how this gate died several
+// windows after the preview tests (2026-11-26, backtraced with a VEH + map).
+// ---------------------------------------------------------------------------
+static void test_preview_panel_dies_with_window()
+{
+    std::fprintf(stderr, "[gate] preview_teardown\n");
+    {
+        MainWindow w(800, 600, "smoke-preview-teardown");
+        w.show();
+        settle();
+        CHECK(w.insertAiText("# Teardown sample\n\nBody text.\n"));
+        MainWindow::cbTogglePreviewOnly(&w, &w);   // 仅预览打开，且刻意不退出
+        settle(0.2);                               // 渲染发生、pump 定时器挂起
+    }
+    // 面板若还活着，它的 30ms 泵就落在这几次事件循环里。
+    for (int i = 0; i < 6; ++i) Fl::wait(0.1);
+    MainWindow after(640, 480, "smoke-after-teardown");
+    after.show();
+    settle(0.2);
+    CHECK(after.visible());
+}
+
+// ---------------------------------------------------------------------------
+// m039 gate: the preview column and the AI column are INDEPENDENT.
+//
+// The user asked for "one more column, like the Markdown preview". An earlier
+// attempt made the two share one slot behind a switcher tab, which is a
+// different product: opening the preview threw away the conversation. This
+// gate is the shape the correction has to keep:
+//   - both flags can be true at once, and neither entry point clears the
+//     other (that is exactly what the red proofs below pin);
+//   - three rects side by side, in order, without overlap, with the chat
+//     never narrower than its own button row;
+//   - the pane's children stay inside the pane - it is a CHILD of the window,
+//     so its coordinates are absolute (the first version painted the
+//     conversation over the editor and every outer rect check stayed green);
+//   - the wheel belongs to whichever column is under the pointer.
+// ---------------------------------------------------------------------------
+// The status bar's text, read through the window's own accessor. The old
+// version hunted the widget tree for the English word "Size"; the bar is
+// localized, so a content-sniffing lookup only ever worked in one language.
+static std::string statusLine(MainWindow *w)
+{
+    return w ? w->statusBarText() : std::string();
+}
+
+static void test_columns_independent()
+{
+    std::fprintf(stderr, "[gate] columns\n");
+    std::string md = "# Column sample\n\n";
+    for (int i = 1; i <= 60; ++i)
+        md += "## Section " + std::to_string(i) + "\n\nBody text.\n\n";
+    MainWindow w(1200, 700, "smoke-columns");
+    w.show();
+    settle();
+    CHECK(w.insertAiText(md));
+    settle(0.2);
+
+    std::fprintf(stderr, "c.1\n");
+    // 1. Nothing open: neither the pane nor the second bar was paid for.
+    CHECK(!w.m_aiChat);
+    CHECK(!w.m_aiDivider);
+    CHECK(!w.m_aiChatDocked);
+
+    std::fprintf(stderr, "c.2\n");
+    // 2. View > AI Chat alone: a pane inside this window, not a second HWND.
+    MainWindow::cbAIChat(&w, &w);
+    settle();
+    CHECK(w.m_aiChatDocked);
+    CHECK(!w.previewColumnOn());
+    CHECK(w.m_aiChat && w.m_aiChat->visible());
+    CHECK(w.m_aiChat->window() == static_cast<Fl_Window *>(&w));
+    CHECK(w.m_aiChat->x() > 0);
+    CHECK(w.m_aiChat->w() >= w.m_aiChat->minRowWidth());
+    CHECK(w.m_aiChat->h() > 100);
+    // no seam without a preview beside it
+    CHECK(!w.m_aiDivider->visible());
+
+    // 2b. m040: the button row is exactly two buttons - no attach checkbox,
+    //     no API entry, no To-Document entry - and they do not run into each
+    //     other. The column floor is derived from this row, so a silent third
+    //     button here would be clipped by the column instead of noticed.
+    {
+        std::vector<Fl_Widget *> btns;
+        int checkboxes = 0;
+        for (int i = 0; i < w.m_aiChat->children(); ++i) {
+            Fl_Widget *kid = w.m_aiChat->child(i);
+            if (!kid) continue;
+            if (dynamic_cast<Fl_Check_Button *>(kid)) ++checkboxes;
+            else if (dynamic_cast<Fl_Button *>(kid)) btns.push_back(kid);
+        }
+        int overlap = 0;
+        for (size_t a = 0; a < btns.size(); ++a)
+            for (size_t b = a + 1; b < btns.size(); ++b)
+                if (btns[a]->x() < btns[b]->x() + btns[b]->w()
+                    && btns[b]->x() < btns[a]->x() + btns[a]->w()) ++overlap;
+        CHECK(checkboxes == 0);
+        CHECK((int)btns.size() == 2);
+        CHECK(overlap == 0);
+        std::fprintf(stderr, "chat row: buttons=%d minRow=%d colW=%d\n",
+                     (int)btns.size(), w.m_aiChat->minRowWidth(), w.m_aiChat->w());
+    }
+    // the pane owns its own rectangle (absolute coordinates, see above)
+    {
+        int outside = 0;
+        for (int i = 0; i < w.m_aiChat->children(); ++i) {
+            Fl_Widget *kid = w.m_aiChat->child(i);
+            if (!kid) continue;
+            if (kid->x() < w.m_aiChat->x() || kid->y() < w.m_aiChat->y()
+                || kid->x() + kid->w() > w.m_aiChat->x() + w.m_aiChat->w()
+                || kid->y() + kid->h() > w.m_aiChat->y() + w.m_aiChat->h()) ++outside;
+        }
+        CHECK(outside == 0);
+    }
+    const int aiAloneW = w.m_aiChat->w();
+
+    std::fprintf(stderr, "c.3\n");
+    // 3. View > Markdown Preview joins - it must NOT displace the chat.
+    MainWindow::cbTogglePreview(&w, &w);
+    settle(0.3);
+    CHECK(w.previewColumnOn());
+    CHECK(w.m_aiChatDocked);
+    CHECK(w.m_aiChat->visible());
+    PreviewPanel *panel = w.previewPanel();
+    CHECK(panel && panel->view() && panel->view()->visible());
+
+    std::fprintf(stderr, "c.4\n");
+    // 4. Three rects, in order, no overlap, chat keeps its button row.
+    Fl_Tabs *tabs = nullptr;
+    for (int i = 0; i < w.children(); ++i)
+        if ((tabs = dynamic_cast<Fl_Tabs *>(w.child(i)))) break;
+    CHECK(tabs != nullptr);
+    const int edRight  = tabs ? tabs->x() + tabs->w() : 0;
+    const int prevLeft = panel->view()->x();
+    const int prevRight = prevLeft + panel->view()->w();
+    const int aiLeft   = w.m_aiChat->x();
+    CHECK(tabs && tabs->visible());
+    CHECK(edRight <= prevLeft);
+    CHECK(prevRight <= aiLeft);
+    CHECK(w.m_aiChat->x() + w.m_aiChat->w() <= w.w());
+    CHECK(w.m_aiChat->w() >= w.m_aiChat->minRowWidth());
+    CHECK(w.m_aiChat->w() < aiAloneW);          // the preview took its share
+    CHECK(w.m_aiDivider->visible());            // the seam between them
+    CHECK(w.m_aiDivider->x() + kDividerW == aiLeft);
+
+    std::fprintf(stderr, "c.5\n");
+    // 5. Closing the preview leaves the conversation up (the core of m039).
+    MainWindow::cbTogglePreview(&w, &w);
+    settle(0.3);
+    CHECK(!w.previewColumnOn());
+    CHECK(w.m_aiChatDocked);
+    CHECK(w.m_aiChat->visible());
+    CHECK(w.m_aiChat->w() == aiAloneW);
+    CHECK(!w.m_aiDivider->visible());
+    // The panel dies with the column (deferred tick): the pointer above is
+    // dangling from here on, so every reopen re-reads it from the window.
+    panel = w.previewPanel();
+
+    std::fprintf(stderr, "c.6\n");
+    // 6. And the other way: closing the chat must leave the preview alone.
+    MainWindow::cbAIChat(&w, &w);                 // chat off
+    MainWindow::cbTogglePreview(&w, &w);          // preview on
+    settle(0.3);
+    CHECK(!w.m_aiChatDocked);
+    CHECK(w.previewColumnOn());
+    panel = w.previewPanel();
+    CHECK(panel && panel->view()->visible());
+    CHECK(!w.m_aiChat->visible());
+    MainWindow::cbAIChat(&w, &w);                 // chat back, both up
+    settle();
+    CHECK(w.m_aiChatDocked && w.previewColumnOn());
+    CHECK(panel && panel->view()->visible());
+
+    std::fprintf(stderr, "c.7\n");
+    // 7. ai.send is an idempotent open, never the menu's toggle.
+    w.showAIChat();
+    settle();
+    w.showAIChat();
+    settle();
+    CHECK(w.m_aiChatDocked);
+    CHECK(w.m_aiChat->visible());
+
+    std::fprintf(stderr, "c.8\n");
+    // 8. The second bar drags the preview|AI seam, not the editor.
+    {
+        const int aiBefore = w.m_aiChat->w();
+        const int prevBefore = panel->view()->w();
+        w.m_aiDivider->onDrag(0.90f);             // AI column wider
+        settle();
+        CHECK(w.m_aiChat->w() > aiBefore);
+        CHECK(panel->view()->w() < prevBefore);
+        w.m_aiDivider->onDrag(0.20f);             // and back
+        settle();
+        CHECK(w.m_aiChat->w() < aiBefore + 4);
+    }
+
+    std::fprintf(stderr, "c.9\n");
+    // 9. The wheel scrolls the column under the pointer, not the other one.
+    {
+        settle(0.3);              // a render still landing would move scroll_y
+        const int beforePrev = panel->view()->scroll_y();
+        const int aiMid = w.m_aiChat->x() + w.m_aiChat->w() / 2;
+        const int prevMid = panel->view()->x() + panel->view()->w() / 2;
+        Fl::e_dy = 3;
+        Fl::e_x = aiMid;
+        Fl::e_y = w.m_aiChat->y() + 40;
+        Fl::e_state = 0;
+        static_cast<Fl_Widget *>(&w)->handle(FL_MOUSEWHEEL);
+        settle();
+        const int afterChat = panel->view()->scroll_y();
+        CHECK(afterChat == beforePrev);                      // chat, not preview
+
+        Fl::e_x = prevMid;                                   // over the preview
+        static_cast<Fl_Widget *>(&w)->handle(FL_MOUSEWHEEL);
+        settle();
+        const int afterPrev = panel->view()->scroll_y();
+        CHECK(afterPrev > beforePrev);
+        std::fprintf(stderr, "wheel band: prev=%d chatX=%d prevX=%d afterChat=%d afterPrev=%d\n",
+                     beforePrev, aiMid, prevMid, afterChat, afterPrev);
+        Fl::e_dy = 0;
+    }
+
+    std::fprintf(stderr, "c.10\n");
+    // 10. The request timer reads in the status line (the strip is gone).
+    {
+        // The elapsed seconds go through the language file, so the gate
+        // asks for the LOCALIZED rendering instead of a hardcoded "AI 7s".
+        char aiSeg[64];
+        snprintf(aiSeg, sizeof(aiSeg), I18n::get("status.ai_elapsed"), 7LL);
+        w.m_aiChatElapsed = 7;
+        w.updateStatusBar();
+        CHECK(statusLine(&w).find(aiSeg) != std::string::npos);
+        w.m_aiChatElapsed = -1;
+        w.updateStatusBar();
+        CHECK(statusLine(&w).find(aiSeg) == std::string::npos);
+    }
+
+    std::fprintf(stderr, "c.11\n");
+    // 11. A narrow window keeps the floors instead of overlapping.
+    w.size(760, 700);
+    settle();
+    CHECK(w.m_aiChat->w() >= w.m_aiChat->minRowWidth());
+    CHECK(panel->view()->w() >= 160);
+    CHECK(tabs->w() >= (int)((w.w() - tabs->x()) * 0.20f) - 2);
+    CHECK(w.m_aiChat->x() + w.m_aiChat->w() <= w.w());
+    CHECK(panel->view()->x() + panel->view()->w() <= w.m_aiChat->x());
+
+    // 12. Squeezed to the limit, the chat column still fits its own row:
+    //     the floor is measured, so the editor yields before a button is
+    //     pushed out of the pane (red proof K: aiMin = 1 makes this red).
+    w.size(420, 700);
+    settle();
+    {
+        int outside = 0;
+        for (int k = 0; k < w.m_aiChat->children(); ++k) {
+            Fl_Widget *kid = w.m_aiChat->child(k);
+            if (!kid) continue;
+            if (kid->x() < w.m_aiChat->x() || kid->x() + kid->w() > w.m_aiChat->x() + w.m_aiChat->w())
+                ++outside;
+        }
+        CHECK(outside == 0);
+        CHECK(w.m_aiChat->w() >= w.m_aiChat->minRowWidth());
+        std::fprintf(stderr, "squeeze: w=%d colW=%d minRow=%d tabs=%d,%d prev=%d,%d chat=%d,%d\n",
+                     w.w(), w.m_aiChat->w(), w.m_aiChat->minRowWidth(),
+                     tabs->x(), tabs->w(), panel->view()->x(), panel->view()->w(),
+                     w.m_aiChat->x(), w.m_aiChat->w());
+    }
+
+    w.hide();
+    settle(0.2);
+}
 
 // ---------------------------------------------------------------------------
 // A5 gate: editing a big document must not blank the preview.
@@ -391,6 +676,7 @@ static void test_preview_keyboard_scroll()
 // ---------------------------------------------------------------------------
 static void test_preview_right_click_dispatch()
 {
+    std::fprintf(stderr, "[gate] right_click\n");
     std::string md;
     for (int i = 1; i <= 40; ++i)
         md += "## Section " + std::to_string(i) + "\n\nText.\n\n";
@@ -441,6 +727,7 @@ static litehtml::element::ptr findAnchorElement(const litehtml::element::ptr &el
 
 static void test_preview_link_click_dispatch()
 {
+    std::fprintf(stderr, "[gate] link_click\n");
     MyContainer holder;
     ViewWidget view(0, 0, 640, 480, &holder);
     view.load_and_render(
@@ -542,6 +829,7 @@ static void test_preview_toggle_gdi() {
 // ---------------------------------------------------------------------------
 static void test_preview_only_menu_and_status()
 {
+    std::fprintf(stderr, "[gate] preview_only_menu\n");
     MainWindow w(800, 600, "smoke-preview-only");
     w.show();
     settle();
@@ -607,16 +895,14 @@ static void test_preview_only_menu_and_status()
     }
 
     // 状态栏：编码与大小里都没有冒号，所以"整串不含 ':'"就是没有 line:col
-    Fl_Output *status = nullptr;
-    for (int i = 0; i < w.children(); ++i) {
-        auto *o = dynamic_cast<Fl_Output *>(w.child(i));
-        if (o && std::strstr(o->value(), "Size")) { status = o; break; }
-    }
-    CHECK(status != nullptr);
+    // （经窗口自己的取文本接口读，不再在控件树里找 "Size"——状态栏是本地化的，
+    //   按内容找只在一个语言下成立）
     w.tick();
-    if (status) {
-        CHECK(std::strchr(status->value(), ':') == nullptr);
-        CHECK(std::strstr(status->value(), "Size") != nullptr);
+    {
+        const std::string bar = w.statusBarText();
+        CHECK(!bar.empty());
+        CHECK(std::strchr(bar.c_str(), ':') == nullptr);
+        CHECK(std::strstr(bar.c_str(), I18n::get("status.size")) != nullptr);
     }
 
     // 退出仅预览：菜单栏全部恢复可用，状态栏回到 line:col
@@ -628,7 +914,11 @@ static void test_preview_only_menu_and_status()
             if (it->flags & FL_MENU_INACTIVE) ++stillGray;
     CHECK(stillGray == 0);
     w.tick();
-    if (status) CHECK(std::strchr(status->value(), ':') != nullptr);
+    {
+        const std::string bar = w.statusBarText();
+        CHECK(!bar.empty());
+        CHECK(std::strchr(bar.c_str(), ':') != nullptr);
+    }
 
     w.hide();
     settle();
@@ -657,12 +947,11 @@ static Editor *findEditor(Fl_Group *g)
 
 static void test_preview_only_edit_lock()
 {
+    std::fprintf(stderr, "[gate] preview_only_lock\n");
     MainWindow w(800, 600, "smoke-preview-only-lock");
     w.show();
     settle();
-
     CHECK(w.insertAiText("# Locked sample\n\nBody text.\n"));
-    settle();
     MainWindow::cbTogglePreviewOnly(&w, &w);   // 没预览 → 以仅预览打开
     settle();
 
@@ -706,7 +995,705 @@ static void test_preview_only_edit_lock()
     settle();
 }
 
+// ---------------------------------------------------------------------------
+// m025: the Lua execution ops as the MCP client sees them (real registry,
+// real MainWindow, real handlers - not a re-implementation of the shape).
+//
+// Nails:
+//   - lua.validate compiles without executing (document untouched), and a
+//     script that WOULD write still writes nothing under validate;
+//   - lua.run pass path applies and reports applied/verdict;
+//   - lua.run error path leaves the document byte-identical;
+//   - a runaway loop is cut off by the instruction budget (no hang);
+//   - headless captures win:message into output instead of showing a box;
+//   - console.set -> console.get round-trips the drafting buffer;
+//   - script.run on an unknown name fails with not_found;
+//   - every Exec op respects the edit lock (perm_denied, no side effect).
+// ---------------------------------------------------------------------------
+static void test_host_lua_ops()
+{
+    HostRegistry &reg = HostRegistry::instance();
+    auto call = [&reg](const char *name, std::map<std::string, OpValue> args) {
+        return reg.dispatch(name, args);
+    };
+    auto textOf = [](const OpOutcome &o, const char *key) -> std::string {
+        if (o.value.kind() != OpValue::Kind::Map) return std::string();
+        const OpValue *v = o.value.find(key);
+        return v ? v->getString() : std::string();
+    };
+    auto intOf = [&](const OpOutcome &o, const char *key) -> long long {
+        if (o.value.kind() != OpValue::Kind::Map) return 0LL;
+        const OpValue *v = o.value.find(key);
+        return v ? v->getInt() : 0LL;
+    };
+    auto boolOf = [&](const OpOutcome &o, const char *key) -> bool {
+        if (o.value.kind() != OpValue::Kind::Map) return false;
+        const OpValue *v = o.value.find(key);
+        return v && v->getBool();
+    };
+    auto docText = [&]() {
+        OpOutcome o = call("doc.get_text", {});
+        return o.ok ? o.value.getString() : std::string("<ERR>");
+    };
+
+    MainWindow w(900, 650, "smoke-lua-ops");
+    w.show();
+    settle();
+    CHECK(w.insertAiText("# Ops sample\n\nBody text.\n", nullptr));
+    settle();
+
+    // every op the round promised is registered (tools/list projects this
+    // same registry, so this also proves the MCP surface)
+    for (const char *op : { "lua.validate", "lua.run", "script.run",
+                            "console.get", "console.set", "script.save",
+                            "ai.send", "ai.get" }) {
+        CHECK(reg.find(op) != nullptr);
+    }
+
+    // ---- validate: compiles, executes nothing -----------------------------
+    {
+        const std::string before = docText();
+        std::map<std::string, OpValue> a;
+        a["code"] = OpValue::makeStr("local x = ");
+        OpOutcome o = call("lua.validate", a);
+        CHECK(o.ok);
+        CHECK(!boolOf(o, "ok"));
+        CHECK(!textOf(o, "error").empty());
+        CHECK(intOf(o, "line") >= 1);
+        CHECK(docText() == before);            // zero side effect
+    }
+    {
+        // a script that would rewrite the document under run()
+        std::map<std::string, OpValue> a;
+        a["code"] = OpValue::makeStr("return 'HACKED'");
+        OpOutcome o = call("lua.validate", a);
+        CHECK(o.ok);
+        CHECK(boolOf(o, "ok"));
+        CHECK(docText() == "# Ops sample\n\nBody text.\n");   // validate ran nothing
+    }
+
+    // ---- run: pass path applies once, reports verdict ---------------------
+    {
+        std::map<std::string, OpValue> a;
+        a["code"] = OpValue::makeStr("return 'APPLIED'");
+        OpOutcome o = call("lua.run", a);
+        CHECK(o.ok);
+        CHECK(boolOf(o, "applied"));
+        CHECK(textOf(o, "verdict") == "pass");
+        CHECK(docText() == "APPLIED");
+        // restore the seed document for the sections below
+        CHECK(w.insertAiText("# Ops sample\n\nBody text.\n", nullptr));
+        settle();
+    }
+
+    // ---- run: runtime error leaves the document untouched -----------------
+    {
+        const std::string before = docText();
+        std::map<std::string, OpValue> a;
+        a["code"] = OpValue::makeStr("error('boom')");
+        OpOutcome o = call("lua.run", a);
+        CHECK(o.ok);                                   // protocol-level ok
+        CHECK(textOf(o, "verdict") == "error");       // semantic failure
+        CHECK(textOf(o, "error").find("boom") != std::string::npos);
+        CHECK(!boolOf(o, "applied"));
+        CHECK(docText() == before);
+    }
+
+    // ---- run: runaway loop is cut off (bounded, no hang) ------------------
+    {
+        const std::string before = docText();
+        std::map<std::string, OpValue> a;
+        a["code"] = OpValue::makeStr("local i = 0 while true do i = i + 1 end");
+        a["timeout_ms"] = OpValue::makeInt(200);
+        const ULONGLONG t0 = GetTickCount64();
+        OpOutcome o = call("lua.run", a);
+        const ULONGLONG dt = GetTickCount64() - t0;
+        CHECK(o.ok);
+        CHECK(textOf(o, "verdict") == "error");
+        CHECK(textOf(o, "error").find("timeout") != std::string::npos);
+        CHECK(docText() == before);
+        CHECK(dt < 5000);                     // the hook fired, not a hang
+    }
+
+    // ---- headless: win:message captured into output, no modal -------------
+    {
+        std::map<std::string, OpValue> a;
+        a["code"] = OpValue::makeStr("win:message('captured') local q = win:question('go?') return q and 'yes' or 'no'");
+        a["answer"] = OpValue::makeBool(true);
+        OpOutcome o = call("lua.run", a);
+        CHECK(o.ok);
+        CHECK(textOf(o, "output").find("[win:message] captured") != std::string::npos);
+        CHECK(textOf(o, "result") == "yes");
+    }
+
+    // ---- output cap: oversized print truncates with the flag set ---------
+    {
+        std::map<std::string, OpValue> a;
+        a["code"] = OpValue::makeStr("for i=1,500 do print('0123456789') end return ''");
+        a["out_cap"] = OpValue::makeInt(1000);
+        OpOutcome o = call("lua.run", a);
+        CHECK(o.ok);
+        CHECK(boolOf(o, "truncated"));
+        CHECK((int)textOf(o, "output").size() == 1000);
+    }
+
+    // ---- explicit selection: agents have no mouse ------------------------
+    {
+        CHECK(w.insertAiText("one two three\n", nullptr));
+        settle();
+        std::map<std::string, OpValue> a;
+        a["code"] = OpValue::makeStr("return string.upper(input)");
+        a["sel_start"] = OpValue::makeInt(4);
+        a["sel_end"] = OpValue::makeInt(7);
+        OpOutcome o = call("lua.run", a);
+        CHECK(o.ok);
+        CHECK(boolOf(o, "applied"));
+        CHECK(docText() == "one TWO three\n");   // line end survives the read
+        // out-of-bounds ranges are refused, not clamped silently
+        a["sel_end"] = OpValue::makeInt(9999);
+        OpOutcome bad = call("lua.run", a);
+        CHECK(!bad.ok);
+        CHECK(bad.err.find("bad_arg:") == 0);
+    }
+
+    // ---- console.set / console.get / console.show (m037: no window) ------
+    // The draft is persisted in script.last.txt next to the exe, so the test
+    // must hand back whatever the user had there.
+    {
+        std::string savedDraft;
+        OpOutcome pre = call("console.get", {});
+        if (pre.ok) savedDraft = pre.value.getString();
+
+        std::map<std::string, OpValue> a;
+        a["code"] = OpValue::makeStr("-- drafted by the agent\nreturn 1");
+        OpOutcome s = call("console.set", a);
+        CHECK(s.ok);
+        OpOutcome g = call("console.get", {});
+        CHECK(g.ok);
+        CHECK(g.value.getString() == "-- drafted by the agent\nreturn 1");
+
+        // console.show must put the draft on screen WITHOUT a new window:
+        // it opens an ordinary editor tab, so tab.list grows by one and the
+        // active document is the draft text.
+        int tabsBefore = 0;
+        OpOutcome tl = call("tab.list", {});
+        if (tl.ok) tabsBefore = (int)tl.value.list().size();
+        OpOutcome sh = call("console.show", {});
+        CHECK(sh.ok);
+        settle();
+        OpOutcome tl2 = call("tab.list", {});
+        CHECK(tl2.ok && (int)tl2.value.list().size() == tabsBefore + 1);
+        CHECK(docText() == "-- drafted by the agent\nreturn 1");
+
+        // an empty draft is refused with a reason, not silently ignored
+        std::map<std::string, OpValue> cl;
+        cl["code"] = OpValue::makeStr("");
+        call("console.set", cl);
+        OpOutcome empty = call("console.show", {});
+        CHECK(!empty.ok);
+        CHECK(!empty.err.empty());
+
+        std::map<std::string, OpValue> back;
+        back["code"] = OpValue::makeStr(savedDraft);
+        call("console.set", back);
+    }
+
+    // ---- script-run result is visible to a human (m037) ------------------
+    {
+        // The status bar is read through the accessor, not by sniffing the
+        // widget tree for the word "Size": the bar's content is localized,
+        // so a content-sniffing lookup would only work in one language.
+        w.reportScriptOutcome(true, "a\nb\nc\n", "");
+        w.tick();
+        CHECK(w.statusBarText().find(I18n::get("lua.ok_short")) != std::string::npos);
+
+        // the result belongs to the document it ran on: switching tabs drops it
+        w.switchToTab(0);
+        w.tick();
+        CHECK(w.statusBarText().find(I18n::get("lua.ok_short")) == std::string::npos);
+
+        // an agent-triggered run must leave the same trace, without an info
+        // window (the notice is empty right now, so only the op can set it)
+        {
+            std::map<std::string, OpValue> a;
+            a["code"] = OpValue::makeStr("error 'boom'");
+            OpOutcome o = call("lua.run", a);
+            CHECK(o.ok);                                  // transport fine
+            CHECK(textOf(o, "verdict") == "error");       // the script failed
+            w.tick();
+            CHECK(w.statusBarText().find(I18n::get("lua.fail_short")) != std::string::npos);
+        }
+
+        w.reportScriptOutcome(false, "", "Lua error: bad script");
+        w.tick();
+        CHECK(w.statusBarText().find(I18n::get("lua.fail_short")) != std::string::npos);
+
+        // ---- the number is the run's COST, not the output's line count ----
+        // The status line used to read "Script done 3" / "脚本完成 0": a
+        // counter that said nothing about the run (and whose meaning was
+        // nobody's guess). It now carries the wall-clock cost.
+        w.reportScriptOutcome(true, "a\nb\nc\n", "", true, 42);
+        w.tick();
+        {
+            char timed[128];
+            snprintf(timed, sizeof(timed), I18n::get("lua.ok_time"), 42LL);
+            CHECK(w.statusBarText().find(timed) != std::string::npos);
+            // the old meaning is gone: the three newlines of the output must
+            // not show up as the number
+            char oldForm[128];
+            snprintf(oldForm, sizeof(oldForm), "%s %d", I18n::get("lua.ok_short"), 3);
+            CHECK(w.statusBarText().find(oldForm) == std::string::npos);
+        }
+
+        // ---- the notice follows the UI language ----------------------------
+        // It is stored as an i18n KEY, so switching the language re-renders
+        // it; a pre-rendered string would keep the old wording on screen
+        // (the complaint the change answers).
+        {
+            char enTimed[128];
+            snprintf(enTimed, sizeof(enTimed), I18n::get("lua.ok_time"), 42LL);
+            const std::string enShort = I18n::get("lua.ok_short");
+            const std::string saved = I18n::currentCode();
+
+            CHECK(I18n::load("zh-CN"));
+            w.tick();
+            char zhTimed[128];
+            snprintf(zhTimed, sizeof(zhTimed), I18n::get("lua.ok_time"), 42LL);
+            CHECK(w.statusBarText().find(zhTimed) != std::string::npos);
+            // the English wording is gone: the notice was really re-rendered
+            CHECK(w.statusBarText().find(enTimed) == std::string::npos);
+            CHECK(w.statusBarText().find(enShort) == std::string::npos);
+
+            CHECK(I18n::load(saved.c_str()));
+            w.tick();
+            CHECK(w.statusBarText().find(enTimed) != std::string::npos);
+        }
+    }
+
+    // ---- menu structure: Tools dissolved (r042); AI Chat lives in View ----
+    {
+        // The Tools menu must be gone entirely...
+        CHECK(w.menuBar()->find_index("Tools") < 0);
+        // ...and View must carry exactly one AI Chat entry (the pane toggle).
+        // Note: buildMenuKeys rewrote the labels to the UI language, so the
+        // lookup path must be assembled from the i18n key, not the static
+        // English table label.
+        std::string path = std::string(I18n::get("menu.view")) + "/" + I18n::get("menu.view.aichat");
+        int idx = w.menuBar()->find_index(path.c_str());
+        CHECK(idx >= 0);
+        if (idx >= 0) {
+            const Fl_Menu_Item *it = w.menuBar()->menu() + idx;
+            CHECK(it->callback_ == (Fl_Callback *)MainWindow::cbAIChat);
+            CHECK(it->flags & FL_MENU_TOGGLE);            // it is a pane toggle
+            CHECK(it->flags & FL_MENU_DIVIDER);           // line before Font group
+        }
+    }
+
+    // ---- script.run: unknown name fails with not_found -------------------
+    {
+        std::map<std::string, OpValue> a;
+        a["name"] = OpValue::makeStr("no-such-script-xyz");
+        OpOutcome o = call("script.run", a);
+        CHECK(!o.ok);
+        CHECK(o.err.find("not_found:") == 0);
+    }
+
+    // ---- doc.api: the loop's very first step ------------------------------
+    // The instructions tell every agent to read lua_api.txt before writing a
+    // script. It ships as script/lua_api.txt (RELEASE_CHECKLIST §三), not next
+    // to the exe, so a handler that only looked in the exe directory answered
+    // not_found for every request.
+    {
+        std::map<std::string, OpValue> a;
+        a["name"] = OpValue::makeStr("lua_api.txt");
+        OpOutcome o = call("doc.api", a);
+        CHECK(o.ok);
+        CHECK(o.value.getString().find("pecia.doc_get_text") != std::string::npos);
+
+        // traversal is refused before any file is opened
+        a["name"] = OpValue::makeStr("..\\settings.ini");
+        OpOutcome esc = call("doc.api", a);
+        CHECK(!esc.ok);
+        CHECK(esc.err.find("bad_arg:") == 0);
+
+        a["name"] = OpValue::makeStr("definitely-not-shipped.txt");
+        OpOutcome miss = call("doc.api", a);
+        CHECK(!miss.ok);
+        CHECK(miss.err.find("not_found:") == 0);
+    }
+
+    // ---- edit lock: see test_host_lua_ops_locked() (fresh window) ---------
+    w.hide();
+    settle();
+}
+
+// The lock half of the m025 gate runs on its own window: the preview-only
+// mode is per-window state, and reusing the ops window (which has already
+// been through run/console/script calls) does not reproduce the product's
+// entry conditions.
+static void test_host_lua_ops_locked()
+{
+    HostRegistry &reg = HostRegistry::instance();
+    auto call = [&reg](const char *name, std::map<std::string, OpValue> args) {
+        return reg.dispatch(name, args);
+    };
+    auto docText = [&]() {
+        OpOutcome o = call("doc.get_text", {});
+        return o.ok ? o.value.getString() : std::string("<ERR>");
+    };
+
+    MainWindow w(800, 600, "smoke-lua-ops-lock");
+    w.show();
+    settle();
+    CHECK(w.insertAiText("# Locked ops sample\n\nBody text.\n", nullptr));
+    settle();
+    const std::string before = docText();
+
+    MainWindow::cbTogglePreviewOnly(&w, &w);   // 与 test_preview_only_edit_lock 同法
+    settle();
+    Editor *ed = findEditor(&w);
+    CHECK(ed && ed->doc() && ed->doc()->isEditLocked());
+
+    std::map<std::string, OpValue> a;
+    a["code"] = OpValue::makeStr("return 'x'");
+    for (const char *op : { "lua.validate", "lua.run" }) {
+        OpOutcome o = call(op, a);
+        CHECK(!o.ok);
+        CHECK(o.err.find("perm_denied:") == 0);
+    }
+    // script.run: the gate runs before the handler, so an unknown name does
+    // not leak past a locked document.
+    {
+        std::map<std::string, OpValue> sa;
+        sa["name"] = OpValue::makeStr("no-such-script-xyz");
+        OpOutcome o = call("script.run", sa);
+        CHECK(!o.ok);
+        CHECK(o.err.find("perm_denied:") == 0);
+    }
+    CHECK(docText() == before);
+    a["code"] = OpValue::makeStr("overwritten while locked");
+    OpOutcome s = call("console.set", a);
+    CHECK(!s.ok);
+    CHECK(s.err.find("perm_denied:") == 0);
+    CHECK(docText() == before);
+
+    w.hide();
+    settle();
+}
+
+// ---------------------------------------------------------------------------
+// doc.get_text must hand back the buffer byte-for-byte. The MCP loop is
+// read -> build an anchor from what you read -> doc.apply_edit, so any
+// rewriting of line ends on the read side silently breaks the write side.
+// The LF case alone does not prove the fix: the bug that lived here dropped
+// '\n' and kept '\r', so only a CRLF document shows the two behaviours
+// differing.
+// ---------------------------------------------------------------------------
+static void test_doc_get_text_is_byte_faithful()
+{
+    HostRegistry &reg = HostRegistry::instance();
+    auto call = [&reg](const char *name, std::map<std::string, OpValue> args) {
+        return reg.dispatch(name, args);
+    };
+
+    // The registry is a PROCESS singleton: the most recently constructed
+    // MainWindow owns its entries (a window's teardown removes them). So
+    // each part below uses its own window and the parts run one after the
+    // other, never nested.
+    {
+        // LF document written through the host itself
+        MainWindow w(900, 650, "smoke-get-text-lf");
+        w.show();
+        settle();
+
+        CHECK(w.insertAiText("# One\n\nTwo\n", nullptr));
+        settle();
+        {
+            OpOutcome o = call("doc.get_text", {});
+            CHECK(o.ok);
+            CHECK(o.value.getString() == "# One\n\nTwo\n");
+        }
+
+        // doc.open must REFUSE while the active document has unsaved
+        // changes: it may neither discard them silently, nor hand the file
+        // to a SECOND Pecia process (which would leave the agent editing the
+        // old document while another window shows the new one - and, for a
+        // non-product exe like this test, would spawn a copy of the test
+        // itself, which spawned another copy...).
+        const fs::path p = fs::temp_directory_path() / "pecia_smoke_gettext_crlf.md";
+        {
+            std::ofstream o(p, std::ios::binary | std::ios::trunc);
+            o << "# Line one\r\n\r\nSecond body\r\n";
+        }
+        std::map<std::string, OpValue> a;
+        a["path"] = OpValue::makeStr(p.string());
+        OpOutcome refused = call("doc.open", a);
+        CHECK(!refused.ok);
+        CHECK(refused.err.find("unsaved_changes") != std::string::npos);
+        {
+            // ... and the document is untouched.
+            OpOutcome o = call("doc.get_text", {});
+            CHECK(o.ok);
+            CHECK(o.value.getString() == "# One\n\nTwo\n");
+        }
+        std::error_code ec;
+        fs::remove(p, ec);
+        w.hide();
+        settle();
+    }
+
+    {
+        // CRLF document loaded from disk: line ends must come back intact.
+        // A FRESH window, so the document is clean and doc.open may replace
+        // it in place.
+        MainWindow w(900, 650, "smoke-get-text-crlf");
+        w.show();
+        settle();
+
+        const fs::path p = fs::temp_directory_path() / "pecia_smoke_gettext_crlf.md";
+        {
+            std::ofstream o(p, std::ios::binary | std::ios::trunc);
+            o << "# Line one\r\n\r\nSecond body\r\n";
+        }
+        std::map<std::string, OpValue> a;
+        a["path"] = OpValue::makeStr(p.string());
+        OpOutcome opened = call("doc.open", a);
+        CHECK(opened.ok);
+        settle();
+
+        OpOutcome o = call("doc.get_text", {});
+        CHECK(o.ok);
+        const std::string got = o.value.getString();
+        CHECK(got == "# Line one\r\n\r\nSecond body\r\n");
+
+        // the read/edit loop on the exact bytes just read: apply_edit locates
+        // the edit AT the anchor, so the anchor starts where old_text starts
+        std::map<std::string, OpValue> e;
+        e["old_text"] = OpValue::makeStr("Second body");
+        e["new_text"] = OpValue::makeStr("Second BODY");
+        e["anchor"] = OpValue::makeStr("Second body\r\n");
+        OpOutcome ed = call("doc.apply_edit", e);
+        CHECK(ed.ok);
+        OpOutcome again = call("doc.get_text", {});
+        CHECK(again.value.getString() == "# Line one\r\n\r\nSecond BODY\r\n");
+
+        // a byte window must not invent or drop anything either
+        std::map<std::string, OpValue> win;
+        win["start"] = OpValue::makeInt(2);
+        win["length"] = OpValue::makeInt(9);
+        OpOutcome part = call("doc.get_text", win);
+        CHECK(part.ok);
+        CHECK(part.value.getString() == "Line one\r");
+
+        std::error_code ec;
+        fs::remove(p, ec);
+        w.hide();
+        settle();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// m026 gate: the script run that the menu defers by one event-loop tick must
+// stop when the window that armed it is gone. ~MainWindow cannot revoke that
+// timeout (its data is a heap struct, not `this`), so the liveness token is
+// the only guard. Half A proves the plumbing really fires - without it half B
+// would pass vacuously if someone made the callback always skip.
+// ---------------------------------------------------------------------------
+static void test_deferred_script_run_stops_with_window()
+{
+    static char rel[] = "01.No/01_number_dot";   // a shipped root-group script
+    auto bufferOf = [](MainWindow *w) -> Fl_Text_Buffer * {
+        Editor *ed = findEditor(w);
+        return (ed && ed->doc()) ? ed->doc()->buffer() : nullptr;
+    };
+    auto textOf = [](Fl_Text_Buffer *b) {
+        return b ? std::string(b->text_range(0, b->length())) : std::string();
+    };
+
+    // ---- A: live window, the deferred run lands on the next tick ---------
+    {
+        MainWindow w(800, 600, "smoke-defer-alive");
+        w.show();
+        settle();
+        w.user_data(&w);
+        CHECK(w.insertAiText("abc\ndef\n", nullptr));
+        settle();
+        Fl_Text_Buffer *buf = bufferOf(&w);
+        CHECK(buf != nullptr);
+        if (buf) buf->select(0, buf->length());
+        MainWindow::cbRunScript(&w, rel);        // arms add_timeout(0.0, ...)
+        settle(0.2);
+        const std::string after = textOf(buf);
+        // The numbering script really ran: both lines gained their index.
+        CHECK(after == "1. abc\n2. def\n");
+        w.hide();
+        settle();
+    }
+
+    // ---- B: window dies before the tick; the token must stop it ----------
+    {
+        MainWindow *w = new MainWindow(800, 600, "smoke-defer-dead");
+        w->show();
+        settle();
+        w->user_data(w);
+        CHECK(w->insertAiText("abc\ndef\n", nullptr));
+        settle();
+        MainWindow::cbRunScript(w, rel);
+        delete w;                                // freed before the deferred tick
+        // Take the window's heap block back and fill it: a late tick that
+        // ignores the token must then read loud garbage instead of intact
+        // stale members (measured: without this, the crash rate is 1/10).
+        const std::vector<char> scrub(1u << 20, '\x41');
+        settle(0.2);
+        Fl::wait(0.2);
+        CHECK(!scrub.empty());
+    }
+
+    // The event loop and a fresh window must still be sound afterwards.
+    MainWindow after(700, 500, "smoke-defer-after");
+    after.show();
+    settle();
+    CHECK(after.visible());
+    after.hide();
+    settle();
+}
+
+// ---------------------------------------------------------------------------
+// m025 M5: the dialogs a script opens must be MEASURABLE and DRIVABLE from
+// the host registry - that is the whole reason Pecia hosts them instead of
+// letting Lua pop a Win32 box.
+// ---------------------------------------------------------------------------
+static void test_script_dialog_measurement()
+{
+    HostRegistry &reg = HostRegistry::instance();
+    auto call = [&reg](const char *name, std::map<std::string, OpValue> args) {
+        return reg.dispatch(name, args);
+    };
+
+    MainWindow w(800, 600, "smoke-ui-measure");
+    w.show();
+    settle();
+
+    PromptDialog dlg("Prompt", "Give a name", "abc",
+                     w.themePtr(), w.uiFontSizeForDialogs());
+    dlg.show();
+    settle();
+
+    // ---- ui.windows sees it ------------------------------------------------
+    OpOutcome ws = call("ui.windows", {});
+    CHECK(ws.ok);
+    int dlgId = -1;
+    for (const OpValue &e : ws.value.list()) {
+        const OpValue *kind = e.find("kind");
+        const OpValue *id = e.find("id");
+        if (kind && kind->getString() == "input" && id) dlgId = (int)id->getInt();
+    }
+    CHECK(dlgId >= 0);
+    if (dlgId < 0) { dlg.hide(); settle(); return; }
+
+    // ---- ui.inspect returns the real tree with usable paths ----------------
+    std::map<std::string, OpValue> ia;
+    ia["id"] = OpValue::makeInt(dlgId);
+    OpOutcome ins = call("ui.inspect", ia);
+    CHECK(ins.ok);
+    int inputPathDepth = -1, okButtons = 0;
+    std::vector<OpValue> inputPath;
+    for (const OpValue &node : ins.value.list()) {
+        const OpValue *cls = node.find("class");
+        const OpValue *pth = node.find("path");
+        const OpValue *lab = node.find("label");
+        const OpValue *val = node.find("value");
+        if (!cls || !pth) continue;
+        if (cls->getString() == "Fl_Input") {
+            inputPathDepth = (int)pth->list().size();
+            inputPath = pth->list();
+            if (val) CHECK(val->getString() == "abc");
+        }
+        if (lab && lab->getString() == "OK") ++okButtons;
+    }
+    CHECK(inputPathDepth == 1);          // one path level under the window
+    CHECK(okButtons >= 1);               // the OK button is addressable
+
+    // ---- ui.send type writes into the input, visible on re-inspect ---------
+    if (!inputPath.empty()) {
+        std::map<std::string, OpValue> sa;
+        OpValue p = OpValue::makeList();
+        for (const OpValue &v : inputPath) p.push(v);
+        sa["id"] = OpValue::makeInt(dlgId);
+        sa["path"] = std::move(p);
+        sa["event"] = OpValue::makeStr("type");
+        sa["text"] = OpValue::makeStr("XYZ");
+        OpOutcome s = call("ui.send", sa);
+        CHECK(s.ok);
+        OpOutcome ins2 = call("ui.inspect", ia);
+        bool seen = false;
+        for (const OpValue &node : ins2.value.list()) {
+            const OpValue *cls = node.find("class");
+            const OpValue *val = node.find("value");
+            if (cls && cls->getString() == "Fl_Input" && val &&
+                val->getString() == "abcXYZ") seen = true;
+        }
+        CHECK(seen);
+    }
+
+    // ---- ui.pixel reads the dialog off-screen (no foreground needed) ------
+    {
+        std::map<std::string, OpValue> pa;
+        pa["id"] = OpValue::makeInt(dlgId);
+        pa["x"] = OpValue::makeInt(4);
+        pa["y"] = OpValue::makeInt(4);
+        OpOutcome px = call("ui.pixel", pa);
+        CHECK(px.ok);
+        const std::string hex = px.value.getString();
+        CHECK(hex.size() == 7 && hex[0] == '#');
+    }
+
+    // ---- ui.wait: present now, gone after hide ----------------------------
+    {
+        std::map<std::string, OpValue> wa;
+        wa["title"] = OpValue::makeStr("Prompt");
+        wa["timeout_ms"] = OpValue::makeInt(200);
+        OpOutcome t1 = call("ui.wait", wa);
+        CHECK(t1.ok && t1.value.find("seen") && t1.value.find("seen")->getBool());
+
+        dlg.hide();
+        settle();
+        std::map<std::string, OpValue> wb;
+        wb["id"] = OpValue::makeInt(dlgId);
+        wb["timeout_ms"] = OpValue::makeInt(200);
+        OpOutcome t2 = call("ui.wait", wb);
+        CHECK(t2.ok && t2.value.find("seen") && t2.value.find("seen")->getBool());
+    }
+
+    // ---- hidden but alive: the id still reads, visible=false --------------
+    // (unregistration is the destructor's job - a hidden dialog is a real
+    // widget tree an agent may still want to inspect.)
+    {
+        std::map<std::string, OpValue> ia2;
+        ia2["id"] = OpValue::makeInt(dlgId);
+        OpOutcome again = call("ui.inspect", ia2);
+        CHECK(again.ok);
+        bool anyVisible = false;
+        for (const OpValue &node : again.value.list()) {
+            const OpValue *v = node.find("visible");
+            if (v && v->getBool()) anyVisible = true;
+        }
+        CHECK(!anyVisible);
+    }
+
+    w.hide();
+    settle();
+}
+
 int main() {
+    // A crash must not swallow the checkpoint that was running: stderr is
+    // unit-buffered here, so the last line printed IS the last line reached.
+    setvbuf(stderr, nullptr, _IONBF, 0);
+    // Never let the OS put up the Windows Error Reporting "Unknown Hard
+    // Error" dialog when the test dies: a modal box on a crashed test run
+    // blocks the whole build gate behind a click nobody will ever make
+    // (and it hides the real failure behind a system dialog).
+    SetErrorMode(SEM_NOGPFAULTERRORBOX | SEM_FAILCRITICALERRORS);
     // Same portability rule as the product entry point: never let FLTK core
     // touch fltk.org prefs outside the exe. Must precede any FLTK call.
     Fl_Preferences::file_access(Fl_Preferences::APP_OK);
@@ -730,6 +1717,7 @@ int main() {
     Config cfg;
     initLayoutHeights(cfg);
     I18n::load("en");
+
 
     // Seed 10 recent files BEFORE the window is constructed so its Config
     // loads them; the Recent Files submenu labels are checked below.
@@ -976,6 +1964,13 @@ int main() {
         CHECK(after - base <= 40);   // measured ~15; margin for jitter only
         win2.hide();
     }
+    // The D2 block needs multi-tab mode; the rest of the run asserts on the
+    // SINGLE-tab rule ("close the last tab hides the window"). Leaving
+    // multi_tab=1 behind changed what the remaining checks see - and when
+    // the run died before ScopedConfigBackup's destructor, the file kept
+    // multi_tab=1 for the NEXT run too (a crashed run silently changed the
+    // next one's outcome).
+    cfgBackup.forceSetting("multi_tab", "0");
 
     // ── Side-panel outline: draw cost must follow VISIBLE rows, not total ──
     // 5 MB 文档的大纲有 5498 条标题。绘制一帧若把所有行都过一遍（每行都要
@@ -1040,6 +2035,16 @@ int main() {
     test_preview_only_menu_and_status();
     // ── 仅预览：编辑能力锁（键盘 / Lua / AI / APPLY 一律失效）───────────────
     test_preview_only_edit_lock();
+    // ── 预览面板不得活过它的窗口（pump 定时器 UAF 回归）────────────────────
+    test_preview_panel_dies_with_window();
+    test_columns_independent();
+
+    // ── m025：Lua 执行 ops（MCP 客户端看到的同一张注册表）─────────────────
+    test_host_lua_ops();
+    test_host_lua_ops_locked();
+    test_doc_get_text_is_byte_faithful();
+    test_deferred_script_run_stops_with_window();
+    test_script_dialog_measurement();
 
     int fails = test::failCount();
     std::fprintf(stderr, "%d checks, %d failures\n", test::checkCount(), fails);

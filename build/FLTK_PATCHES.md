@@ -57,7 +57,7 @@
 为 `Fl_Text_Buffer` 增加**撤销事务（Undo Transaction）**机制，使一次程序化多步
 编辑（如脚本替换选区、批量插入）在撤销栈中合并为**单个 undo 步骤**：
 
-- 新增 `begin_undo_transaction()` / `end_undo_transaction()` 方法；
+- 新增 `undo_begin()` / `undo_end()` 方法；
 - 内部用 `mUndoGrouping` 嵌套计数跟踪事务深度，仅在最外层事务结束时落盘一条
   undo 记录；
 - `insert_()` / `remove_()` 在事务进行中时，将本次编辑事件标记为同一 `group`，
@@ -66,13 +66,33 @@
 
 **修改文件：** `src/Fl_Text_Buffer.cxx`、`FL/Fl_Text_Buffer.H`
 
-## Fl_Text_Display.cxx — 垂直滚动量程封顶 (2026-10-05)
+## Fl_Text_Display.cxx — 垂直滚动量程封顶 (2026-10-05, 2026-11-25 修正)
 
-`update_v_scrollbar()` 把滚动条量程封顶到 `mTopLineNum`，消除三处独立计算的
-滚动上限不一致导致的「拖到底仍差 1~6 像素」与长文档滑块死区。封顶守卫只在
-真边界（文档末行）生效，中途状态不受影响。
+`update_v_scrollbar()` 与 `scroll_()` 共用**同一个**下限值：`scroll_()` 计算
+并记录在本实例成员 `mVScrollAppliedLimit` 里，`update_v_scrollbar()` 直接复用，
+消除三处独立计算导致的「拖到底仍差 1~6 像素」与长文档滑块死区。
 
-**修改文件：** `src/Fl_Text_Display.cxx`
+2026-11-25 两处修正：
+1. 该记录值原本是**文件级 static**，同进程多个 `Fl_Text_Display`
+   （主编辑器 / Lua 工具两个窗格 / AI 聊天两个窗格）互相覆盖，某个窗口的
+   量程会按别的窗口的缓冲区行数计算。现改为实例成员（声明在补丁后的
+   `FL/Fl_Text_Display.H`）。
+2. 末行空行回拉循环的守卫 `mTopLineNum > bottom_line` 经实测确认**恒假**
+   （`scroll_()` 把顶行钳制到同一 limit），上游的回拉启发式因此实际不执行。
+   尝试把它改成 `<` 会同时破坏 `test_vscroll_reach` 的两条契约（拖动过程
+   失去单调推进、短文档带尾随空行时不再停在 top==1）——该启发式与
+   PECIA_BLANK_ROWS_PAST_END 的语义本就冲突，**维持现状（回拉保持关闭）是
+   被测过的出货行为**，只记录不修改。
+3. 同轮把 `update_v_scrollbar()` 的量程改为**按本实例当前行数即时重算**
+   （`vscroll_bottom_line(mNBufferLines, mNVisibleLines)`，下限 1）。原实现
+   读进程级 static 缓存：新窗口会继承上一个窗口拖到底时留下的大 limit
+   （test_vscroll_reach 契约 5 过去正是骑在这份"串窗污染"上才到 max=372），
+   而全新实例若不继承又会被 `scroll_()` 的钳制值卡住量程。即时重算让量程
+   与 `scroll_()` 用同一条公式（文档中"两处必须同一个 limit"的不变量由
+   公式而非缓存保证），`mVScrollAppliedLimit` 仅保留为 `scroll_()` 的记录值
+   供诊断，不再参与量程计算。
+
+**修改文件：** `FL/Fl_Text_Display.H`、`src/Fl_Text_Display.cxx`
 
 ## Fl_Scrollbar.cxx — 滚动条单一整轨道（去箭头区）(2026-10-13)
 
@@ -105,7 +125,7 @@ menuwindow::show() / hide() 调用 Pecia 的 peciaMenuShadowShown/Hidden，
 Gamma 曲线）附着到所有弹出菜单：菜单栏下拉、右键菜单、Fl_Choice 下拉、
 多级子菜单。关闭菜单时先销毁阴影再隐藏原生窗口，避免残留。
 
-Pecia / PeciaLua / PeciaAIChat / 两个 UI 冒烟测试链接 ui/WindowShadow.cpp，
+Pecia（含 AI 对话窗）与两个 UI 冒烟测试链接 ui/WindowShadow.cpp，
 提供真实实现；其他只链接 ltk.lib 的目标由 /alternatename 落到
 Fl_Menu.cxx 内的空桩，第三方库仍可独立链接。
 
@@ -140,3 +160,37 @@ Fl_Menu.cxx 内的空桩，第三方库仍可独立链接。
 **修改文件：** `src/Fl_Text_Display.cxx`
 **验证：** `temp/ab_wrap/`（旧/新 exe、逐行 CSV、截图与对比图）；
 `ex4.WrapTest/wrap-cases.txt` 的 16 组用例在 520/640/800/1000 px 下对比。
+
+## Fl_Text_Display.cxx — 禁用内建右键菜单（2026-11-25 补记）
+
+`handle()` 的 `FL_PUSH` 右键分支由「调用 `handle_rmb(1)` 弹内建
+cut/copy/paste 菜单」改为直接 `return 1`（吃掉事件）。该改动自 1.0.0 起
+存在于源码但本文档从未记录，且代码注释曾错误地指向本文档（"see
+main/build/FLTK_PATCHES.md"）——现补上这条真实声明。
+
+- 动机：主编辑器与预览区共用 Pecia 自建的右键菜单（`editor/Editor.cpp`
+  的 buildContextMenu，编辑/预览完全等同是用户定案），内建菜单会与之冲突。
+- 代价（明知并接受）：不走 `Editor` 类的显示件（Lua 工具窗脚本区/输出区、
+  AI 聊天历史/输入框）右键变成无操作；`Fl_Input` 系单行控件有自己的
+  `handle_rmb`，不受影响。若将来需要给工具窗补右键，走同一份
+  Fl_Menu_Item 公共路径，不要恢复内建菜单。
+
+**修改文件：** `src/Fl_Text_Display.cxx`
+
+## Fl_Text_Display.cxx — 多实例滚动量程修复落地 (2026-11-27)
+
+按上文「垂直滚动量程封顶」条目中 2026-11-25 修正第 3 点（即时重算）正式落地：
+
+- 构造函数初始化本实例成员 `mVScrollAppliedLimit = 0`；
+- `scroll_()` 把实际应用的 limit 记录到本实例成员 `mVScrollAppliedLimit`，仅供诊断；
+- `recalc_display()` 与 `update_v_scrollbar()` 改为按**本实例当前行数**用
+  `vscroll_bottom_line(mNBufferLines, mNVisibleLines)` 即时重算量程（下限 1），
+  `mVScrollAppliedLimit` 不再参与量程计算；
+- 原文件级 `static int vscroll_applied_limit` 已删除，仅在源码中保留历史注释，不再参与任何逻辑。
+
+多个 `Fl_Text_Display` 实例不再互相覆盖量程。上文 71-72 行「`update_v_scrollbar()`
+直接复用」为本次落地前的旧表述，最终行为以本条及 2026-11-25 修正第 3 点为准。
+`FL/Fl_Text_Display.H` 早已声明 `mVScrollAppliedLimit`，本次无需改动该头文件。
+
+**修改文件：** `src/Fl_Text_Display.cxx`
+**待验证：** 由主审统一构建，并回归 `test_vscroll_reach` / `test_vscroll_geom`（本次未跑构建）。

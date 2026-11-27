@@ -1,4 +1,4 @@
-// I18n.h - simple key=value string table loaded from lang/*.txt
+// I18n.h - simple key=value string table loaded from lang/*.ini
 #pragma once
 
 #include <string>
@@ -19,7 +19,7 @@
 #define I18N_MAX_LEN 256
 
 // I18n
-//   Loads key=value pairs from lang/<code>.txt. Lines starting with '#'
+//   Loads key=value pairs from lang/<code>.ini. Lines starting with '#'
 //   or '[' are comments; everything is UTF-8. The class is a singleton:
 //   call I18n::load(code) once at startup, then I18n::get(key) anywhere.
 class I18n {

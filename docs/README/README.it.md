@@ -1,14 +1,16 @@
-> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
-
 # Pecia — editor di testo minimale
+> Editor di testo per Windows: estremamente leggero, più schede, apertura istantanea di file di grandi dimensioni, estensioni Lua e anteprima Markdown.
+
+> **🌐 Languages**: [中文](../../README.md) | [繁體中文](README.zh-TW.md) | [English](README.en.md) | [日本語](README.ja.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [한국어](README.ko.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 ---
 
-**[⬇️ Scarica 1.1.3 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ Scarica 1.1.3 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Repo Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Mirror GitHub](https://github.com/zongmanqiu/Pecia) | [Demo Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**⬇️ Scarica 1.2.0: [Gitee](https://gitee.com/qiuzongman/pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
+ ｜ **[GitHub](https://github.com/zongmanqiu/Pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
 
-Editor di testo leggero per Windows basato su C++17 + FLTK. Supporto multi-schede, apertura istantanea di file di grandi dimensioni, supporto multiplo per le codifiche, estensione tramite script Lua. Novità: pannello laterale (albero dei file/struttura), finestra di scelta del font, ombre delle finestre; l'anteprima Markdown esegue il rendering a blocchi dei documenti molto grandi.
+> Repo: [Gitee](https://gitee.com/qiuzongman/pecia) | [GitHub](https://github.com/zongmanqiu/Pecia)
 
-> **Piattaforma**: supportata esclusivamente **Windows x64 (64 bit)**. Non viene fornita una versione a 32 bit e il supporto cross-platform (Linux/macOS/32 bit) è stato dismesso. Gli script di build integrano la verifica a 64 bit (vedere l'inizio di CMakeLists); una configurazione errata a 32 bit genererà un errore immediato.
+> Demo: [Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 ## Interfaccia del software
 
@@ -22,10 +24,6 @@ Editor di testo leggero per Windows basato su C++17 + FLTK. Supporto multi-sched
   - ![3.选项](3.选项.png)
 - Impostazioni scorciatoie
   - ![4.快捷键](4.快捷键.png)
-- Chat IA
-  - ![5.AI对话](5.AI对话.png)
-- Console Lua
-  - ![6.Lua控制台](6.Lua控制台.gif)
 - Script Lua
   - ![7.Lua脚本](7.Lua脚本.gif)
 
@@ -48,7 +46,7 @@ Editor di testo leggero per Windows basato su C++17 + FLTK. Supporto multi-sched
 Scarico il sorgente, poi basta un doppio clic su questo script.
 Esegue in sequenza: 1 verifica della toolchain → 2 download di 6 librerie di terze parti → 3 applicazione delle patch →
 4 cargo fetch + compilazione di due FFI Rust → 5 compilazione FLTK + CMake per i tre componenti Pecia →
-esecuzione di 33 unit test.
+esecuzione di 36 unit test.
 La durata della prima build dipende dalla rete e dalla potenza della workstation; le build successive sfruttano la cache, con compilazione incrementale + test in ~1-2 minuti.
 build\full.bat
 ```
@@ -74,8 +72,8 @@ main/
 ├── core/               Logica pura del core (senza UI)
 ├── editor/             Widget dell'editor
 ├── ui/                 Finestre/diaghi/barre degli strumenti
-├── LuaTool/            Strumento indipendente PeciaLua (finestra/ingresso/server di pipe con nome)
-├── AIChat/             Strumento indipendente PeciaAIChat (finestra/ingresso)
+├── AIChat/             Pannello chat IA (colonna propria) + registro chat
+├── agent/              Endpoint MCP stdio (elenco strumenti dal registro dell'host)
 ├── script/             Motore di scripting Lua
 ├── DOCS_MANIFEST.md    Registro della documentazione (verificato da test_docs dopo modifiche al codice; solo per sviluppo, non distribuito con exe)
 ├── image/              Risorse grafiche (pecia.ico / ai_bot.ico / lua.ico …)

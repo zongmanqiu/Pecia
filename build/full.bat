@@ -93,8 +93,6 @@ if "%EXIT_CODE%"=="1" (
     echo.
     echo shu chu mu lu: %~dp0..\..\build\
     echo   Pecia.exe
-    echo   PeciaLua.exe
-    echo   PeciaAIChat.exe
     echo   lang/  theme/  script/
 )
 echo.

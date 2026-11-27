@@ -1,12 +1,16 @@
-> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
-
 # Pecia — Minimalistischer Texteditor
+> Windows-Texteditor: extrem leichtgewichtig, mehrere Tabs, sofortiges Öffnen großer Dateien, Lua-Skripterweiterungen und Markdown-Vorschau.
 
-**[⬇️ 1.1.3 herunterladen (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ 1.1.3 herunterladen (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Gitee-Repo](https://gitee.com/qiuzongman/pecia) ｜ [GitHub-Spiegel](https://github.com/zongmanqiu/Pecia) | [Bilibili-Demo](https://www.bilibili.com/video/BV144Yo6oEz9/)
+> **🌐 Languages**: [中文](../../README.md) | [繁體中文](README.zh-TW.md) | [English](README.en.md) | [日本語](README.ja.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [한국어](README.ko.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
-Ein leichtgewichtiger Windows-Texteditor auf Basis von C++17 + FLTK. Mit mehreren Tabs, schnellem Öffnen großer Dateien, Unterstützung für verschiedene Codierungen und Lua-Skripterweiterungen. Neu: Seitenleiste (Dateibaum/Gliederung), Schriftauswahl-Dialog, Fensterschatten; Markdown-Vorschau rendert sehr große Dokumente blockweise.
+---
 
-> **Plattform**: Unterstützt nur **Windows x64 (64-Bit)**. Es wird keine 32-Bit-Version bereitgestellt, und die plattformübergreifende Entwicklung (Linux/Mac/32-Bit) wird nicht mehr gepflegt. Die Build-Skripte enthalten eine 64-Bit-Prüfung (siehe CMakeLists oben); bei Verwendung von 32-Bit wird ein Fehler ausgegeben.
+**⬇️ herunterladen 1.2.0: [Gitee](https://gitee.com/qiuzongman/pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
+ ｜ **[GitHub](https://github.com/zongmanqiu/Pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
+
+> Repo: [Gitee](https://gitee.com/qiuzongman/pecia) | [GitHub](https://github.com/zongmanqiu/Pecia)
+
+> Demo: [Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 ## Programmoberfläche
 
@@ -20,10 +24,6 @@ Ein leichtgewichtiger Windows-Texteditor auf Basis von C++17 + FLTK. Mit mehrere
   - ![3.选项](3.选项.png)
 - Tastenkürzel-Einstellungen
   - ![4.快捷键](4.快捷键.png)
-- AI-Chat
-  - ![5.AI对话](5.AI对话.png)
-- Lua-Konsole
-  - ![6.Lua控制台](6.Lua控制台.gif)
 - Lua-Skripte
   - ![7.Lua脚本](7.Lua脚本.gif)
 
@@ -45,8 +45,8 @@ Ein leichtgewichtiger Windows-Texteditor auf Basis von C++17 + FLTK. Mit mehrere
 ```bat
 REM Nach dem Herunterladen des Quellcodes einfach dieses eine Skript doppelklicken.
 REM Es führt der Reihe nach aus: 1 Toolchain-Check → 2 Herunterladen von 6 Drittanbieter-Bibliotheken → 3 Anwenden von Patches →
-REM 4 cargo fetch + Kompilieren zweier Rust-FFIs → 5 Kompilieren von FLTK + CMake-Kompilierung des Pecia-Dreierpacks →
-REM Ausführen von 33 Unit-Tests.
+REM 4 cargo fetch + Kompilieren zweier Rust-FFIs → 5 Kompilieren von FLTK + CMake-Kompilierung von Pecia →
+REM Ausführen von 36 Unit-Tests.
 REM Die Dauer des ersten Builds hängt von Netzwerk und Hardware ab; danach wird Cache wiederverwendet, inkrementelle Kompilierung + Test dauert ca. 1-2 Minuten.
 build\full.bat
 ```
@@ -72,8 +72,8 @@ main/
 ├── core/               Kernlogik (kein UI)
 ├── editor/             Editor-Steuerelement
 ├── ui/                 Fenster/Dialoge/Toolleiste
-├── LuaTool/            PeciaLua eigenständiges Tool (Fenster/Einstieg/Pipe-Server)
-├── AIChat/             PeciaAIChat eigenständiges Tool (Fenster/Einstieg)
+├── AIChat/             KI-Chat-Panel (eigene Spalte) + Chatprotokoll-Helfer
+├── agent/              MCP-stdio-Endpunkt (Werkzeugliste aus der Wirts-Registry)
 ├── script/             Lua-Skript-Engine
 ├── DOCS_MANIFEST.md    Dokumentationsliste (nach Codeänderungen Punkt für Punkt prüfen, `test_docs` Gatekeeper; nur für Entwicklung, nicht im EXE enthalten)
 ├── image/              Bildressourcen (pecia.ico / ai_bot.ico / lua.ico …)

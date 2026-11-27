@@ -23,18 +23,17 @@
 
 namespace ai_chat_log {
 
-// 日志文件路径：exe 同级 ai_chat.txt。主窗口（Pecia.exe）与 AI 窗口
-// （PeciaAIChat.exe）**共用同一个文件**——文件即对话状态：主窗口把选中文本
-// 作为 user 记录直接追加进来，AI 窗口轮询文件变化并以其为上下文发起请求。
-// 两个 exe 始终安装在同一目录（AI 窗口由主窗口从自己旁边拉起），所以按各自
-// 的 exe 位置推导出的路径必然相同。
+// 日志文件路径：exe 同级 ai_chat.txt。对话状态只有这一份文件，且只在
+// 单一进程（Pecia.exe）内读写：主窗口把选中文本作为 user 记录直接追加，
+// AIChatPane（主窗口右侧面板）轮询同一文件变化并以其为上下文发起请求。
+// 不存在第二个 exe / AI 对话窗口，也不存在跨进程共享。
 //
 // 文件名是单后缀 ai_chat.txt（旧版叫 ai_chat.log.txt，两个后缀读起来别扭）。
 
-// 旧名 ai_chat.log.txt → 新名 ai_chat.txt 的一次性迁移（进程内只做一次）。
+// 旧名 ai_chat.log.txt → 新名 ai_chat.txt 的一次性迁移（单次进程运行内只做一次）。
 // 返回 true = 新名可用（已迁移、本来就用新名、或没有历史文件）。
-// 迁移失败（旧文件被别的进程占用打开）时返回 false，调用方这一轮继续用旧名
-// —— 两个 exe 看到的是同一份文件，宁可名字难看，也不能分裂成两套历史。
+// 迁移失败（旧文件被占用打开）时返回 false，调用方这一轮继续用旧名
+// —— 宁可名字难看，也不能让同一进程的两条读写路径分裂成两套历史。
 inline bool migrateLegacyLogName(const std::wstring &dir) {
     const std::wstring nu = dir + L"\\ai_chat.txt";
     const std::wstring old = dir + L"\\ai_chat.log.txt";

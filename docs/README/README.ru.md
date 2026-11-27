@@ -1,14 +1,16 @@
-> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
-
 # Pecia — минималистичный текстовый редактор
+> Текстовый редактор для Windows: предельно лёгкий, несколько вкладок, мгновенное открытие больших файлов, расширения Lua и предпросмотр Markdown.
+
+> **🌐 Languages**: [中文](../../README.md) | [繁體中文](README.zh-TW.md) | [English](README.en.md) | [日本語](README.ja.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [한국어](README.ko.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 ---
 
-**[⬇️ Скачать 1.1.3 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ Скачать 1.1.3 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Репозиторий Gitee](https://gitee.com/qiuzongman/pecia) ｜ [Зеркало GitHub](https://github.com/zongmanqiu/Pecia) | [Демо на Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**⬇️ Скачать 1.2.0: [Gitee](https://gitee.com/qiuzongman/pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
+ ｜ **[GitHub](https://github.com/zongmanqiu/Pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
 
-Легковесный текстовый редактор для Windows на базе C++17 + FLTK. Много вкладок, мгновенное открытие больших файлов, поддержка множества кодировок, расширение скриптами на Lua. Новое: боковая панель (дерево файлов/структура), диалог выбора шрифта, тени окон; предпросмотр Markdown рендерит очень большие документы по блокам.
+> Репозиторий: [Gitee](https://gitee.com/qiuzongman/pecia) | [GitHub](https://github.com/zongmanqiu/Pecia)
 
-> **Платформа**: поддерживается только **Windows x64 (64 бит)**. 32-битная версия не предоставляется, кроссплатформенная поддержка (Linux/macOS/32 бита) более не ведётся. Скрипты сборки включают проверку на 64-битность (см. начало CMakeLists); при ошибочной конфигурации 32 бит будет выдана ошибка.
+> Демо: [Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 ## Интерфейс программы
 
@@ -22,10 +24,6 @@
   - ![3.选项](3.选项.png)
 - Настройки горячих клавиш
   - ![4.快捷键](4.快捷键.png)
-- AI-чат
-  - ![5.AI对话](5.AI对话.png)
-- Консоль Lua
-  - ![6.Lua控制台](6.Lua控制台.gif)
 - Сценарии Lua
   - ![7.Lua脚本](7.Lua脚本.gif)
 
@@ -48,7 +46,7 @@
 REM После скачивания исходного кода просто дважды щёлкните по этому скрипту.
 REM Он последовательно выполняет: 1 проверка цепочки инструментов → 2 загрузка 6 сторонних библиотек → 3 применение патчей →
 REM 4 cargo fetch + сборка двух Rust FFI → 5 сборка FLTK + CMake сборка Pecia →
-REM запуск 33 unit-тестов.
+REM запуск 36 unit-тестов.
 REM Время первой сборки зависит от сети и мощности ПК; повторные сборки используют кэш, инкрементальная сборка + тесты занимают ~1-2 минуты.
 build\full.bat
 ```
@@ -74,8 +72,8 @@ main/
 ├── core/               Чистая бизнес-логика (без UI)
 ├── editor/             Виджет редактора
 ├── ui/                 Окна/диалоги/панели инструментов
-├── LuaTool/            Отдельный инструмент PeciaLua (окно/точка входа/сервер именованных каналов)
-├── AIChat/             Отдельный инструмент PeciaAIChat (окно/точка входа)
+├── AIChat/             Панель ИИ-чата (отдельная колонка) + журнал чата
+├── agent/              Точка входа MCP stdio (список инструментов из реестра хоста)
 ├── script/             Скриптовый движок Lua
 ├── DOCS_MANIFEST.md    Реестр документации (проверяется test_docs после изменений кода; только для разработки, не поставляется с exe)
 ├── image/              Ресурсы изображений (pecia.ico / ai_bot.ico / lua.ico …)

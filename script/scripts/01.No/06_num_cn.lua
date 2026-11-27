@@ -11,6 +11,7 @@ if #input == 0 then
 end
 local CN = {"零","一","二","三","四","五","六","七","八","九"}
 local function cn(n)
+    if n >= 100 then return tostring(n) end  -- 中文数字仅覆盖 1..99，超出安全回退
     if n < 10 then return CN[n + 1]
     elseif n == 10 then return "十"
     elseif n < 20 then return "十" .. CN[n - 10 + 1]

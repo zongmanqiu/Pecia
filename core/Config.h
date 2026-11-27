@@ -11,6 +11,7 @@
 #include <chrono>
 #include <mutex>
 #include <atomic>
+#include <memory>
 #include <thread>
 
 // Config
@@ -44,16 +45,13 @@ Config();
     // the executable's directory. Production code keeps using Config().
     explicit Config(const std::filesystem::path &configDir);
 
-    // Standalone tools (PeciaLua / PeciaAIChat): use their OWN ini file
-    // next to the exe so three processes never race on settings.ini.
-    explicit Config(const std::string &iniFileName);
     ~Config();
 
     // Window geometry
     void getWindow(int &x, int &y, int &w, int &h, int &flags) const;
     void setWindow(int x, int y, int w, int h, int flags);
 
-    // Tool window size (standalone tools): width/height persisted under
+    // Tool window size (Lua console / AI chat): width/height persisted under
     // "<prefix>_win_w" / "<prefix>_win_h" in the same ini. Position is
     // not persisted - tools always re-center on open.
     void getToolSize(const char *prefix, int &w, int &h,
@@ -270,15 +268,35 @@ Config();
     void setLang(const char *code);
 
     // AI assistant: API key + model + endpoint for the Lua-script helper.
+    //
+    // The factory defaults live here and nowhere else: the seeding block, the
+    // getters' fallbacks, the setters' empty-value substitute and the chat
+    // pane all read these two. Ten copies of a URL is how one of them stays
+    // behind after the others are changed.
+    static constexpr const char *kDefaultAiModel =
+        "glm-4-flash";
+    static constexpr const char *kDefaultAiEndpoint =
+        "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+
     void getAiKey(char *buf, int len, const char *fallback = "") const;
     void setAiKey(const char *key);
     void getAiModel(char *buf, int len,
-                    const char *fallback = "glm-4-flash") const;
+                    const char *fallback = kDefaultAiModel) const;
     void setAiModel(const char *model);
     void getAiEndpoint(char *buf, int len,
-                       const char *fallback =
-                           "https://open.bigmodel.cn/api/paas/v4/chat/completions") const;
+                       const char *fallback = kDefaultAiEndpoint) const;
     void setAiEndpoint(const char *url);
+
+    // AI chat context depth, in conversation TURNS (one turn = user + reply).
+    // Stored as `ai_context_turns`; the chat pane sends turns*2 messages and
+    // drops the oldest beyond that. Default 25, clamped to 1..100 - the UI
+    // does the clamping on save, and the getter clamps again so a
+    // hand-edited settings.ini cannot poison the request builder.
+    static constexpr int kDefaultAiContextTurns = 25;
+    static constexpr int kMinAiContextTurns     = 1;
+    static constexpr int kMaxAiContextTurns     = 100;
+    int getAiContextTurns() const;
+    void setAiContextTurns(int turns);
 
     // Last used directory
     void getLastDir(char *buf, int len, const char *fallback = "") const;
@@ -314,10 +332,6 @@ Config();
     // Set a callback to be invoked when settings.ini is modified by
     // another process. The callback is called on the main FLTK thread.
     void setChangeCallback(std::function<void()> callback);
-    // Check if a change callback has been set (for static handler access)
-    bool hasChangeCallback() const { return m_changeCallback ? true : false; }
-    // Invoke the change callback
-    void invokeChangeCallback() { if (m_changeCallback) m_changeCallback(); }
 
     // Start/stop the file watcher thread. On Windows, this uses
     // ReadDirectoryChangesW for immediate notification. On other
@@ -328,6 +342,21 @@ Config();
 private:
     // Watcher thread main function (Windows only)
     void watcherThreadFunc();
+
+    // The notification reaches the UI thread through Fl::awake(), and
+    // FLTK 1.4.5 offers no Fl::remove_awake(): a message already queued when
+    // this Config is destroyed would hand its dangling `this` to the handler.
+    // Each queued message therefore carries a shared alive token; ~Config
+    // clears it, so the stale message no-ops instead of touching a dead
+    // window (same guard as ui/UpdateDialog's `alive`). The message itself is
+    // freed by the handler; one left in the queue at process exit is the
+    // worst-case leak, which is why the token is shared rather than owned.
+    struct AliveToken { std::atomic<bool> alive{true}; };
+    struct ChangeMsg {
+        Config                          *self;
+        std::shared_ptr<AliveToken>      alive;
+    };
+    static void awakeChange(void *data);
 
     std::filesystem::path m_iniPath;
 
@@ -367,8 +396,14 @@ private:
     std::thread       m_watcherThread;
 
     // Callback for file change notifications. When a change is detected,
-    // this callback is invoked on the main FLTK thread.
+    // this callback is invoked on the main FLTK thread. The watcher thread
+    // reads it while the UI thread installs/replaces it, so it is guarded
+    // by its own mutex (separate from m_ioMutex to avoid lock coupling).
     std::function<void()> m_changeCallback;
+    mutable std::mutex m_callbackMutex;
+
+    // Cleared by ~Config; see AliveToken above.
+    std::shared_ptr<AliveToken> m_alive = std::make_shared<AliveToken>();
 
     // Internal helpers
     std::filesystem::path getExeDir() const;

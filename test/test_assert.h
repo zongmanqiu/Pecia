@@ -6,10 +6,26 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <string>
+#include <type_traits>
 
 namespace test {
 inline int &failCount() { static int n = 0; return n; }
 inline int &checkCount() { static int n = 0; return n; }
+
+// Format one failed CHECK_EQ operand. The old implementation cast everything
+// to long long, which silently truncated floats (42.5f printed as "42").
+// Floating-point operands now keep their fractional part as a double.
+template <typename T>
+inline void appendValue(std::string &out, T v) {
+    if constexpr (std::is_floating_point_v<T>) {
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "%.17g", static_cast<double>(v));
+        out += buf;
+    } else {
+        out += std::to_string((long long)v);
+    }
+}
 }
 
 #define CHECK(cond)                                                            \
@@ -29,9 +45,12 @@ inline int &checkCount() { static int n = 0; return n; }
         auto vb = (b);                                                         \
         if (!(va == vb)) {                                                     \
             ++test::failCount();                                               \
-            std::fprintf(stderr, "FAIL %s:%d: %s == %s  (%lld vs %lld)\n",      \
+            std::string sa, sb;                                                \
+            test::appendValue(sa, va);                                         \
+            test::appendValue(sb, vb);                                         \
+            std::fprintf(stderr, "FAIL %s:%d: %s == %s  (%s vs %s)\n",          \
                          __FILE__, __LINE__, #a, #b,                           \
-                         (long long)va, (long long)vb);                        \
+                         sa.c_str(), sb.c_str());                              \
         }                                                                      \
     } while (0)
 

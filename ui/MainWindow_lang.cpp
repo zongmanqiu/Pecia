@@ -13,6 +13,7 @@
 #include "ui/GoTo.h"
 #include "ui/FindReplace.h"
 #include "ui/SidePanel.h"
+#include "AIChat/AIChatPane.h"
 #include <FL/Fl_Menu_Item.H>
 #include <FL/Fl_Menu_Bar.H>
 #include <FL/fl_draw.H>
@@ -69,6 +70,9 @@ void MainWindow::s_applyLangDeferred(void *data) {
     // Refresh the find/replace bar labels as well.
     if (self->m_findBar) self->m_findBar->refreshLabels();
     if (self->m_goToBar) self->m_goToBar->refreshLabels();
+    // m025: in-process tool windows keep their own label tables and
+    // shortcut registries - refresh them with the new language.
+    if (self->m_aiChat)  { self->m_aiChat->refreshLabels();  self->m_aiChat->applyShortcuts(); }
     // Rebuild the script bar: script display names come from each
     // script's ==Meta== block (@name.<current language>), which depends
     // on the new language. The rebuild also refreshes the script
@@ -114,6 +118,10 @@ void MainWindow::refreshRecentMenu() {
         m_recentMenuSize = n + 1;  // entries + nullptr terminator
         m_recentMenu = new Fl_Menu_Item[m_recentMenuSize];
         memset(m_recentMenu, 0, sizeof(Fl_Menu_Item) * m_recentMenuSize);
+        // Write cursor separate from the source index: a hole (text == 0)
+        // in the middle makes FLTK treat the array as ended, silently
+        // dropping every newer entry, and would desync cbOpenRecent's idx.
+        int w = 0;
         for (int i = 0; i < n; ++i) {
             char path[FL_PATH_MAX];
             m_cfg->recentGet(i, path, sizeof(path));
@@ -125,11 +133,13 @@ void MainWindow::refreshRecentMenu() {
             // 5-space gap between index, filename, and path.
             snprintf(label, sizeof(label),
                      "%02d     %s     %s",
-                     i + 1, base ? base : path, path);
-            m_recentMenu[i].text = _strdup(label);
-            m_recentMenu[i].callback_ = cbOpenRecent;
-            m_recentMenu[i].user_data_ = reinterpret_cast<void *>((intptr_t)i);
+                     w + 1, base ? base : path, path);
+            m_recentMenu[w].text = _strdup(label);
+            m_recentMenu[w].callback_ = cbOpenRecent;
+            m_recentMenu[w].user_data_ = reinterpret_cast<void *>((intptr_t)i);
+            ++w;
         }
+        m_recentMenuSize = w + 1;   // shrink to entries actually written
     }
 
     // Point the parent "Recent Files" entry's user_data at the new

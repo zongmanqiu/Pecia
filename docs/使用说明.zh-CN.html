@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pecia 使用说明</title>
+<style>
+  :root{
+    --bg:#ffffff; --panel:#f0f0f0; --soft:#f1efe8; --frame:#8c8c8c;
+    --text:#000000; --muted:#6b6b6b; --accent:#6a4fb4; --accent-soft:#efeafb;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:15px/1.75 "Microsoft YaHei UI","Microsoft YaHei","Segoe UI",sans-serif}
+  /* ---- 左侧固定目录 ---- */
+  #toc{position:fixed;left:0;top:0;bottom:0;width:236px;overflow-y:auto;
+       background:var(--panel);border-right:1px solid var(--frame);padding:24px 0}
+  #toc h1{font-size:17px;margin:0 20px 18px;letter-spacing:.5px}
+  #toc a{display:block;padding:7px 20px;color:var(--muted);text-decoration:none;
+         border-left:3px solid transparent;font-size:14px}
+  #toc a:hover{background:var(--accent-soft);color:var(--accent)}
+  #toc a.active{border-left-color:var(--accent);background:var(--accent-soft);
+                color:var(--accent);font-weight:600}
+  /* ---- 正文 ---- */
+  main{margin-left:236px;padding:40px 56px 120px;max-width:1080px}
+  section{scroll-margin-top:24px;margin-bottom:56px}
+  h2{font-size:23px;margin:0 0 18px;padding-bottom:8px;border-bottom:2px solid var(--accent)}
+  h3{font-size:17px;margin:26px 0 10px}
+  p{margin:10px 0}
+  ul,ol{margin:10px 0;padding-left:24px}
+  li{margin:6px 0}
+  code{background:var(--soft);border:1px solid #e2e0d8;border-radius:3px;
+       padding:1px 5px;font-family:Consolas,"Courier New",monospace;font-size:13px}
+  a{color:var(--accent)}
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14px}
+  th,td{border:1px solid #d8d8d8;padding:9px 12px;text-align:left;vertical-align:top}
+  th{background:var(--soft);font-weight:600}
+  .lead{font-size:16px;color:#222}
+  .note{background:var(--accent-soft);border-left:3px solid var(--accent);
+        padding:12px 16px;margin:16px 0}
+  .warn{background:#fff4f4;border-left:3px solid #c62828;padding:12px 16px;margin:16px 0}
+  .path{font-family:Consolas,"Courier New",monospace;color:var(--accent)}
+  /* ---- 可复制的 AI 提示词 ---- */
+  #toc a.star{color:var(--accent);font-weight:600}
+  .copyhead{display:flex;align-items:center;justify-content:space-between;gap:12px;
+            margin:18px 0 0;padding:10px 14px;background:var(--soft);
+            border:1px solid #e2e0d8;border-bottom:0}
+  .copyhead button{font:inherit;font-size:13px;color:#fff;background:var(--accent);
+            border:1px solid var(--accent);border-radius:3px;padding:5px 14px;cursor:pointer}
+  .copyhead button:hover{filter:brightness(.9)}
+  pre#aiPrompt{white-space:pre-wrap;word-break:break-word;background:#fbfbf9;
+            border:1px solid #e2e0d8;margin:0;padding:16px;
+            font:13px/1.8 "Microsoft YaHei UI",Consolas,monospace}
+  /* 需要用户按自己情况替换的占位：一眼可见 */
+  pre#aiPrompt .ph{color:#c62828;font-weight:600}
+  footer{margin-left:236px;padding:20px 56px 40px;border-top:1px solid #ddd;
+         color:var(--muted);font-size:13px}
+  @media(max-width:820px){
+    #toc{position:static;width:auto;height:auto;border-right:0;border-bottom:1px solid var(--frame)}
+    main,footer{margin-left:0;padding-left:20px;padding-right:20px}
+  }
+  @media (prefers-color-scheme: dark){
+    :root{--bg:#1e1e22; --panel:#26262b; --soft:#2d2d34; --frame:#555;
+          --text:#ddd; --muted:#999; --accent:#b39ddb; --accent-soft:#6a4fb422}
+    .lead,th,td{color:inherit}
+    th,td{border-color:#ffffff26}
+    pre#aiPrompt{background:#232329;border-color:#444}
+    .copyhead{border-color:#444}
+    .warn{background:#c6282818}
+    footer{border-color:#444}
+  }
+</style>
+</head>
+<body>
+
+<nav id="toc">
+  <h1>Pecia 使用说明</h1>
+  <a href="#intro">它是什么</a>
+  <a href="#who">适合谁用</a>
+  <a href="#features">能做什么</a>
+  <a href="#start">快速上手</a>
+  <a href="#scripts">内置脚本库</a>
+  <a href="#develop">自己写脚本</a>
+  <a href="#docs">文档都在哪里</a>
+  <a href="#ai-write" class="star">★ 让 AI 帮你干活</a>
+  <a href="#ai">AI 接入能做什么</a>
+  <a href="#faq">常见问题</a>
+</nav>
+
+<main>
+
+<section id="intro">
+  <h2>它是什么</h2>
+  <p class="lead">Pecia 是一个 <strong>Windows 原生的轻量 Markdown 编辑器</strong>：双击即开、单文件无安装依赖，
+  边写边在右侧实时预览，顺带一套内置的文本处理脚本。</p>
+  <p>它是<strong>写作与记录工具</strong>，不是 IDE，也不是笔记同步软件。文件就在你自己硬盘上，
+  预览、脚本、AI 接入都围绕"你眼前这份文档"进行。</p>
+  <ul>
+    <li>打开快、切预览快、占用低——这三条是它一切设计取舍的裁判。</li>
+    <li>预览区默认<strong>只读</strong>：点链接、双击图片、拖选复制都可以，改文字请回编辑区。</li>
+    <li>内置 Lua 5.5 与 PCRE2 正则库（<code>rex.*</code>），脚本栏收录 90 多个官方文本处理脚本，开箱即用。</li>
+    <li>自带 AI 对话面板（主窗口独立一栏，帮助润色、翻译、整理文本），也可以把 Pecia 接到外部 AI（MCP）让它直接改文档。</li>
+  </ul>
+</section>
+
+<section id="who">
+  <h2>适合谁用</h2>
+  <table>
+    <tr><th>你是……</th><th>Pecia 能给你的</th></tr>
+    <tr><td>记笔记 / 写文档的人</td><td>即开即写的 Markdown，大纲侧栏、目录跳转、表格/公式/mermaid 实时预览。</td></tr>
+    <tr><td>经常处理文本的人</td><td>去重、加序号、中英混排空格、正则替换……底栏脚本一点，结果直接替换选区。</td></tr>
+    <tr><td>多语言用户</td><td>界面 16 种语言即时切换并记忆，含 RTL（阿拉伯语）。</td></tr>
+    <tr><td>想让 AI 干活的人</td><td>标准 MCP 接口：AI 能读你的文档、跑脚本、改完自己复验；不配 MCP 也有内置对话面板。</td></tr>
+    <tr><td>会点 Lua 的人</td><td>往 <span class="path">script\</span> 扔个 <code>.lua</code> 就多一个菜单项，参数框自动生成。</td></tr>
+  </table>
+  <div class="note">Pecia 不联网也能用全功能；只有检查更新、渲染远程图片时才需要网络。Lua 脚本不是沙箱——只运行你信任的脚本。</div>
+</section>
+
+<section id="features">
+  <h2>能做什么</h2>
+  <h3>编辑</h3>
+  <ul>
+    <li>多标签、分栏拖动的编辑/预览布局，比例与窗口状态都持久化。</li>
+    <li>行号、当前行标记、长行标尺、中英混排智能换行（不在汉字中间硬断行）。</li>
+    <li>查找/替换（支持正则）、跳转行、撤销重做按"操作"而非按键计——一次脚本运行 = 一次撤销。</li>
+    <li>编码自动识别（UTF-8/GBK 等）并按原编码存回；另存为可换编码、换换行符。</li>
+  </ul>
+  <h3>预览</h3>
+  <ul>
+    <li>标题/表格/任务列表/脚注/高亮块；代码块、mermaid 流程图、LaTeX 公式即时渲染。</li>
+    <li>大文档分块渲染，百 MB 级文件也不会拖死滚动；目录按钮展开可折叠大纲。</li>
+    <li>「仅预览」模式：编辑能力锁上，查找直接在渲染文字里做——适合发布前通读。</li>
+  </ul>
+  <h3>自动化</h3>
+  <ul>
+    <li>底栏脚本菜单：安装目录 <span class="path">script\</span> 里的 <code>.lua</code> 自动成组（子文件夹 = 子菜单）。</li>
+    <li>视图 &gt; AI 对话：主窗口里独立的一栏，与 Markdown 预览各占一栏、可同时打开，中间的分隔条可拖；选中文字走右键「发送到 AI」，面板里只有 <code>清除</code> 与 <code>发送</code>。</li>
+    <li>MCP stdio 端点：外部 AI 客户端可直接读写当前文档、运行 Lua、查大纲（见下文 ★ 一节）。</li>
+  </ul>
+</section>
+
+<section id="start">
+  <h2>快速上手</h2>
+  <ol>
+    <li>双击 <span class="path">Pecia.exe</span> 启动，把 <code>.md</code> 文件拖进窗口即打开（或 <kbd>Ctrl+O</kbd>）。</li>
+    <li><kbd>Ctrl+Shift+P</kbd> 打开右侧预览；分隔条拖动调整左右比例，工具窗的预览同理。</li>
+    <li><kbd>Ctrl+S</kbd> 保存。想开机即记：设置里打开「固定启动文档」，之后双击 Pecia 直接进 <span class="path">Test.txt</span>。</li>
+    <li>左侧面板：文件树按目录走，大纲按标题跳；面板宽度可拖、可整体隐藏。</li>
+    <li>不顺手就换皮肤：设置 &gt; 主题（内置 5 套配色，另支持自定义主题 ini 文件）。</li>
+    <li>设置 &gt; 选项 分四页：<strong>编辑</strong>（制表符/长行标记/搜索引擎/自动缩进/检测网址/粘贴素材——打开后 Ctrl+V 会把剪贴板里的图片/文件落成 Markdown 链接，需先保存文档；剪贴板里有文字时仍按普通粘贴处理）、<strong>退出与保存</strong>（自动保存/清理临时文件/去空白/Tab 转空格）、<strong>界面与系统</strong>（多标签/固定启动文档/打开 .md 时/新建文本文档/打开方式）、<strong>AI</strong>（API URL、模型、API Key、上下文轮数——内置对话用的就是这一份；轮数是每次随消息一起发送的历史对话深度，默认 25，超出截最旧；接口地址与模型名出厂已预填，清空后对话栏会直说「AI 配置错误」，不会报成网络故障）。左侧标签条贴边通高（顶到标题栏、下接按钮栏），底色与菜单栏一致，行与行之间用空隙分隔、不画线。</li>
+  </ol>
+</section>
+
+<section id="scripts">
+  <h2>内置脚本库</h2>
+  <p>底栏「脚本」下拉收录 90 多个官方脚本，按分组目录组织，全部是纯文本处理，选中文本 → 点脚本 → 结果替换选区：</p>
+  <table>
+    <tr><th>分组</th><th>典型脚本</th></tr>
+    <tr><td>序号 / 配对</td><td>加 1. 2. 3. 序号、去序号、括号引号配对、编号重排</td></tr>
+    <tr><td>转换</td><td>正则替换、全半角、繁简辅助、大小写、时间日期插入</td></tr>
+    <tr><td>行处理</td><td>去重、排序、去空行、合并行、拆行、列对齐</td></tr>
+    <tr><td>格式化</td><td>中英混排自动加空格、缩进整理、Markdown 表格辅助</td></tr>
+  </table>
+  <p>想扩充官方库：菜单底部「打开脚本文件夹」直达 <span class="path">script\</span>，
+  把文件放进去，下次扫描即出现在菜单（同名内置脚本升级时会被官方版覆盖，自己的脚本请起不同名）。</p>
+</section>
+
+<section id="develop">
+  <h2>自己写脚本</h2>
+  <p>任何 <code>.lua</code> 丢进 <span class="path">script\</span> 就能用；文件头几行注释即元信息：</p>
+  <pre>--!param mode=d,下拉|去重|排序  目标=select?
+local out = rex.gsub(input, "\\s+", " ")   -- input 是选中文本
+return out                                  -- 返回值替换选区</pre>
+  <ul>
+    <li><code>--!param</code> 声明参数，运行前自动弹参数框（下拉/复选/文本，支持多语言名）。</li>
+    <li>API 四张表：<code>editor</code>（选区/光标）、<code>win</code>（弹框/剪贴板）、<code>rex</code>（PCRE2 正则）、<code>pecia</code>（宿主操作：开文件/保存/大纲/查找……）。</li>
+    <li>完整手册就在随包 <span class="path">script\lua_api.txt</span>——它同时是给人读的，也是给 AI 读的。</li>
+  </ul>
+  <div class="warn">脚本拥有你账户的完整权限（文件读写、执行外部程序都在能力范围内），这是刻意的取舍——只运行你信任的脚本。</div>
+</section>
+
+<section id="docs">
+  <h2>文档都在哪里</h2>
+  <p>全在安装目录，纯文本，任何编辑器能看；本页也在那里（<span class="path">docs\使用说明.zh-CN.html</span>）：</p>
+  <table>
+    <tr><th>文件</th><th>读它为了什么</th></tr>
+    <tr><td><code>docs/MCP接入.md</code></td><td>把 Pecia 接到 AI 客户端：配置示例、工具一览、行为边界、排错</td></tr>
+    <tr><td><code>script/lua_api.txt</code></td><td>Lua 脚本 API 全文（editor / win / rex / pecia + 示例）</td></tr>
+    <tr><td><code>docs/history/*.md</code> · <code>HISTORY.md</code></td><td>版本历史（中文真源在根，翻译在 docs/history）</td></tr>
+    <tr><td><code>README.*.md</code> · <code>docs/README/</code></td><td>16 语种项目说明与界面截图</td></tr>
+  </table>
+  <p>源码与问题反馈：<a href="https://gitee.com/qiuzongman/pecia">Gitee</a> ·
+  <a href="https://github.com/zongmanqiu/Pecia">GitHub</a>（GitHub 是自动镜像，两边同源）。</p>
+</section>
+
+<section id="ai-write">
+  <h2>★ 让 AI 通过 MCP 帮你干活（复制这段话就能开始）</h2>
+  <p class="lead">你不需要懂 MCP 协议，也不用记工具名。把下面这段话发给任何支持 MCP 的 AI，
+  它会自己去读随包文档、连上 Pecia、按规矩把活干完，并且自己验证结果。</p>
+  <div class="copyhead">
+    <strong>可直接复制发给 AI 的话</strong>
+    <button id="copyAiPrompt" type="button">复制这段话</button>
+  </div>
+  <pre id="aiPrompt">我有一个 Pecia 编辑器，安装目录在 <span class="ph">&lt;Pecia.exe 所在文件夹&gt;</span>，它是 Windows 上的轻量 Markdown 编辑器，可以通过 MCP 让你读写当前文档、运行内置 Lua 脚本、查大纲和设置。
+
+请先打开安装目录，仔细阅读这些文档，并严格遵守里面的约定：
+- docs\使用说明.zh-CN.html（整体功能）
+- docs\MCP接入.md（怎么把你接到 Pecia 的 MCP 上，含配置原文）
+- script\lua_api.txt（Lua 与宿主操作 API 全文，跑脚本前必读）
+
+接好之后，先告诉我你看到了哪些工具、准备怎么做，等我确认再动手。
+
+我要干的事是：<span class="ph">&lt;用大白话描述，越具体越好，比如「把当前文档里的引用编号重排，并检查有没有孤立的参考文献条目」&gt;</span>。
+
+另外请遵守：改动优先走 doc.apply_edit（锚点不唯一它会拒绝，别绕过去硬改）；复杂变换写成 Lua 脚本，先 lua.validate（只编译不执行，会回行号和 Lua 原话），通过后 lua.run 跑起来看结果；已经装在 script\ 里的脚本用 script.run 加参数直接跑，不要弹窗；每步写完先 doc.get_text 复验再继续；需要脚本按某个输入运行时，把参数放进 script.run 的 params（不要依赖弹窗等人点，模态框会让 MCP 连接停在半路）；文档处于只读或仅预览时你会收到 perm_denied，这说明是被保护，不要重试，先问我。写入或运行失败的工具调用保证什么都没改，修好参数再调即可。</pre>
+  <div class="note"><strong>红色标注的 &lt;...&gt; 就是需要你按自己情况改的地方</strong>：安装目录填一次即可长期复用；
+  需求换成你真正想干的。其余文字原样发给 AI 即可。AI 连上后如果先问你问题，这很正常——它在确认需求边界。</div>
+  <h3>这段话为什么这么写</h3>
+  <ul>
+    <li>写明<strong>文档位置和「先读后动」</strong>，AI 就不会凭想象拼 API，也不会把简单替换拆成十次调用。</li>
+    <li>要求它<strong>先报计划再动手</strong>，你可以在它改文件之前纠偏。</li>
+    <li>把 <strong>perm_denied 的语义</strong>提前讲清：那是编辑锁在保护你的文档，不是故障。</li>
+    <li>要求它<strong>自己复验</strong>，「改 → 读回 → 再改」的闭环不用你盯着。</li>
+  </ul>
+  <p>接入的具体配置在 <span class="path">docs\MCP接入.md</span>；接入后能做什么、边界在哪，看下一节。</p>
+</section>
+
+<section id="ai">
+  <h2>AI 接入能做什么</h2>
+  <p>Pecia 自带一个<strong>标准 MCP stdio 端点</strong>（<code>Pecia.exe --mcp-stdio</code>），
+  不绑定任何特定 AI 客户端。任何支持 MCP stdio 的客户端，只要能配 <code>command</code> 和
+  <code>args</code> 两个字段就能接入。</p>
+  <ul>
+    <li><strong>读</strong>：当前文档全文/区间、状态（路径/dirty/编码）、大纲、查找命中、脚本清单。</li>
+    <li><strong>写</strong>：锚点定位替换、全量替换、保存、开文件、切标签——全部只作用于当前标签，且遵守编辑锁。</li>
+    <li><strong>执行</strong>：<code>lua.validate</code> 只编译不执行，<code>lua.run</code> 把脚本跑在文档快照上
+        （出错即什么都没改，成功一次撤销回退），<code>script.run</code> 直接跑已装脚本并传参数；
+        PCRE2 正则（<code>rex.*</code>）与宿主操作（<code>pecia.*</code>）全可用。</li>
+    <li><strong>界面量测</strong>：脚本弹出的界面（参数框、输入框、选择框）由宿主自己创建，
+        控件树也就由宿主发布——<code>ui.inspect</code> 读层级、<code>ui.send</code> 合成点击与输入、
+        <code>ui.pixel</code> 离屏取色、<code>ui.wait</code> 等界面出现或消失。
+        FLTK 是自绘控件，外部无障碍工具看不到这些层级，所以只能这么办；
+        这组能力主要给 Pecia 的自动化门禁做界面回归用。</li>
+    <li><strong>草稿落地</strong>：Lua 已经没有控制台窗口（m037）——草稿是一份数据，<code>console.set</code> 写入、<code>console.get</code> 读回；想亲眼看一下就让 <code>console.show</code> 把它开成一个普通编辑器标签，
+      确认没问题后 <code>script.save</code> 落成脚本文件，出现在底栏脚本条里。</li>
+    <li>工具清单、<code>lua_api.txt</code>、<code>pecia.ops()</code> 三者同源——AI 看到的就是真正能跑的。</li>
+  </ul>
+  <div class="note">失败的工具结果保证「什么都没改」（isError），修正参数重调即可；客户端断开后 Pecia 窗口照常可用。</div>
+  <p>不想接 MCP 也可以用<strong>内置的 视图 &gt; AI 对话</strong>面板（独立一栏，可与预览同时开着）：选中文字后走右键
+  <strong>发送到 AI</strong>，它会作为一条你的消息进对话；面板只有 <strong>清除</strong> 与 <strong>发送</strong> 两个按钮，
+  API 地址/模型/密钥在 <strong>设置 &gt; 选项</strong> 里填。回复要回文档就选中它复制——想要"改完自动写回文档"，那是 MCP 的活。</p>
+</section>
+
+<section id="faq">
+  <h2>常见问题</h2>
+  <h3>打开几百 MB 的文件卡？</h3>
+  <p>超大文档首次解析有可见停顿（已知设计），完成后会以只读方式打开——在提示里选完整编辑即可。</p>
+  <h3>预览里公式 / mermaid 没渲染？</h3>
+  <p>首次使用惰性加载，稍等片刻；仍不行用 菜单 &gt; 刷新（<kbd>Ctrl+R</kbd>）强制重建。</p>
+  <h3>远程图片显示不出来？</h3>
+  <p>预览需要先联网取图并缓存；离线时显示占位。导出 HTML 时图片会一并本地化到产物目录。</p>
+  <h3>设置存在哪里？换电脑怎么迁移？</h3>
+  <p>全部在 exe 同级 <span class="path">settings.ini</span>（含最近文件、分栏比例、快捷键），拷走它即是完整迁移。</p>
+  <h3>多开几个 Pecia 会互相抢配置吗？</h3>
+  <p>不会。配置多实例共享并实时同步；AI 对话是主窗口里的一栏，不会有各自的子进程，也就没有"谁抢谁"的问题。Lua 侧连窗口都没有了（m037）：脚本入口是底栏脚本条，
+      草稿是存在 <span class="path">script.last.txt</span> 里的一份文本，运行结果看状态行。</p>
+  <h3>能离线用吗？</h3>
+  <p>能。编辑、预览、脚本、MCP 全不联网；只有检查更新和远程图片需要网络。</p>
+</section>
+
+</main>
+
+<footer>Pecia · 面向 Windows x64 的轻量 Markdown 编辑器 · 本页为离线说明，随程序分发（docs\使用说明.zh-CN.html）</footer>
+
+<script>
+(function(){
+  var links = Array.prototype.slice.call(document.querySelectorAll('#toc a[href^="#"]'));
+  var sections = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  function active(){
+    var y = window.scrollY + 120, idx = 0;
+    for (var i=0;i<sections.length;i++){
+      if (sections[i] && sections[i].offsetTop <= y) idx = i;
+    }
+    links.forEach(function(a,i){ a.classList.toggle('active', i===idx); });
+  }
+  window.addEventListener('scroll', active, {passive:true});
+  window.addEventListener('resize', active);
+  active();
+})();
+/* 一键复制 AI 提示词：file:// 下 clipboard API 未必可用，保留 execCommand 兜底 */
+(function(){
+  var btn = document.getElementById('copyAiPrompt');
+  if (!btn) return;
+  btn.addEventListener('click', function(){
+    var text = document.getElementById('aiPrompt').textContent;
+    function done(ok){
+      var old = btn.textContent;
+      btn.textContent = ok ? '已复制' : '请手动选中复制';
+      setTimeout(function(){ btn.textContent = old; }, 1800);
+    }
+    function fallback(){
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch(e) {}
+      document.body.removeChild(ta);
+      done(ok);
+    }
+    if (navigator.clipboard && window.isSecureContext)
+      navigator.clipboard.writeText(text).then(function(){ done(true); }, fallback);
+    else
+      fallback();
+  });
+})();
+</script>
+</body>
+</html>

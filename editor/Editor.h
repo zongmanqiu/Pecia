@@ -56,6 +56,14 @@ public:
 
     void setDoc(Document *d) { m_doc = d; }
     Document *doc() const { return m_doc; }
+
+    // Paste-media notices (r042e): pasteMedia() skips silently when there is
+    // nothing it may do - unsaved document, read-only document, disk failure.
+    // Silence is why users read the feature as broken; the callback receives
+    // an i18n KEY (not translated text) that the owner renders on the status
+    // line. Text-clipboard and empty-clipboard paths stay silent on purpose:
+    // handing text back to normal paste is not an event worth a word.
+    void setPasteNotice(std::function<void(const char *)> cb) { m_pasteNotice = std::move(cb); }
     void setShiftTab(bool on) { m_inShiftTab = on; }
     bool isShiftTab() const { return m_inShiftTab; }
 
@@ -225,6 +233,7 @@ private:
 
     Document   *m_doc = nullptr;
     SettingsProvider *m_settings = nullptr;   // settings access (tab width, auto-indent, etc.)
+    std::function<void(const char *)> m_pasteNotice;   // i18n key of a paste-media skip reason
     const Theme     *m_theme = nullptr;       // theme colors
 
     // Style buffer for current-line highlight and URL highlight.

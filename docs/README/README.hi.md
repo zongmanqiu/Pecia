@@ -1,14 +1,16 @@
-> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
-
 # Pecia — अत्यंत सरल पाठ संपादक
+> Windows टेक्स्ट एडिटर: अत्यंत हल्का, मल्टी-टैब, बड़ी फ़ाइलें तुरंत खुलती हैं, Lua स्क्रिप्ट एक्सटेंशन, और Markdown पूर्वावलोकन।
+
+> **🌐 Languages**: [中文](../../README.md) | [繁體中文](README.zh-TW.md) | [English](README.en.md) | [日本語](README.ja.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [한국어](README.ko.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 ---
 
-**[⬇️ 1.1.3 डाउनलोड करें (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ 1.1.3 डाउनलोड करें (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Gitee रिपॉज़िटरी](https://gitee.com/qiuzongman/pecia) ｜ [GitHub मिरर](https://github.com/zongmanqiu/Pecia) | [Bilibili डेमो](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**⬇️ डाउनलोड करें 1.2.0: [Gitee](https://gitee.com/qiuzongman/pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
+ ｜ **[GitHub](https://github.com/zongmanqiu/Pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
 
-C++17 + FLTK आधारित Windows हल्का पाठ संपादक। मल्टी-टैब, बड़ी फ़ाइलें तुरंत खुलती हैं, बहु-एन्कोडिंग समर्थन, Lua स्क्रिप्ट एक्सटेंशन। नया: साइड पैनल (फ़ाइल ट्री/रूपरेखा), फ़ॉन्ट चयन संवाद, विंडो छाया; Markdown पूर्वावलोकन बहुत बड़े दस्तावेज़ों को खंडों में प्रस्तुत करता है।
+> रिपॉज़िटरी: [Gitee](https://gitee.com/qiuzongman/pecia) | [GitHub](https://github.com/zongmanqiu/Pecia)
 
-> **प्लेटफ़ॉर्म स्थिति**: केवल **Windows x64 (64-बिट)** समर्थित। 32-बिट संस्करण उपलब्ध नहीं है, और क्रॉस-प्लेटफ़ॉर्म (Linux/Mac/32-बिट) रखरखाव नहीं किया जाता। बिल्ड स्क्रिप्ट में 64-बिट जाँच अंतर्निहित है (CMakeLists के शीर्ष पर देखें), 32-बिट गलती से कॉन्फ़िगर करने पर सीधे त्रुटि आएगी।
+> डेमो: [Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 ## सॉफ़्टवेयर इंटरफ़ेस
 
@@ -22,10 +24,6 @@ C++17 + FLTK आधारित Windows हल्का पाठ संपा�
   - ![3.选项](3.选项.png)
 - शॉर्टकट सेटिंग्स
   - ![4.快捷键](4.快捷键.png)
-- AI चैट
-  - ![5.AI对话](5.AI对话.png)
-- Lua कंसोल
-  - ![6.Lua控制台](6.Lua控制台.gif)
 - Lua स्क्रिप्ट
   - ![7.Lua脚本](7.Lua脚本.gif)
 
@@ -49,7 +47,7 @@ C++17 + FLTK आधारित Windows हल्का पाठ संपा�
 REM स्रोत कोड डाउनलोड करने के बाद, बस इस एक स्क्रिप्ट पर डबल-क्लिक करें।
 REM या क्रम में चलाता है: 1 टूलचेन जाँच → 2 छह तृतीय-पक्ष लाइब्रेरी डाउनलोड → 3 पैच लागू →
 REM 4 cargo fetch + दो Rust FFI कंपाइल → 5 FLTK + CMake Pecia तीन पैकेज कंपाइल →
-REM 33 यूनिट टेस्ट चलाएँ।
+REM 36 यूनिट टेस्ट चलाएँ।
 REM पहली बार का समय इंटरनेट और मशीन पर निर्भर; बाद में कैश पुनः उपयोग, इंक्रीमेंटल कंपाइल + टेस्ट लगभग 1-2 मिनट।
 build\full.bat
 ```
@@ -75,8 +73,8 @@ main/
 ├── core/               शुद्ध मूल तर्क (UI रहित)
 ├── editor/             संपादक नियंत्रण
 ├── ui/                 विंडो/डायलॉग/टूलबार
-├── LuaTool/            PeciaLua स्वतंत्र उपकरण (विंडो/प्रवेश/पाइप सर्वर)
-├── AIChat/             PeciaAIChat स्वतंत्र उपकरण (विंडो/प्रवेश)
+├── AIChat/             AI चैट पैनल (स्वतंत्र स्तंभ) + चैट लॉग
+├── agent/              MCP stdio एंडपॉइंट (टूल सूची होस्ट रजिस्ट्री से)
 ├── script/             Lua स्क्रिप्ट इंजन
 ├── DOCS_MANIFEST.md    दस्तावेज़ सूची (कोड बदलने के बाद प्रत्येक आइटम जाँचें, test_docs गेटकीपर; केवल विकास के लिए, exe के साथ नहीं भेजा जाता)
 ├── image/              छवि संसाधन (pecia.ico / ai_bot.ico / lua.ico …)

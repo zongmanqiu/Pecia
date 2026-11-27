@@ -205,8 +205,8 @@ bool Document::loadFile(const char *path) {
     // on a complete UTF-8 character. If DETECT_BUF cuts a multi-byte
     // character in half, isValidUtf8() rejects the trailing truncated
     // sequence and a perfectly valid UTF-8 file gets misdetected as
-    // ANSI/GBK - which then decodes it into mojibake. So after the
-    // initial read, extend the sample past any partial trailing sequence.
+    // ANSI/GBK - which then decodes it into mojibake. So the trailing
+    // partial sequence is trimmed off before detection (see below).
     FILE *fp = fl_fopen(path, "rb");
     if (!fp) {
         char _msg[512];

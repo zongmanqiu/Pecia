@@ -19,9 +19,11 @@
 static void test_utf8_ascii() {
     const char *t = "plain ascii";
     CHECK(isValidUtf8((const unsigned char *)t, (int)strlen(t)));
-    // empty / null inputs are trivially valid
+    // empty / null inputs are trivially valid; a null buffer with a
+    // non-empty length is not (it used to be reported as valid UTF-8).
     CHECK(isValidUtf8(nullptr, 0));
     CHECK(isValidUtf8((const unsigned char *)"", 0));
+    CHECK(!isValidUtf8(nullptr, 1));
 }
 
 static void test_utf8_multibyte() {
@@ -63,6 +65,18 @@ static void test_utf8_invalid() {
     // Code point above U+10FFFF: F5 80 80 80
     const unsigned char tooBig[] = {0xF5, 0x80, 0x80, 0x80};
     CHECK(!isValidUtf8(tooBig, 4));
+    // 3-byte overlong: E0 80 80 (U+0000 in 3 bytes) - regression: this check
+    // once sat in the 4-byte branch and let the sequence pass as valid.
+    const unsigned char overlong3[] = {0xE0, 0x80, 0x80};
+    CHECK(!isValidUtf8(overlong3, 3));
+    // 4-byte overlong: F0 80 80 80 (U+0000 in 4 bytes)
+    const unsigned char overlong4[] = {0xF0, 0x80, 0x80, 0x80};
+    CHECK(!isValidUtf8(overlong4, 4));
+    // Boundary must stay VALID: E0 A0 80 = U+0800, F0 90 80 80 = U+10000
+    const unsigned char e0ok[] = {0xE0, 0xA0, 0x80};
+    CHECK(isValidUtf8(e0ok, 3));
+    const unsigned char f0ok[] = {0xF0, 0x90, 0x80, 0x80};
+    CHECK(isValidUtf8(f0ok, 4));
 }
 
 // ---------------------------------------------------------------------------

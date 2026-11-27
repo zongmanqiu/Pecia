@@ -29,7 +29,13 @@ bool MatchHighlight::highlightAll(Editor *editor, const char *needle,
     // Collect every match as a half-open byte range. search_forward
     // returns matches in buffer order, so the ranges are already sorted.
     m_ranges.clear();
-    if (needle && *needle) {
+    // Entrance validation: needleLen must be positive and agree with the
+    // string. A zero length makes `pos = found + needleLen` stay on the
+    // same match forever; a wrong length paints ranges past the buffer.
+    // An empty/inconsistent needle is simply "no matches" (same result as
+    // the empty-needle case the tests rely on).
+    if (needle && *needle && needleLen > 0 &&
+        needleLen == (int)std::strlen(needle)) {
         int pos = 0;
         int found = 0;
         while (buf->search_forward(pos, needle, &found, matchCase ? 1 : 0) != 0) {

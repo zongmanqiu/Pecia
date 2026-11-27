@@ -7,6 +7,7 @@
 #include <FL/fl_string_functions.h>  // fl_strlcpy
 
 #include <string.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <atomic>
@@ -31,9 +32,6 @@ static const char *SECTION = "Settings";
 static const int MAX_RECENT = 10;
 
 namespace fs = std::filesystem;
-
-// Forward declaration for Fl::awake callback
-static void changeCallbackHandler(void *data);
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -74,9 +72,23 @@ void Config::loadAll(std::vector<std::pair<std::string, std::string>> &entries) 
         // Skip blank lines and comments
         if (line.empty() || line[0] == ';' || line[0] == '#') continue;
 
-        // Section header
+        // Section header: compare case-insensitively after trimming, so a
+        // hand-edited "[settings]" or a trailing space does not silently
+        // turn the whole file into "no keys" (every setting back to default).
         if (line.front() == '[' && line.back() == ']') {
-            inSection = (line == "[" + std::string(SECTION) + "]");
+            std::string sec = line.substr(1, line.size() - 2);
+            while (!sec.empty() && (sec.front() == ' ' || sec.front() == '\t')) sec.erase(sec.begin());
+            while (!sec.empty() && (sec.back() == ' ' || sec.back() == '\t')) sec.pop_back();
+            if (sec.size() == std::string(SECTION).size()) {
+                inSection = true;
+                for (size_t k = 0; k < sec.size(); ++k) {
+                    char a = (char)tolower((unsigned char)sec[k]);
+                    char b = (char)tolower((unsigned char)SECTION[k]);
+                    if (a != b) { inSection = false; break; }
+                }
+            } else {
+                inSection = false;
+            }
             continue;
         }
 
@@ -167,10 +179,6 @@ static const char *configKeyDesc(const char *key) {
     if (strcmp(key,"main_win_x")==0) return "主窗口 X 坐标（上次退出时的位置）";
     if (strcmp(key,"main_win_y")==0) return "主窗口 Y 坐标（上次退出时的位置）";
     if (strcmp(key,"main_win_max")==0) return "上次退出时是否最大化 (1=是 0=否)";
-    if (strcmp(key,"lua_win_w")==0) return "Lua 控制台窗口宽度";
-    if (strcmp(key,"lua_win_h")==0) return "Lua 控制台窗口高度";
-    if (strcmp(key,"aichat_win_w")==0) return "AI 聊天窗口宽度";
-    if (strcmp(key,"aichat_win_h")==0) return "AI 聊天窗口高度";
     if (strcmp(key,"wrap")==0) return "是否自动换行 (1=是 0=否)";
     return nullptr;
 }
@@ -190,12 +198,39 @@ void Config::saveAll() {
     // This prevents a stale in-memory snapshot from clobbering settings
     // another process just wrote (e.g. the AI window must never reset
     // the UI language back to English).
+    // Keys scrubbed from memory as deprecated must also be dropped from
+    // the merged on-disk copy, otherwise every save rewrites them back
+    // and the "scrubbed on the next save" promise (Config.h) never holds.
+    static const char *const s_deprecatedKeys[] = {
+        "ui_menu_indent_px", "font_id", "font_size",
+        // m021 decoupled the AI chat window from the Lua console; a user who
+        // once bound the removed button leaves the key behind.
+        "shortcut.win.button.tolua",
+        // m037 deleted the Lua console window: its size and its two button
+        // bindings are nothing to bind any more.
+        "lua_win_w", "lua_win_h",
+        "shortcut.win.button.toai", "shortcut.win.button.saveas",
+        // m037 (M1c): the AI chat is a pane in the right zone - it has no
+        // size of its own to remember.
+        "aichat_win_w", "aichat_win_h",
+        // m040: the chat pane's button row is down to Clear + Send, so the
+        // To-Document and API bindings have nothing left to bind.
+        "shortcut.win.button.todoc", "shortcut.win.button.settings",
+        // the console's help button is gone with it (m037); the action row
+        // stayed in the table until m040, so the dialog offered a binding
+        // that had nothing behind it.
+        "shortcut.win.button.help"
+    };
     const bool fileExists = fs::exists(m_iniPath);
     std::map<std::string, std::string> merged;
     if (fileExists) {
         std::vector<std::pair<std::string, std::string>> disk;
         loadAll(disk);
-        for (auto &kv : disk) merged[kv.first] = kv.second;
+        for (auto &kv : disk) {
+            if (std::find(std::begin(s_deprecatedKeys), std::end(s_deprecatedKeys),
+                          kv.first) == std::end(s_deprecatedKeys))
+                merged[kv.first] = kv.second;
+        }
     }
     for (auto &kv : m_entries) {
         // Write whitelist (AI process): only touch the allowed keys.
@@ -211,7 +246,11 @@ void Config::saveAll() {
         else if (merged.find(kv.first) == merged.end())
             merged[kv.first] = kv.second;   // new key (default fill)
     }
-    m_dirtyKeys.clear();
+    // NOTE: m_dirtyKeys is cleared only after the file was actually
+    // replaced (end of this function). Clearing it here would mark the
+    // pending changes as saved even when the open/write/rename below
+    // fails, letting the next saveAll() overwrite them with the disk
+    // values.
 
     // Atomic replace: write to a temp file first, then rename over the
     // real path. Other processes watch this file with
@@ -262,21 +301,35 @@ void Config::saveAll() {
     if (!replaced) {
         // Fall back to a direct write if the rename fails (e.g. another
         // process holds the file open without FILE_SHARE_WRITE).
-        std::ofstream direct(m_iniPath, std::ios::trunc);
-        if (direct.is_open()) {
-            direct << "[" << SECTION << "]\n";
-            for (const auto &kv : merged) {
-                if (const char *desc = configKeyDesc(kv.first.c_str()))
-                    direct << "# " << desc << "\n";
-                direct << kv.first << "=" << kv.second << "\n";
+        bool directOk = false;
+        {
+            std::ofstream direct(m_iniPath, std::ios::trunc);
+            if (direct.is_open()) {
+                direct << "[" << SECTION << "]\n";
+                for (const auto &kv : merged) {
+                    if (const char *desc = configKeyDesc(kv.first.c_str()))
+                        direct << "# " << desc << "\n";
+                    direct << kv.first << "=" << kv.second << "\n";
+                }
+                direct.flush();
+                directOk = direct.good();
+                direct.close();
             }
-            direct.flush();
-            direct.close();
         }
         std::error_code ec2;
         fs::remove(tmpPath, ec2);
+        if (!directOk) {
+            // The direct write failed too: the file on disk still holds the
+            // OLD values, so the pending changes are NOT saved. Clearing the
+            // dirty set here would mark them as saved and the next saveAll()
+            // would overwrite them with the disk values - the same class of
+            // bug the "clear only after the file was replaced" note above
+            // was about, one level deeper.
+            return;
+        }
     }
 
+    m_dirtyKeys.clear();   // written (renamed or direct fallback): saved
     refreshFileTime();
 }
 
@@ -383,14 +436,6 @@ Config::Config(const fs::path &configDir) {
     initFromDisk();
 }
 
-// Standalone tools: own ini file (e.g. "PeciaLua.ini") so the main
-// process's settings.ini is never written by another process.
-Config::Config(const std::string &iniFileName) {
-    m_iniPath = getExeDir() / iniFileName;
-    m_recentFilePath = getExeDir() / "recent file.ini";
-    initFromDisk();
-}
-
 void Config::initFromDisk() {
 
     // Step 1: Load existing INI entries from disk.
@@ -427,7 +472,9 @@ void Config::initFromDisk() {
     needSave |= validateKey("trim_leading_blank", 0,        0,  1);
     needSave |= validateKey("trim_ending_blank", 0,        0,  1);
     needSave |= validateKey("expand_tabs_on_save", 0,      0,  1);
-    needSave |= validateKey("auto_save_interval", 30,    0,  300);
+    // Same 0..3600 window as getAutoSaveInterval()/setAutoSaveInterval():
+    // a hand-edited 600 used to be reset to the default on next startup.
+    needSave |= validateKey("auto_save_interval", 30,    0, 3600);
     needSave |= validateKey("detect_urls",   1,          0,  1);
     needSave |= validateKey("paste_media_path", 0,       0,  1);
     needSave |= validateKey("fixed_startup_doc", 0,      0,  1);
@@ -437,13 +484,12 @@ void Config::initFromDisk() {
     // from there. The key is a string (empty by default: user must fill
     // it in); endpoint/model get their defaults.
     if (m_entries.find("ai_endpoint") == m_entries.end()) {
-        m_entries["ai_endpoint"] =
-            "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+        m_entries["ai_endpoint"] = Config::kDefaultAiEndpoint;
         m_dirtyKeys.insert("ai_endpoint");
         needSave = true;
     }
     if (m_entries.find("ai_model") == m_entries.end()) {
-        m_entries["ai_model"] = "glm-4-flash";
+        m_entries["ai_model"] = Config::kDefaultAiModel;
         m_dirtyKeys.insert("ai_model");
         needSave = true;
     }
@@ -485,6 +531,10 @@ void Config::initFromDisk() {
 }
 
 Config::~Config() {
+    // Retire the awake token first: a notification already sitting in FLTK's
+    // awake queue (there is no Fl::remove_awake) must not reach a half-dead
+    // config whose owner window is gone. Then join the watcher.
+    m_alive->alive.store(false);
     // Ensure the watcher thread is always stopped before destruction.
     // If startWatcher() was never called this is a no-op.
     stopWatcher();
@@ -1077,21 +1127,34 @@ void Config::setAiKey(const char *key) {
 }
 
 void Config::getAiModel(char *buf, int len, const char *fallback) const {
-    readStr("ai_model", buf, len, fallback ? fallback : "glm-4-flash");
+    readStr("ai_model", buf, len, fallback ? fallback : Config::kDefaultAiModel);
 }
 
 void Config::setAiModel(const char *model) {
-    writeStr("ai_model", model ? model : "glm-4-flash");
+    writeStr("ai_model", model ? model : Config::kDefaultAiModel);
 }
 
 void Config::getAiEndpoint(char *buf, int len, const char *fallback) const {
     readStr("ai_endpoint", buf, len,
-            fallback ? fallback : "https://open.bigmodel.cn/api/paas/v4/chat/completions");
+            fallback ? fallback : Config::kDefaultAiEndpoint);
 }
 
 void Config::setAiEndpoint(const char *url) {
     writeStr("ai_endpoint",
-             url ? url : "https://open.bigmodel.cn/api/paas/v4/chat/completions");
+             url ? url : Config::kDefaultAiEndpoint);
+}
+
+int Config::getAiContextTurns() const {
+    int v = readInt("ai_context_turns", Config::kDefaultAiContextTurns);
+    if (v < Config::kMinAiContextTurns) return Config::kMinAiContextTurns;
+    if (v > Config::kMaxAiContextTurns) return Config::kMaxAiContextTurns;
+    return v;
+}
+
+void Config::setAiContextTurns(int turns) {
+    if (turns < Config::kMinAiContextTurns) turns = Config::kMinAiContextTurns;
+    if (turns > Config::kMaxAiContextTurns) turns = Config::kMaxAiContextTurns;
+    writeInt("ai_context_turns", turns);
 }
 
 // ---------------------------------------------------------------------------
@@ -1140,23 +1203,35 @@ namespace {
 // handful of paths.
 class RecentFileLock {
 public:
+    bool locked() const { return m_locked; }
 #if defined(_WIN32)
     RecentFileLock() {
         m_handle = CreateMutexW(nullptr, FALSE, L"Local\\Pecia.RecentFiles");
-        if (m_handle) {
-            DWORD r = WaitForSingleObject(m_handle, 5000);
-            m_locked = (r == WAIT_OBJECT_0 || r == WAIT_ABANDONED);
+        if (!m_handle) {
+            // No mutex available at all: keep the pre-lock (single-process)
+            // behavior rather than silently losing every recent-file write.
+            m_locked = true;
+            return;
         }
+        const DWORD r = WaitForSingleObject(m_handle, 5000);
+        // Only a real acquisition (or an abandoned mutex we now own) may
+        // proceed. WAIT_TIMEOUT/WAIT_FAILED must ABANDON the read-merge-write
+        // transaction: proceeding unlocked defeats cross-process protection.
+        m_locked = (r == WAIT_OBJECT_0 || r == WAIT_ABANDONED);
     }
     ~RecentFileLock() {
-        if (m_locked) ReleaseMutex(m_handle);
-        if (m_handle) CloseHandle(m_handle);
+        if (m_handle) {
+            if (m_locked) ReleaseMutex(m_handle);
+            CloseHandle(m_handle);
+        }
     }
 private:
     HANDLE m_handle = nullptr;
     bool   m_locked = false;
 #else
-    RecentFileLock() {}
+    RecentFileLock() : m_locked(true) {}   // no cross-process lock on POSIX
+private:
+    bool m_locked = true;
 #endif
 };
 
@@ -1285,6 +1360,7 @@ void Config::recentAdd(const char *path) {
     if (!path || !path[0]) return;
 
     RecentFileLock lock;
+    if (!lock.locked()) return;   // timed out: never read-merge-write unlocked
 
     // Rebase on the on-disk list: another Pecia window may have added
     // entries since this process started (see the block comment above).
@@ -1314,6 +1390,7 @@ void Config::recentAdd(const char *path) {
 
 void Config::recentClear() {
     RecentFileLock lock;
+    if (!lock.locked()) return;   // timed out: abandon, do not clobber disk
     m_recentFiles.clear();
     recentSave();
 }
@@ -1325,14 +1402,21 @@ void Config::recentSync() {
 }
 
 // ---------------------------------------------------------------------------
-// File-change callback handler (called via Fl::awake from watcher thread)
+// File-change callback handler (runs on the UI thread, posted by the watcher)
 // ---------------------------------------------------------------------------
 
-static void changeCallbackHandler(void *data) {
-    Config *config = static_cast<Config *>(data);
-    if (config && config->hasChangeCallback()) {
-        config->invokeChangeCallback();
+void Config::awakeChange(void *data) {
+    const std::unique_ptr<ChangeMsg> msg(static_cast<ChangeMsg *>(data));
+    // The token outlives a dead Config (the message holds a reference), so a
+    // notification queued before the window closed stops here instead of
+    // calling into a destroyed owner's callback.
+    if (!msg || !msg->alive || !msg->alive->alive.load()) return;
+    std::function<void()> callback;
+    {
+        std::lock_guard<std::mutex> lock(msg->self->m_callbackMutex);
+        callback = msg->self->m_changeCallback;
     }
+    if (callback) callback();
 }
 
 // ---------------------------------------------------------------------------
@@ -1340,6 +1424,7 @@ static void changeCallbackHandler(void *data) {
 // ---------------------------------------------------------------------------
 
 void Config::setChangeCallback(std::function<void()> callback) {
+    std::lock_guard<std::mutex> lock(m_callbackMutex);
     m_changeCallback = std::move(callback);
 }
 
@@ -1381,8 +1466,16 @@ void Config::watcherThreadFunc() {
             if (checkChanged()) {
                 reload();
                 reloadFromDisk();   // refresh the in-memory cache too
-                if (hasChangeCallback()) {
-                    Fl::awake(changeCallbackHandler, this);
+                bool hasCallback = false;
+                {
+                    std::lock_guard<std::mutex> lock(m_callbackMutex);
+                    hasCallback = static_cast<bool>(m_changeCallback);
+                }
+                if (hasCallback) {
+                    // Fl::awake() returns 0 once registered, -1 when its
+                    // 1024-entry ring is full - then nobody else frees it.
+                    ChangeMsg *msg = new ChangeMsg{ this, m_alive };
+                    if (Fl::awake(awakeChange, msg) != 0) delete msg;
                 }
             }
             FindNextChangeNotification(hChange);

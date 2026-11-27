@@ -7,11 +7,14 @@
 #include "core/ShortcutCore.h"
 #include "mdview/preprocess.h"   // PreviewHeading
 #include "mdview/preview_gate.h" // PreviewRenderGate
+#include "ui/ToolHost.h"         // IToolHost: contract for the in-process tool windows (m025)
 #include <FL/Fl_Double_Window.H>
 #include <vector>
 #include <string>
 #include <functional>
 #include <map>
+#include <atomic>
+#include <memory>
 
 // Buffer sizes above this open with word wrap forced OFF. Normal documents
 // are cheap to wrap, but pathological ones (one huge logical line) measure
@@ -57,21 +60,20 @@ class LuaEngine;
 class PreviewPanel;
 class PreviewDivider;
 
+// 分隔条宽度（定义在 ui/MainWindow_preview.cpp，滚轮命中带也要用它换算预览列）
+extern int kDividerW;
+
 struct ShortcutDialogRow;
 
 struct Fl_Menu_Item;
 // Main menu bar definition (defined in ui/MenuTable.cpp).
 extern Fl_Menu_Item g_menu[];
 
-// ui/MainWindow_lua.cpp —— 按标题找到工具窗口（PeciaLua/PeciaAIChat）并
-// 前置激活；Unicode 查找（中文标题）。找不到返回 false。
-bool activateByTitle(const char *title);
-
 // MainWindow
 //   Multi-tab text editor window. Each tab holds its own Document +
 //   Fl_Text_Editor. The find bar, menu bar and status bar are shared.
 
-class MainWindow : public Fl_Double_Window {public:
+class MainWindow : public Fl_Double_Window, public IToolHost {public:
     // Return the just-picked menu item from a menu callback widget (or
     // nullptr). Shared across translation units (menu callbacks).
     static Fl_Menu_Item *menuClickedItem(Fl_Widget *w);
@@ -87,6 +89,10 @@ public:
     // via ShowWindow(SW_MAXIMIZE) / ShowWindow(SW_RESTORE).
     // Public so the subclass proc can sync on system-initiated changes.
     bool m_maximized = false;
+    // 上次已经重画过的边框签名，按窗口实例保存。曾经是 draw() 里的
+    // function-local static：所有 MainWindow 共用一份，第二个窗口会拿
+    // 第一个窗口的签名跳过自己的边框失效（多窗签名串窗）。
+    unsigned long long m_bandSig = 0;
     void toggleMaximize();
 
     // Apply the persisted geometry once the custom frame is installed
@@ -115,6 +121,28 @@ public:
     // is already open).
     void openFile(const char *path);
 
+    // ── Host/agent path (core/HostOps "doc.open") ────────────────────────
+    // The agent talks to THIS window, so the file has to open HERE: the
+    // normal openFile() would, in single-tab mode, hand the file to a
+    // SECOND Pecia process and leave the agent editing the old document
+    // while another window shows the new one. (For a non-product exe such
+    // as the smoke test, that "second process" is the test itself - it
+    // spawned a copy of itself, and the copy spawned another...)
+    //
+    // This variant never spawns a process and never shows a modal dialog:
+    // when the active document has unsaved changes it REFUSES instead of
+    // silently discarding them. `err` carries the reason on failure.
+    bool openFileForHost(const char *path, std::string *err);
+
+    // Host/agent path for "doc.new": a fresh empty document in place of the
+    // active one, refusing when that would discard unsaved changes.
+    bool newFileForHost(std::string *err);
+
+    // Host/agent path for "doc.save": saves in place, never opening the
+    // Save-As chooser or the lossy-encoding confirmation. Refuses for an
+    // untitled document (no path) instead of prompting for a name.
+    bool doSaveForHost(int tabIndex, std::string *err);
+
     // Create a fresh empty tab.
     void newFile();
 
@@ -122,6 +150,17 @@ public:
     bool closeCurrentTab();
 
     // Close a specific tab by index (called from TitleBar).
+    // Register / unregister this window's host operations in the
+    // core/HostOps registry (implementations in ui/MainWindow_ops.cpp).
+    // Constructor registers; destructor unregisters.
+    void registerHostOps();
+    void unregisterHostOps();
+
+    // File operations (public: also driven by the HostOps registry,
+    // see ui/MainWindow_ops.cpp; may show the usual save prompts).
+    bool checkSaveBeforeClose(int tabIndex);
+    bool doSave(int tabIndex);
+    bool doSaveAs(int tabIndex);
     void closeTab(int index);
 
     // Tab strip right-click menu (wired from handle()): close all tabs
@@ -142,6 +181,18 @@ public:
     // single-tab mode: a second open must not replace the open document,
     // so the new file goes into its own window instead.
     bool spawnWindowWithFile(const char *path);
+
+    // Shared open-file plumbing (ui/MainWindow_files.cpp):
+    //   replaceActiveTabWithFile - load the file and put it in place of the
+    //                            active tab (the file is loaded FIRST, so a
+    //                            failed load cannot destroy the document
+    //                            that is currently open).
+    //   addFileAsNewTab        - load the file into a brand new tab.
+    //   afterFileOpened         - the tail every successful open shares
+    //                            (recent files, title, layout, preview).
+    bool replaceActiveTabWithFile(const char *path);
+    bool addFileAsNewTab(const char *path);
+    void afterFileOpened(const char *path);
 
     // Called by handle() / cbModify to refresh the status bar on demand.
     void tick();
@@ -178,12 +229,12 @@ public:
     static void cbSearchSelection(Fl_Widget *w, void *data); // 按配置的搜索引擎搜索选中内容
     static void cbSendToAi(Fl_Widget *w, void *data);        // 选中内容直接发给 AI（自动开窗+发送+解除选中）
 
-    // 确保 PeciaAIChat.exe 正在运行（未运行则带管道参数启动之）。
-    bool ensureAiChatRunning();
+    // (m025) the AI chat runs in-process as m_aiChat; showAIChat() creates
+    // it on demand. No ensure-running dance any more.
 
-    // 把任意文本推送给 AI 聊天窗口（自动确保窗口运行；文本作为用户
-    // 消息出现在 AI 对话框）。供菜单“发送给 AI”与管道 SEND 请求共用。
-    bool sendToAiChat(const std::string &text, std::string *errMsg);
+    // 把任意文本推送给 AI 聊天窗口（未开则自动开窗；文本作为用户
+    // 消息出现在 AI 对话框）。供菜单“发送给 AI”与 Lua 控制台共用。
+    bool sendToAiChat(const std::string &text, std::string *errMsg) override;
     static void cbFind(Fl_Widget *w, void *data);
     static void cbFindNext(Fl_Widget *w, void *data);
     static void cbFindPrev(Fl_Widget *w, void *data);
@@ -199,6 +250,7 @@ public:
     static void cbRefreshAll(Fl_Widget *w, void *data);
     static void cbOpenScriptFolder(Fl_Widget *w, void *data);
     static void cbCheckUpdates(Fl_Widget *w, void *data);
+    static void cbUserGuide(Fl_Widget *, void *);   // Help > user guide (offline HTML)
     // New View menu toggles
     static void cbToggleStatusbar(Fl_Widget *w, void *data);
     static void cbToggleMenuBar(Fl_Widget *w, void *data);
@@ -212,8 +264,8 @@ public:
     static void cbStatistics(Fl_Widget *w, void *data);
     static void cbGotoLine(Fl_Widget *w, void *data);
 
-    // Tools > Lua Script... - opens the Lua script dialog.
-    static void cbLuaScript(Fl_Widget *w, void *data);
+    // View > AI Chat. (m037: "Tools > Lua Script..." is gone with the Lua
+    // console window - scripts run from the script bar, drafts live as data.)
     static void cbAIChat(Fl_Widget *w, void *data);
 
     // View > Markdown Preview - toggle the two-pane preview layout.
@@ -233,14 +285,21 @@ public:
     // the result as one undoable operation. `output` receives the print()
     // sink contents, `errMsg` the Lua error on failure. Returns false if
     // there is no active document or the script failed.
+    // `paramValues` (m025): pre-filled --!param values - the Lua console
+    // passes its dialog results through here so BOTH run paths share this
+    // exact function; null (script bar) keeps the in-house dialog flow.
     bool executeLuaScript(const std::string &script,
                           std::string *output = nullptr,
-                          std::string *errMsg = nullptr);
+                          std::string *errMsg = nullptr,
+                          const std::vector<std::pair<std::string, std::string>> *paramValues = nullptr) override;
+
+    // IToolHost: does an open document exist at all (the Lua console
+    // switches to its local scratch mode when it does not).
 
     // Insert text into the active document: replaces the selection if one
-    // exists, otherwise inserts at the cursor. Used by the AI chat tool
-    // (INS pipe frame). Returns false with *errMsg set on failure.
-    bool insertAiText(const std::string &text, std::string *errMsg = nullptr);
+    // exists, otherwise inserts at the cursor. Used by the AI chat window.
+    // Returns false with *errMsg set on failure.
+    bool insertAiText(const std::string &text, std::string *errMsg = nullptr) override;
 
     // Active tab's full UTF-8 text (Markdown preview source); empty when
     // there is no active tab.
@@ -260,32 +319,58 @@ public:
     // after it consumed the selection for Append Selection - otherwise
     // the AI reply sent back via insertAiText would replace the original
     // selection). Returns false with *errMsg set when no document.
-    bool clearSelection(std::string *errMsg = nullptr);
+    bool clearSelection(std::string *errMsg = nullptr) override;
 
     // Return the active document's current selection text. Used by the AI
     // chat tool (GSEL pipe frame). Returns false with *errMsg set when
     // there is no active document or no selection to copy.
-    bool getSelectionText(std::string *text, std::string *errMsg = nullptr);
+    bool getSelectionText(std::string *text, std::string *errMsg = nullptr) override;
 
-    // Snapshot the active document for off-process execution: payload is
-    // "cursor:selStart:selEnd\n" + full doc text (UTF-8). Used by the Lua
-    // console (GDOC pipe frame). Returns false with *errMsg set when
-    // there is no active document or it is read-only.
+    // Snapshot the active document: payload is "cursor:selStart:selEnd\n" +
+    // full doc text (UTF-8). Returns false with *errMsg set when there is no
+    // active document or it is read-only.
+    // NOTE (m037): the pipe frames these were built for are long gone, and no
+    // production caller remains - the only caller is the smoke gate, which
+    // uses them to assert the edit lock. Recorded here so nobody re-litigates
+    // "the snapshot replace is not undoable": Fl_Text_Buffer::text() clears the
+    // whole undo history, which is fine for a path nobody runs.
     bool getDocumentSnapshot(std::string *payload, std::string *errMsg = nullptr);
 
-    // Apply a Lua console result back to the active document. `payload`
-    // has the same "cursor:selStart:selEnd\n" + text shape as the
-    // snapshot. Applies the text as ONE replacement (not undoable, same
-    // as the main-window Lua path) and restores cursor/selection. Used by
-    // the Lua console (APPL pipe frame). Returns false with *errMsg on
-    // failure (no doc / read-only / malformed payload).
+    // Apply a result payload back to the active document. `payload` has the
+    // same "cursor:selStart:selEnd\n" + text shape as the snapshot. Applies the
+    // text as ONE replacement (not undoable) and restores cursor/selection.
     bool applyDocumentSnapshot(const std::string &payload,
                                std::string *errMsg = nullptr);
+
+    // ---- Lua draft, without a window (m037) ------------------------------
+    // The console window is deleted; console.get / console.set / console.show
+    // and script.save work on these instead. The text persists in
+    // script.last.txt next to the exe, as the console used to do.
+    const std::string &luaDraftText();
+    void setLuaDraft(const std::string &text);
+    bool showLuaDraftAsTab(std::string *errMsg = nullptr);
+
+    // Human-visible outcome of a script run: a short verb in the status line.
+    // `showDetails` (default) also opens the info window with the full text -
+    // for a click in the script bar. An agent-triggered run passes false:
+    // InfoWindow is modal, and a modal would stall the single-in-flight MCP
+    // endpoint every time an agent iterates on a broken script.
+    // `elapsedMs` is the wall-clock cost of the run (see LuaRunResult). A
+    // negative value means "unknown": the status line then shows the plain
+    // verb without a time instead of a made-up "0 ms".
+    void reportScriptOutcome(bool ok, const std::string &out, const std::string &err,
+                             bool showDetails = true, long long elapsedMs = -1);
+
+    // The text currently shown in the status line. Exposed so a test can
+    // assert on it without reaching into the widget tree and guessing which
+    // Fl_Output is the status bar (the bar's content is localized, so a
+    // content-sniffing lookup would only work in one language).
+    std::string statusBarText() const;
 
     // Re-scan the exe-adjacent script/ folder and rebuild the script bar
     // buttons. Called by the Lua console after a Save As so a newly
     // saved script appears in the bar immediately (RLOAD pipe frame).
-    void reloadScriptBar();
+    void reloadScriptBar() override;
 
     // Scripts callback - runs the selected .lua file from the
     // exe-adjacent script/ folder. `data` is the script's relative
@@ -413,6 +498,10 @@ private:
     void            stopScrollSync();
     static void     autoRefreshLoopCb(void *data); // 固定间隔循环：无条件按档位刷新
     static void     destroyPreviewCb(void *data);  // 关闭预览的延迟销毁（0.1s 后）
+    // 摘掉并释放预览面板 + 分隔条（先 remove 再 delete，见 MainWindow_preview.cpp）。
+    // 由 destroyPreviewCb 和析构共用：窗口带着面板死去会让面板的 pump 定时器
+    // 打在已释放的 view 上。
+    void            shutdownPreview();
     // 打开 .md/.markdown 后延后一帧按配置开预览（Options > 打开 .md 文件时）。
     // 延后是为了不让同步渲染拖住"打开文件"这一步本身。
     static void     autoPreviewCb(void *data);
@@ -424,6 +513,18 @@ private:
     // 重跑一次，否则用户点了没反应。
     void            refreshPreview(bool force = false);
     void            togglePreview();            // 开/关预览模式
+    // m037: the bar between the editor and the right zone belongs to the ZONE,
+    // not to the preview - the AI chat pane needs it too. Created on first use by
+    // togglePreview() and by openAiChatZone(); never freed by preview teardown.
+    void            ensureZoneDivider();
+    // The second bar (preview | AI), created when the AI column is opened.
+    void            ensureAiDivider();
+    // Column widths for the current flags: editor / preview / AI, with the
+    // floors the two columns need. Shared by the layout and both bar
+    // callbacks - two copies of this math is how a bar moves the wrong column.
+    void            columnWidths(int contentW, bool noEditor,
+                                 int *editorW, int *prevW, int *aiW) const;
+    int             editorColumnWidth(int contentW) const;
     // 设定"是否仅预览"的目标状态（幂等，不翻面）——菜单是 toggle，
     // "打开 .md 时"这句配置要的是"设成某个状态"。
     void            setPreviewOnly(bool on);
@@ -475,13 +576,79 @@ public:
     Theme           m_theme;       // theme colors (loaded from Config)
     TitleBar       *m_titleBar;   // custom-drawn title bar (replaces OS title bar)
 
-    // Lua scripting (Tools > Lua Script...). The script tool runs as a
-    // SEPARATE process (PeciaLua.exe) connected over a named pipe, so the
-    // main window only hosts the Lua engine and the pipe server.
+    // Lua scripting (Tools > Lua Script...). Since m037 the console has no
+    // window at all (its draft is data, see m_luaDraft) and the AI chat is a
+    // pane in its own column (m_aiChat), created lazily and kept alive across
+    // hide/show. Since m040 the pane takes no host pointer: it never writes
+    // to the document.
     class LuaEngine *m_luaEngine = nullptr;
-    class LuaPipeServer *m_luaPipe = nullptr; // lua pipe: Lua 控制台/AI 窗口连回主进程
-    void showLuaDialog();
-    // Tools > AI Chat... - launches/activates the standalone AIChat tool.
+
+    // Liveness token for deferrals FLTK cannot address by pointer
+    // (Fl::add_timeout's data argument is the heap struct itself, so
+    // remove_timeout(cb, this) does not reach them - see runScriptDeferred).
+    // ~MainWindow clears it as its FIRST act; anything still queued reads the
+    // flag, which stays valid because the queued copy holds a reference.
+    std::shared_ptr<std::atomic<bool>> m_alive =
+        std::make_shared<std::atomic<bool>>(true);
+    class AIChatPane    *m_aiChat = nullptr;      // docked pane, not a window
+    // m039: the preview column and the AI column are INDEPENDENT - two flags,
+    // two bars, no precedence. Opening one never closes the other.
+    bool               m_aiChatDocked = false;
+    long long          m_aiChatElapsed = -1;      // secs while a request runs
+    class PreviewDivider *m_aiDivider = nullptr;  // the preview | AI bar
+    float              m_aiRatio = 0.45f;         // AI column's share of the stack
+
+    // m037: the Lua console window is gone; the draft an agent writes with
+    // console.set is a string, persisted in script.last.txt exactly as the
+    // console did, and console.show opens it as an ordinary editor tab.
+    std::string m_luaDraft;
+    bool m_luaDraftLoaded = false;
+    // Short result of the last script-bar/menu run, shown in the status line
+    // until the next run or tab switch (the console's output pane no longer
+    // exists, and out/err used to be dropped on the floor).
+    //
+    // It is kept as (i18n key + optional numeric argument) and NOT as a
+    // rendered string: a rendered string cannot follow a language switch -
+    // it would keep the wording of the language that was active when the
+    // script ran. updateStatusBar() renders it on every repaint, so
+    // s_applyLangDeferred()'s updateStatusBar() re-renders it in the new
+    // language for free.
+    struct StatusNotice {
+        std::string key;               // i18n key; empty = no notice
+        long long   arg = 0;           // the one number the label shows
+        bool        hasArg = false;    // false = the label takes no argument
+
+        bool empty() const { return key.empty(); }
+        void clear() { key.clear(); arg = 0; hasArg = false; }
+    };
+    StatusNotice m_scriptNotice;
+    // Wall-clock cost (ms) of the most recent script run; -1 = none/unknown.
+    // Every run path (script bar, agent ops) writes it, so the status line
+    // always describes the run it is reporting on.
+    long long m_lastScriptMs = -1;
+
+    // m037: create-if-absent WITHOUT showing (ai.get reads the log of a chat
+    // the user never opened) / dock it in the right zone.
+    class AIChatPane    *ensureAiChatPane();
+    // AI column entry points (independent of the preview column).
+    void openAiChatZone();          // idempotent open (ai.send uses it too)
+    void closeAiZone();             // View > AI Chat when already open
+
+    // m025: install/clear the script-facing dialog hooks (PromptDialog /
+    // PickDialog) so the script layer stays free of ui/ includes.
+    void installScriptUiHooks();
+    void clearScriptUiHooks();
+    const Theme *themePtr() { return &m_theme; }
+    // m039: the column gate must compare the three rects against each other,
+    // so it needs the preview's widget. The panel itself stays private - this
+    // hands out the view, not the render chain.
+    class PreviewPanel *previewPanel() const { return m_preview; }
+    // m039: the two columns are independent state; the gate reads
+    // them separately instead of through a combined "zone" flag.
+    bool previewColumnOn() const { return m_previewActive; }
+    int uiFontSizeForDialogs() const;
+    // View > AI Chat - docks the chat pane (openAiChatZone is the same
+    // call the ai.send op makes; the menu item itself toggles, see cbAIChat).
     void showAIChat();
 
     // Tools bar. The toolbar is a HoverMenuBar: every top-level item is
@@ -601,10 +768,6 @@ public:
     void updateTitle();
     void updateStatusBar();
 
-    // File operations
-    bool checkSaveBeforeClose(int tabIndex);
-    bool doSave(int tabIndex);
-    bool doSaveAs(int tabIndex);
 
     // If `enc` cannot represent the current buffer, offer to save as UTF-8
     // instead of writing '?' substitutions. Returns false when the user
@@ -778,4 +941,11 @@ private:
     // editor_zoom_size on startup; setFontSize() keeps it in sync so
     // addTab() applies the live zoom to newly opened tabs.
     int  m_editorFontSize = 13;
+
+    // Render a status notice in the CURRENT UI language. The notice keeps
+    // its i18n key (see StatusNotice), so this is where the wording is
+    // decided - and it is re-run on every repaint, which is what makes a
+    // language switch re-render the notice instead of leaving the old
+    // language's text on screen.
+    std::string renderNotice(const StatusNotice &n) const;
 };

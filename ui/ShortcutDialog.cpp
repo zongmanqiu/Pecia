@@ -27,8 +27,26 @@
 // text and append "..." (binary search on the byte length, then back
 // off to a UTF-8 character boundary so multi-byte characters are never
 // split). The full name is always available via the row tooltip.
+// Number of bytes in the UTF-8 character starting at `lead` (1 for ASCII,
+// 2..4 for a multi-byte lead; a stray continuation byte counts as 1 so the
+// caller never reads past the string).
+static int utf8CharBytes(unsigned char lead) {
+    if (lead < 0x80) return 1;
+    if ((lead & 0xE0) == 0xC0) return 2;
+    if ((lead & 0xF0) == 0xE0) return 3;
+    if ((lead & 0xF8) == 0xF0) return 4;
+    return 1;
+}
+
 static std::string clipEllipsis(const std::string &s, int maxW) {
-    if (maxW < 24) return s.substr(0, 1);
+    if (maxW < 24) {
+        // No room for "..." here, but never split a multi-byte character:
+        // keep one WHOLE leading character (clamped to the available bytes).
+        if (s.empty()) return s;
+        int n = utf8CharBytes((unsigned char)s[0]);
+        if (n > (int)s.size()) n = (int)s.size();
+        return s.substr(0, n);
+    }
     int tw = 0, th = 0;
     fl_measure(s.c_str(), tw, th);
     if (tw <= maxW) return s;
@@ -40,8 +58,9 @@ static std::string clipEllipsis(const std::string &s, int maxW) {
         fl_measure(t.c_str(), tw, th);
         if (tw <= maxW) lo = mid; else hi = mid - 1;
     }
-    // Back off to the start of the last UTF-8 character.
-    while (lo > 0 && ((unsigned char)s[lo] & 0xC0) == 0x80) --lo;
+    // Back off until the LAST included byte is a UTF-8 lead byte (a
+    // continuation byte at s[lo-1] means the character was cut in half).
+    while (lo > 0 && ((unsigned char)s[lo - 1] & 0xC0) == 0x80) --lo;
     return s.substr(0, lo) + ell;
 }
 
@@ -349,6 +368,11 @@ void ShortcutDialog::layoutRows() {
         m_topSpacer->parent()->remove(m_topSpacer);
         delete m_topSpacer;
         m_topSpacer = nullptr;
+    }
+    if (m_bottomSpacer && m_bottomSpacer->parent()) {
+        m_bottomSpacer->parent()->remove(m_bottomSpacer);
+        delete m_bottomSpacer;
+        m_bottomSpacer = nullptr;
     }
     m_recording = nullptr;
 

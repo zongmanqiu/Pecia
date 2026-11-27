@@ -98,16 +98,26 @@ static const int PECIA_BLANK_ROWS_PAST_END = 3;
    than the top line the viewport can actually be scrolled to -- which is
    exactly the "thumb stops short of the end of its track" symptom.
 
-   So the limit is computed ONCE, inside scroll_() (the function that actually
-   clamps the top line) and stashed in vscroll_applied_limit; update_v_scrollbar()
-   reuses that recorded value instead of recomputing it. */
+   So all three sites use ONE formula: scroll_() (the function that actually
+   clamps the top line) records the value it applied in this instance's
+   mVScrollAppliedLimit for diagnostics, while recalc_display() and
+   update_v_scrollbar() recompute from THIS instance's current line counts.
+   No process-wide cached value is involved, so one widget's last scroll
+   position can no longer leak into another widget's range. */
 static int vscroll_bottom_line(int nbuf, int nvis) {
   return nbuf + 2 + PECIA_BLANK_ROWS_PAST_END - nvis;
 }
 
-/* PATCH (Pecia): the limit scroll_() actually applied on its last call, or 0
- if it has not run yet. See vscroll_bottom_line() for why this is needed. */
-static int vscroll_applied_limit = 0;
+/* PATCH (Pecia): HISTORICAL NOTE -- this used to be
+     static int vscroll_applied_limit = 0;
+   a file-scope cache shared by every Fl_Text_Display in the process. It was
+   removed on 2026-11-27: a fresh window inherited whichever limit another
+   window had scrolled to, and ranges were computed from another widget's
+   buffer line count. The limit actually applied by scroll_() is now recorded
+   in this instance's mVScrollAppliedLimit (declared in FL/Fl_Text_Display.H)
+   for diagnostics only; all range calculations use vscroll_bottom_line() with
+   the instance's own current counts. Keep this comment as the record of that
+   patch -- it must never take part in any logic again. */
 
 /* Masks for text drawing methods.  These are or'd together to form an
  integer which describes what drawing calls to use to draw a string */
@@ -185,6 +195,7 @@ Fl_Text_Display::Fl_Text_Display(int X, int Y, int W, int H, const char* l)
   }
 #endif
   mLineStarts[0] = 0;
+  mVScrollAppliedLimit = 0;   // PATCH (Pecia): instance record, no file-static
   mTopLineNum = 1;
   mAbsTopLineNum = 1;
   mNeedAbsTopLineNum = 0;
@@ -802,12 +813,11 @@ void Fl_Text_Display::recalc_display() {
     has reached it the blank rows below the last line are intentional, so this
     "show more text" pass must stop -- otherwise it walks the view back up and
     cancels the very slack we just granted, which puts the thumb short of its
-    own track again. Below that, upstream behaviour is untouched. It comes from
-    vscroll_applied_limit (the limit scroll_() really used) rather than a fresh
-    computation, for the reason given on vscroll_bottom_line(). */
-    const int bottom_line = (vscroll_applied_limit > 0)
-                            ? vscroll_applied_limit
-                            : vscroll_bottom_line(mNBufferLines, mNVisibleLines);
+    own track again. Below that, upstream behaviour is untouched. The limit is
+    recomputed from THIS instance's current line counts via
+    vscroll_bottom_line() -- the same formula scroll_() uses -- so no
+    cross-instance cached value can skew it. */
+    const int bottom_line = vscroll_bottom_line(mNBufferLines, mNVisibleLines);
     while (   mNVisibleLines>=2
            && (mLineStarts[mNVisibleLines-2]==-1)
            && mTopLineNum > bottom_line
@@ -3190,12 +3200,15 @@ void Fl_Text_Display::scroll(int topLineNum, int horizOffset) {
  */
 int Fl_Text_Display::scroll_(int topLineNum, int horizOffset) {
   /* Limit the requested scroll position to allowable values */
-  /* PATCH (Pecia): one shared bottom limit, recorded for update_v_scrollbar().
-     See vscroll_bottom_line() -- mNBufferLines drifts within a single
-     display_needs_recalc() pass, so the two must not recompute it. */
+  /* PATCH (Pecia): one shared bottom limit, recorded on THIS instance for
+     diagnostics. See vscroll_bottom_line() -- mNBufferLines drifts within a
+     single display_needs_recalc() pass, so recalc_display() and
+     update_v_scrollbar() use the same formula rather than a cached value.
+     mVScrollAppliedLimit records what scroll_() applied here; it does not
+     drive the scrollbar range. */
   {
     const int limit = vscroll_bottom_line(mNBufferLines, mNVisibleLines);
-    vscroll_applied_limit = limit;
+    mVScrollAppliedLimit = limit;
     if (topLineNum > limit) topLineNum = limit;
   }
   if (topLineNum < 1) topLineNum = 1;
@@ -3262,14 +3275,13 @@ void Fl_Text_Display::update_v_scrollbar() {
    (pos, size, first, total) into bounds(first, total-size+first), so
    total = limit + size - first reproduces exactly that limit.
 
-   ★ vscroll_applied_limit, not a fresh vscroll_bottom_line() call: the
-     mNBufferLines this function reads has already drifted past the value
-     scroll_() saw (see the comment on vscroll_bottom_line), so recomputing
-     here would advertise a maximum the viewport cannot reach. When scroll_()
-     has not run at all yet, fall back to computing it. */
-  int limit = vscroll_applied_limit;
-  if (limit < 1)
-    limit = vscroll_bottom_line(mNBufferLines, mNVisibleLines);
+   ★ The range is recomputed from THIS instance's current line counts via
+     vscroll_bottom_line() -- the same formula scroll_() uses -- so it can
+     never inherit another widget's last applied limit. The old file-scope
+     cache leaked that value into fresh windows (and stalled brand-new
+     instances that did not inherit it). mVScrollAppliedLimit is kept only as
+     the diagnostic record of the last value scroll_() applied. */
+  int limit = vscroll_bottom_line(mNBufferLines, mNVisibleLines);
   if (limit < 1) limit = 1;
   const int total = limit + mNVisibleLines - 1;
 

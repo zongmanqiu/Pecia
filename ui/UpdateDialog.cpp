@@ -41,6 +41,24 @@ struct Job {
     T                    payload;
 };
 
+// UI-side second line of defence for the download file name. core/Updater
+// already rejects hostile manifest versions while parsing, but this layer is
+// the one that builds the path on disk, so re-check the tag against a strict
+// whitelist before it ever reaches a file API.
+static std::string sanitizeVersionTag(const std::string &v) {
+    std::string out;
+    out.reserve(v.size());
+    for (unsigned char c : v) {
+        const bool ok = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+                        (c >= 'a' && c <= 'z') || c == '.' || c == '_' || c == '-';
+        if (ok) out.push_back(static_cast<char>(c));
+    }
+    if (out.empty() || out == "." || out == ".." ||
+        out.find("..") != std::string::npos)
+        return std::string();
+    return out;
+}
+
 } // namespace
 
 UpdateDialog::UpdateDialog(const Theme *theme, int uiFontSize, Config *cfg,
@@ -296,18 +314,25 @@ std::string UpdateDialog::downloadUrl() const {
 }
 
 // One printf-shaped helper, because the status line composes two of these.
-static std::string fmt(const char *key, const char *a, const char *b) {
+// I18n values are DATA, never format strings: a translated "%" would make
+// snprintf read garbage arguments. The translations end in a literal "%s"
+// placeholder - strip it, then compose with a fixed literal format.
+static std::string fmt(const char *key, const char *value) {
+    std::string label = I18n::get(key);
+    const std::string ph = "%s";
+    const size_t pos = label.find(ph);
+    if (pos != std::string::npos) label.erase(pos, ph.size());
     char buf[512];
-    snprintf(buf, sizeof(buf), I18n::get(key), a, b);
+    snprintf(buf, sizeof(buf), "%s%s", label.c_str(), value ? value : "");
     return buf;
 }
 
 void UpdateDialog::renderManifest(const UpdateManifest &m) {
-    m_curVerBuf = fmt("update.page.current", PECIA_VERSION, "");
+    m_curVerBuf = fmt("update.page.current", PECIA_VERSION);
     m_curVer->label(m_curVerBuf.c_str());
     m_mfVerBuf = m.version.empty()
                      ? std::string(I18n::get("update.page.manifest_none"))
-                     : fmt("update.page.manifest", m.version.c_str(), "");
+                     : fmt("update.page.manifest", m.version.c_str());
     m_mfVer->label(m_mfVerBuf.c_str());
     m_curVer->redraw();
     m_mfVer->redraw();
@@ -411,6 +436,9 @@ void UpdateDialog::applyCheckResult(const UpdateCheckResult &r) {
     if (r.online && !r.fromCache) {
         m_source->value(r.sourceUsed);
         m_source->redraw();
+        // value() 不触发 callback：镜像回退后的实际源必须显式持久化，
+        // 否则下次检查仍从用户原来那个已失败的源开始。
+        if (m_cfg) m_cfg->setUpdateSource(r.sourceUsed);
     }
     applyInstallability(r.hasUpdate);
 }
@@ -425,9 +453,18 @@ void UpdateDialog::startDownload() {
     if (url.empty()) return;                            // belt and braces
 
     const std::string exeDir = getExeDirUtf8();
-    std::string ver = m_manifest.version;
+    std::string ver = sanitizeVersionTag(m_manifest.version);
     if (!ver.empty() && (ver[0] == 'v' || ver[0] == 'V')) ver.erase(0, 1);
-    const std::string zipPath  = exeDir + "Pecia_x64_" + ver + ".zip";
+    const std::string zipPath = exeDir + "Pecia_x64_" + ver + ".zip";
+    // UI 是真正拼落盘文件名的一层：core/Updater 已在解析清单时过滤过一次，
+    // 这里再做一次净化 + 最终路径校验，确保包只能落在 exeDir 内。
+    if (ver.empty() ||
+        zipPath.rfind(exeDir, 0) != 0 ||
+        zipPath.find('\\', exeDir.size()) != std::string::npos ||
+        zipPath.find('/', exeDir.size()) != std::string::npos) {
+        finishFailure(I18n::get("update.page.updatefailed"));
+        return;
+    }
 
     setBusy(true);
     setTransferMode(true);

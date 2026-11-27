@@ -408,6 +408,7 @@ std::string TextSelection::text() const
 
     std::string out;
     int prevBlock = -1;
+    bool lastPre = false;              // 选区末尾是否落在 white-space: pre* 内
     for (int i = a; i <= b && i < (int)m_runs.size(); ++i) {
         const Run& r = m_runs[(size_t)i];
         const int from = (i == a) ? ao : 0;
@@ -417,6 +418,7 @@ std::string TextSelection::text() const
         if (r.brk) {
             if (!out.empty() && out.back() != '\n') out += '\n';
             prevBlock = r.block;
+            lastPre = r.pre;            // pre 里的换行也是内容，不该被收尾裁掉
             continue;
         }
 
@@ -439,12 +441,16 @@ std::string TextSelection::text() const
             out.append(r.text, (size_t)from, (size_t)(to - from));
         }
         prevBlock = r.block;
+        lastPre = r.pre;
     }
 
-    // 收尾：只裁掉末尾的空格与换行。pre 块内的空白已在上面原样保留，不能
-    // 再走「行首空格全删」那套折叠规则。
-    while (!out.empty() && (out.back() == ' ' || out.back() == '\n'))
-        out.pop_back();
+    // 收尾：只裁掉末尾的空格与换行。pre 块内的空白已在上面原样保留，
+    // 若选区末尾仍在 pre 里，这里再裁就把代码块的尾随空格/换行吃掉了，
+    // 与上面的"原样保留"意图相反 —— 这种情况整段不动。
+    if (!lastPre) {
+        while (!out.empty() && (out.back() == ' ' || out.back() == '\n'))
+            out.pop_back();
+    }
     return out;
 }
 

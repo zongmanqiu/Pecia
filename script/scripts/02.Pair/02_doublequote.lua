@@ -8,5 +8,5 @@ local left, right = '"', '"'
 if #input > 0 then
     return left .. input .. right
 else
-    insert(left .. right, #left)
-end
+    insert(left .. right, -#right)
+end

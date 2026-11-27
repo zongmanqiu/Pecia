@@ -43,8 +43,8 @@ extern Fl_Color g_popupCheckColor;
 extern Fl_Color g_borderColour;
 
 // PATCHED by Pecia (2026-10-22): every popup menu gets the same outer glow as
-// the app windows. Implemented in ui/WindowShadow.cpp (Pecia/PeciaLua/
-// PeciaAIChat + the UI tests). Other fltk.lib consumers get the no-op fallback
+// the app windows. Implemented in ui/WindowShadow.cpp (Pecia + the UI tests).
+// Other fltk.lib consumers get the no-op fallback
 // below via /alternatename, so the third-party lib stays self-contained.
 extern void peciaMenuShadowShown(Fl_Window *);
 extern void peciaMenuShadowHidden(Fl_Window *);

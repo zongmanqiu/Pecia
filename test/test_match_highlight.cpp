@@ -22,6 +22,16 @@ static Editor *makeEditor(const char *text) {
     return ed;
 }
 
+// FLTK's text display does NOT own the buffer assigned via buffer(), so each
+// fixture must free the buffer it created. Delete the editor first (its
+// destructor clears highlight_data() against the still-live buffer), then
+// delete the saved buffer pointer.
+static void destroyEditor(Editor *ed) {
+    Fl_Text_Buffer *buf = ed->buffer();
+    delete ed;
+    delete buf;
+}
+
 static void test_marks_matches() {
     Editor *ed = makeEditor("cat category scatter cat");
     MatchHighlight h;
@@ -39,7 +49,7 @@ static void test_marks_matches() {
     CHECK(s[7] == 'A');
     CHECK(s[21] == 'D' && s[22] == 'D' && s[23] == 'D');   // cat@21
     CHECK(s[10] == 'A');                                   // plain text
-    delete ed;
+    destroyEditor(ed);
 }
 
 static void test_case_sensitive() {
@@ -52,7 +62,7 @@ static void test_case_sensitive() {
     // "Cat"@0 must NOT match (uppercase C), "cat"@4 must
     CHECK(s[0] == 'A');
     CHECK(s[4] == 'D' && s[5] == 'D' && s[6] == 'D');
-    delete ed;
+    destroyEditor(ed);
 }
 
 static void test_empty_needle_marks_nothing() {
@@ -64,7 +74,7 @@ static void test_empty_needle_marks_nothing() {
     const char *s = ed->debugStyleString();
     CHECK_EQ((int)strlen(s), 11);
     for (int i = 0; i < 11; ++i) CHECK(s[i] == 'A');
-    delete ed;
+    destroyEditor(ed);
 }
 
 static void test_url_styles() {
@@ -80,7 +90,7 @@ static void test_url_styles() {
     for (int i = 0; i < 9; ++i) CHECK(s[i] == 'E');
     CHECK(s[9] == 'B');                                  // space (current line)
     for (int i = 10; i < 19; ++i) CHECK(s[i] == 'F');
-    delete ed;
+    destroyEditor(ed);
 }
 
 static void test_cursor_leaves_url_line_keeps_underline() {
@@ -101,7 +111,7 @@ static void test_cursor_leaves_url_line_keeps_underline() {
     for (int i = 0; i < 9; ++i) CHECK(s[i] == 'C');
     CHECK(s[9] == 'A');
     CHECK(s[10] == 'B');
-    delete ed;
+    destroyEditor(ed);
 }
 
 static void test_clear_restores_styles() {
@@ -113,7 +123,7 @@ static void test_clear_restores_styles() {
     h.clear(ed);
     CHECK(!h.active());
     CHECK(ed->debugStyleString()[0] == 'A');
-    delete ed;
+    destroyEditor(ed);
 }
 
 int main() {

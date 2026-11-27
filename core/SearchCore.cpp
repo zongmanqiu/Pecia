@@ -217,8 +217,10 @@ int replaceAllForward(std::string &text,
         if (found < 0) break;
         text.replace(found, needleLen, repl, replLen);
         ++count;
-        // Always advance strictly so empty replacements cannot re-match.
-        pos = found + (replLen > 0 ? replLen : needleLen);
+        // Advance past the replacement: after an empty replacement the text
+        // has shrunk, so staying at `found` picks up the next (shifted) match
+        // instead of skipping the tail of the string.
+        pos = found + replLen;
         if (pos >= (int)text.size()) break;
     }
     return count;

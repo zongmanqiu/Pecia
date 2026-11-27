@@ -275,7 +275,7 @@ echo.
 
 REM ---- 5. tests --------------------------------------------------------------
 REM ctest is a GATE, not a report: docs (README / 目录结构说明.md / build_readme.md)
-REM all call "14 tests green" an admission criterion, so a failing test must fail
+REM all call "36 tests green" an admission criterion, so a failing test must fail
 REM the build. Set PECIA_SKIP_TESTS=1 to run the compile only (quick local loop).
 if "%PECIA_SKIP_TESTS%"=="1" (
     echo [7/7] ce shi - tiao guo - PECIA_SKIP_TESTS=1
@@ -310,8 +310,6 @@ echo ======================================
 echo.
 echo shu chu mu lu: %OUTPUT_DIR%
 echo   Pecia.exe
-echo   PeciaLua.exe
-echo   PeciaAIChat.exe
 echo   lang/  theme/  script/
 echo.
 

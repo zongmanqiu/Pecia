@@ -15,7 +15,7 @@ if(CMAKE_GENERATOR MATCHES "Makefiles")
     set(CMAKE_DEPENDS_USE_COMPILER FALSE)
 endif()
 
-project(Pecia VERSION 1.1.3 LANGUAGES C CXX)
+project(Pecia VERSION 1.2.0 LANGUAGES C CXX)
 
 # ── Supported target is strictly Windows x64 (64-bit) only. ────────────────
 # The project is deliberately single-platform / single-arch: it uses Windows
@@ -167,10 +167,10 @@ endif()
 # ----------------------------------------------------------------------------
 # Windows VERSIONINFO resources (exe 属性 -> 详细信息 显示的版本/产品名)
 # ----------------------------------------------------------------------------
-# 由 PROJECT_VERSION 生成，作为"单一数据源"的一部分：版本号只在 CMakeLists
-# 第 2 行改一次，三份 exe 的文件属性自动跟随，不会出现第二处手工维护点。
-# 三个 target 各自的 ProductName / FileDescription / OriginalFilename 用变量
-# 区分，共用同一份模板 build/version_info.rc.in。
+# 由 PROJECT_VERSION 生成，作为"单一数据源"的一部分：版本号只在
+# project(Pecia VERSION x.y.z ...) 这一行改一次，唯一 exe 的文件属性自动跟随，
+# 不会出现第二处手工维护点。ProductName / FileDescription / OriginalFilename
+# 用变量区分，共用同一份模板 build/version_info.rc.in。
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/gen")
 set(PECIA_VMAJOR "${PROJECT_VERSION_MAJOR}")
 set(PECIA_VMINOR "${PROJECT_VERSION_MINOR}")
@@ -183,20 +183,6 @@ set(PECIA_INTERNAL  "Pecia")
 set(PECIA_ORIGNAME  "Pecia.exe")
 configure_file("${CMAKE_SOURCE_DIR}/build/version_info.rc.in"
                "${CMAKE_BINARY_DIR}/gen/version_pecia.rc" @ONLY)
-
-set(PECIA_PRODUCT   "Pecia Lua")
-set(PECIA_FILEDESC  "Pecia Lua Script Tool")
-set(PECIA_INTERNAL  "PeciaLua")
-set(PECIA_ORIGNAME  "PeciaLua.exe")
-configure_file("${CMAKE_SOURCE_DIR}/build/version_info.rc.in"
-               "${CMAKE_BINARY_DIR}/gen/version_pecia_lua.rc" @ONLY)
-
-set(PECIA_PRODUCT   "Pecia AI Chat")
-set(PECIA_FILEDESC  "Pecia AI Chat")
-set(PECIA_INTERNAL  "PeciaAIChat")
-set(PECIA_ORIGNAME  "PeciaAIChat.exe")
-configure_file("${CMAKE_SOURCE_DIR}/build/version_info.rc.in"
-               "${CMAKE_BINARY_DIR}/gen/version_pecia_ai.rc" @ONLY)
 
 # ----------------------------------------------------------------------------
 # Pecia main exe
@@ -218,9 +204,13 @@ core/ShortcutCore.cpp
     editor/Editor.cpp
     editor/ImageAttach.cpp
     script/LuaEngine.cpp
+    core/HostOps.cpp
     script/LuaParamParser.cpp
     script/ScriptManager.cpp
     ui/MainWindow.cpp
+    ui/MainWindow_ops.cpp
+    agent/McpJson.cpp
+    agent/McpServer.cpp
  ui/MainWindow_toolbar.cpp
 ui/MainWindow_view.cpp
 ui/MainWindow_lua.cpp
@@ -241,6 +231,7 @@ ui/MainWindow_callbacks.cpp
 ui/MatchHighlight.cpp
     ui/GoTo.cpp
     ui/SettingsDialog.cpp
+    ui/SettingsNav.cpp
     ui/ShortcutDialog.cpp
     ui/InfoWindow.cpp
     ui/AboutDialog.cpp
@@ -252,10 +243,12 @@ ui/MatchHighlight.cpp
     ui/ParamDialog.cpp
     ui/FontDialog.cpp
     ui/DialogBase.cpp
+    ui/WidgetRegistry.cpp
+    ui/ScriptDialogs.cpp
     ui/ImeInPlace.cpp
     ui/ToolChrome.cpp
     ui/UiBridge.cpp
-    LuaTool/LuaPipeServer.cpp
+    AIChat/AIChatPane.cpp
     core/AiApiClient.cpp
     core/Updater.cpp
     mdview/preprocess.cpp
@@ -292,7 +285,6 @@ target_include_directories(Pecia PRIVATE
     ${CMAKE_SOURCE_DIR}/editor
     ${CMAKE_SOURCE_DIR}/script
     ${CMAKE_SOURCE_DIR}/ui
-    ${CMAKE_SOURCE_DIR}/LuaTool
     ${CMAKE_SOURCE_DIR}/build
     ${CMAKE_SOURCE_DIR}/mdview
     ${CMAKE_SOURCE_DIR}/../.thirdparty/litehtml-0.10/include
@@ -365,144 +357,6 @@ if(_pecia_ipo_supported)
 endif()
 
 # ----------------------------------------------------------------------------
-# PeciaLua - standalone Lua script tool (sibling of Pecia.exe).
-# Single instance; runs scripts against the main document via the pipe,
-# with a local Lua engine fallback. Own config file PeciaLua.ini.
-# ----------------------------------------------------------------------------
-add_executable(PeciaLua WIN32
-    LuaTool/main_lua.cpp
-    LuaTool/LuaToolWindow.cpp
-    ui/ToolChrome.cpp
-    core/PipeClient.cpp
-    core/Config.cpp
-    core/CrashReport.cpp
-    core/I18n.cpp
-    core/Theme.cpp
-    core/OpLog.cpp
-    script/LuaEngine.cpp
-    script/LuaParamParser.cpp
-    ui/TitleBar.cpp
-    ui/WindowFrame.cpp
-    ui/WindowShadow.cpp
-    ui/ParamDialog.cpp
-    ui/InfoWindow.cpp
-    ui/DialogBase.cpp
-    ui/ImeInPlace.cpp
-    core/ShortcutCore.cpp
-    ui/Layout.cpp
-    build/pecia_lua.rc
-    "${CMAKE_BINARY_DIR}/gen/version_pecia_lua.rc"
-)
-
-set_property(SOURCE build/pecia_lua.rc PROPERTY OBJECT_DEPENDS
-    ${CMAKE_SOURCE_DIR}/build/pecia.manifest
-    ${CMAKE_SOURCE_DIR}/image/lua.ico)
-
-target_include_directories(PeciaLua PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/core
-    ${CMAKE_SOURCE_DIR}/ui
-    ${CMAKE_SOURCE_DIR}/LuaTool
-    ${CMAKE_SOURCE_DIR}/script
-    ${CMAKE_SOURCE_DIR}/build
-    ${PCRE2_DIR}/src
-    ${FLTK_INCLUDE_DIRS}
-)
-
-target_compile_definitions(PeciaLua PRIVATE UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS)
-if(MSVC)
-    target_compile_options(PeciaLua PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /WX /MD)
-    set_target_properties(PeciaLua PROPERTIES LINK_FLAGS "/MANIFEST:NO /MAP:PeciaLua.map /DYNAMICBASE:NO")
-endif()
-
-target_link_libraries(PeciaLua PRIVATE
-    ${FLTK_LIBRARIES}
-    lua_static
-    pcre2-8-static
-    comctl32
-    shell32
-    user32
-    imm32
-    gdi32
-    kernel32
-    winspool
-    ole32
-    oleaut32
-    uuid
-    comdlg32
-    advapi32
-    ws2_32
-    winhttp
-    gdiplus
-)
-
-# ----------------------------------------------------------------------------
-# PeciaAIChat - standalone AI chat tool (sibling of Pecia.exe).
-# Single instance; multi-turn conversation; sends results to the Lua tool
-# (fixed pipe) or the main document (per-pid pipe). Own config PeciaAIChat.ini.
-# ----------------------------------------------------------------------------
-add_executable(PeciaAIChat WIN32
-    AIChat/main_ai.cpp
-    AIChat/AIChatWindow.cpp
-    AIChat/AIChatSettingsDialog.cpp
-    ui/InfoWindow.cpp
-    ui/DialogBase.cpp
-    ui/ToolChrome.cpp
-    core/PipeClient.cpp
-    core/AiApiClient.cpp
-    core/Config.cpp
-    core/CrashReport.cpp
-    core/I18n.cpp
-    core/Theme.cpp
-    ui/TitleBar.cpp
-    ui/WindowFrame.cpp
-    ui/WindowShadow.cpp
-    core/ShortcutCore.cpp
-    ui/Layout.cpp
-    ui/ImeInPlace.cpp
-    build/pecia_ai.rc
-    "${CMAKE_BINARY_DIR}/gen/version_pecia_ai.rc"
-)
-
-set_property(SOURCE build/pecia_ai.rc PROPERTY OBJECT_DEPENDS
-    ${CMAKE_SOURCE_DIR}/build/pecia.manifest
-    ${CMAKE_SOURCE_DIR}/image/ai_bot.ico)
-
-target_include_directories(PeciaAIChat PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/core
-    ${CMAKE_SOURCE_DIR}/ui
-    ${CMAKE_SOURCE_DIR}/AIChat
-    ${CMAKE_SOURCE_DIR}/build
-    ${FLTK_INCLUDE_DIRS}
-)
-
-target_compile_definitions(PeciaAIChat PRIVATE UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS)
-if(MSVC)
-    target_compile_options(PeciaAIChat PRIVATE /utf-8 /permissive- /Zc:preprocessor /W4 /WX /MD)
-    set_target_properties(PeciaAIChat PROPERTIES LINK_FLAGS "/MANIFEST:NO /MAP:PeciaAIChat.map /DYNAMICBASE:NO")
-endif()
-
-target_link_libraries(PeciaAIChat PRIVATE
-    ${FLTK_LIBRARIES}
-    comctl32
-    shell32
-    user32
-    imm32
-    gdi32
-    kernel32
-    winspool
-    ole32
-    oleaut32
-    uuid
-    comdlg32
-    advapi32
-    ws2_32
-    winhttp
-    gdiplus
-)
-
-# ----------------------------------------------------------------------------
 # Runtime data deployment
 # ----------------------------------------------------------------------------
 # ALL entry points / tests read the same lang/ files next to the exe. Rather
@@ -521,8 +375,6 @@ add_custom_target(pecia_copy_lang ALL
     COMMENT "Copying language files to output directory"
 )
 add_dependencies(Pecia pecia_copy_lang)
-add_dependencies(PeciaLua pecia_copy_lang)
-add_dependencies(PeciaAIChat pecia_copy_lang)
 
 # Copy the theme palette files (like lang/ ) so Theme reads them from the
 # exe-adjacent theme/ folder at runtime (settings.ini only records theme.name).
@@ -533,8 +385,6 @@ add_custom_target(pecia_copy_theme ALL
     COMMENT "Copying theme files to output directory"
 )
 add_dependencies(Pecia pecia_copy_theme)
-add_dependencies(PeciaLua pecia_copy_theme)
-add_dependencies(PeciaAIChat pecia_copy_theme)
 
 # Copy the default Lua scripts (built-in script/ folder shipped in main/)
 # next to the executable. The copy merges into build/script - user-added
@@ -595,14 +445,59 @@ add_custom_target(pecia_copy_licenses ALL
     COMMENT "Copying LICENSE, THIRD-PARTY-NOTICES.md and licenses/ to output directory"
 )
 add_dependencies(Pecia pecia_copy_licenses)
-add_dependencies(PeciaLua pecia_copy_licenses)
-add_dependencies(PeciaAIChat pecia_copy_licenses)
+
+# Ship the user/AI-facing docs (help manual + MCP onboarding) next to the
+# executable, mirroring the release package layout (build/docs/). The manual
+# ships per language (使用说明.zh-CN.html / 使用说明.en.html, r042 item 5):
+# the 帮助 > 使用说明 menu picks the edition by UI language and falls back to
+# English. A dedicated ALL target, not a Pecia POST_BUILD: it must run even
+# when Pecia.exe does not relink. test_docs lints this rule's existence - it
+# was once lost in a CMakeLists rebuild and no gate noticed.
+set(PECIA_DOCS_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/docs")
+add_custom_target(pecia_copy_docs ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${PECIA_DOCS_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/docs/使用说明.zh-CN.html"
+        "${PECIA_DOCS_DIR}/使用说明.zh-CN.html"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/docs/使用说明.en.html"
+        "${PECIA_DOCS_DIR}/使用说明.en.html"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/docs/MCP接入.md"
+        "${PECIA_DOCS_DIR}/MCP接入.md"
+    COMMENT "Copying docs (help manual zh/en, MCP onboarding) to output directory"
+)
+add_dependencies(Pecia pecia_copy_docs)
 
 # ----------------------------------------------------------------------------
 # Unit tests: pure logic only (no FLTK, no GUI). Each test links just the
 # sources it exercises and runs via CTest.
 # ----------------------------------------------------------------------------
 enable_testing()
+
+# HostOps registry: pure logic (shape validation, perm gate, projection
+# order, stats) - no FLTK widgets, no MainWindow (m020 single-source core).
+add_executable(test_host_ops
+    test/test_host_ops.cpp
+    core/HostOps.cpp
+)
+target_include_directories(test_host_ops PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+if(MSVC)
+    target_compile_options(test_host_ops PRIVATE /utf-8 /permissive- /W4 /WX /MD)
+    target_compile_definitions(test_host_ops PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+add_test(NAME host_ops COMMAND test_host_ops)
+
+# MCP protocol rounds run INSIDE the shipping exe (被测单元=出货单元):
+# mcp_selftest is the windowless scripted handshake; mcp_stdio drives the
+# PowerShell gate over the real stdio endpoint (LABEL=gui: needs a window).
+add_test(NAME mcp_selftest COMMAND Pecia --mcp-selftest)
+add_test(NAME mcp_stdio COMMAND powershell -NoProfile -ExecutionPolicy Bypass
+    -File "${CMAKE_SOURCE_DIR}/test/mcp_gate/stdio_handshake.ps1" $<TARGET_FILE:Pecia>)
+set_tests_properties(mcp_stdio PROPERTIES LABELS "gui")
+
 
 add_executable(test_search_core
     test/test_search_core.cpp
@@ -1023,7 +918,10 @@ target_link_libraries(test_export_e2e PRIVATE
 # 它要读 example/ex1.markdown/ex1.md 并往 temp/exp_out 落产物，属于会写盘的
 # 集成测试：串在 md_export 之后跑，避免与其它用例争 temp/。
 add_test(NAME export_e2e COMMAND test_export_e2e)
-set_tests_properties(export_e2e PROPERTIES RUN_SERIAL TRUE)
+# 该用例在 localize_remote_images() 里走真实网络下载（默认 WinHTTP GET，
+# 内置 3 次重试），离线/弱网下可能长时间挂起。ctest 超时是兜底：到点直接
+# 杀进程判失败，而不是让整轮测试卡死。
+set_tests_properties(export_e2e PROPERTIES RUN_SERIAL TRUE TIMEOUT 120)
 
 add_executable(test_match_highlight
     test/test_match_highlight.cpp
@@ -1065,6 +963,53 @@ target_link_libraries(test_match_highlight PRIVATE
     gdiplus
 )
 add_test(NAME match_highlight COMMAND test_match_highlight)
+
+# Paste-media end-to-end over the REAL clipboard (r042e): file/bitmap land a
+# copy + link, text is handed back to normal paste, and unsaved/read-only
+# documents report their skip reason through Editor::setPasteNotice. Same TU
+# set as test_match_highlight plus Document (the feature walks the doc path).
+add_executable(test_paste_media
+    test/test_paste_media.cpp
+    test/test_stubs.cpp
+    test/test_mainwindow_stubs.cpp
+    ui/MatchHighlight.cpp
+    editor/FontUtils.cpp
+    editor/Editor.cpp
+    editor/ImageAttach.cpp
+    editor/Document.cpp
+    ui/ImeInPlace.cpp
+    core/Config.cpp
+    core/EncodingCore.cpp
+    core/UiBridge.cpp
+    core/OpLog.cpp
+    core/I18n.cpp
+)
+target_include_directories(test_paste_media PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${FLTK_INCLUDE_DIRS}
+)
+if(MSVC)
+    target_compile_options(test_paste_media PRIVATE /utf-8 /permissive- /W4 /WX /MD)
+    target_compile_definitions(test_paste_media PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+target_link_libraries(test_paste_media PRIVATE
+    ${FLTK_LIBRARIES}
+    comctl32
+    shell32
+    user32
+    imm32
+    gdi32
+    kernel32
+    winspool
+    ole32
+    oleaut32
+    uuid
+    comdlg32
+    advapi32
+    ws2_32
+    gdiplus
+)
+add_test(NAME paste_media COMMAND test_paste_media)
 
 add_executable(test_config
     test/test_config.cpp
@@ -1128,6 +1073,7 @@ add_executable(test_lua_engine
 test/test_lua_engine.cpp
 test/test_stubs.cpp
 script/LuaEngine.cpp
+core/HostOps.cpp
 core/OpLog.cpp
 )
 target_include_directories(test_lua_engine PRIVATE
@@ -1273,6 +1219,7 @@ add_test(NAME builtin_scripts COMMAND test_builtin_scripts)
 add_executable(test_ui_smoke
     test/test_ui_smoke.cpp
     ui/SettingsDialog.cpp
+    ui/SettingsNav.cpp
     ui/AboutDialog.cpp
     ui/ConfirmDialog.cpp
     ui/ParamDialog.cpp
@@ -1281,6 +1228,8 @@ add_executable(test_ui_smoke
     ui/ShortcutDialog.cpp
     ui/InfoWindow.cpp
     ui/DialogBase.cpp
+    ui/WidgetRegistry.cpp
+    ui/ScriptDialogs.cpp
     ui/ImeInPlace.cpp
     ui/TitleBar.cpp
     ui/WindowFrame.cpp
@@ -1290,6 +1239,7 @@ add_executable(test_ui_smoke
     core/Config.cpp
     core/Theme.cpp
     core/I18n.cpp
+    core/OpLog.cpp
     core/ShortcutCore.cpp
     script/LuaParamParser.cpp
 )
@@ -1451,18 +1401,16 @@ add_dependencies(test_ui_smoke pecia_copy_lang)
 add_dependencies(test_ui_smoke pecia_copy_theme)
 
 # ---------------------------------------------------------------------------
-# Tool-window smoke test - constructs the two standalone tool windows
-# (AI chat, Lua console) through their real code path. Same idea as
-# test_ui_smoke but for the tool windows (skips their detached threads /
-# blocking modal loops via ui::gSmokeMode).
+# Tool-window smoke test - constructs the AI chat tool window through its
+# real code path. (The Lua console tool window was removed in m037.) Same
+# idea as test_ui_smoke but for the tool window (skips its detached threads /
+# blocking modal loops via ui::g_smokeMode).
 # ---------------------------------------------------------------------------
 add_executable(test_ui_tool_smoke
     test/test_ui_tool_smoke.cpp
-    AIChat/AIChatWindow.cpp
-    AIChat/AIChatSettingsDialog.cpp
-    LuaTool/LuaToolWindow.cpp
+    AIChat/AIChatPane.cpp
+    core/HostOps.cpp
     core/AiApiClient.cpp
-    core/PipeClient.cpp
     core/OpLog.cpp
     core/CrashReport.cpp
     core/Config.cpp
@@ -1474,6 +1422,8 @@ add_executable(test_ui_tool_smoke
     ui/ParamDialog.cpp
     ui/InfoWindow.cpp
     ui/DialogBase.cpp
+    ui/WidgetRegistry.cpp
+    ui/ScriptDialogs.cpp
     ui/ImeInPlace.cpp
     ui/TitleBar.cpp
     ui/WindowFrame.cpp
@@ -1485,7 +1435,6 @@ target_include_directories(test_ui_tool_smoke PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${CMAKE_SOURCE_DIR}/ui
-    ${CMAKE_SOURCE_DIR}/LuaTool
     ${CMAKE_SOURCE_DIR}/AIChat
     ${CMAKE_SOURCE_DIR}/script
     ${CMAKE_SOURCE_DIR}/build
@@ -1538,6 +1487,8 @@ add_dependencies(test_ui_tool_smoke pecia_copy_theme)
 # ---------------------------------------------------------------------------
 add_executable(test_mainwindow_smoke
     test/test_mainwindow_smoke.cpp
+    ui/MainWindow.cpp
+    AIChat/AIChatPane.cpp
     core/Config.cpp
     core/CrashReport.cpp
     core/I18n.cpp
@@ -1550,6 +1501,7 @@ add_executable(test_mainwindow_smoke
     core/ShortcutCore.cpp
     core/AiApiClient.cpp
     core/Updater.cpp
+    core/HostOps.cpp
     editor/Document.cpp
     editor/FontUtils.cpp
     editor/Editor.cpp
@@ -1557,7 +1509,7 @@ add_executable(test_mainwindow_smoke
     script/LuaEngine.cpp
     script/LuaParamParser.cpp
     script/ScriptManager.cpp
-    ui/MainWindow.cpp
+    ui/MainWindow_ops.cpp
     ui/MainWindow_toolbar.cpp
     ui/MainWindow_view.cpp
     ui/MainWindow_lua.cpp
@@ -1578,6 +1530,7 @@ add_executable(test_mainwindow_smoke
     ui/MatchHighlight.cpp
     ui/GoTo.cpp
     ui/SettingsDialog.cpp
+    ui/SettingsNav.cpp
     ui/ShortcutDialog.cpp
     ui/InfoWindow.cpp
     ui/AboutDialog.cpp
@@ -1589,10 +1542,11 @@ add_executable(test_mainwindow_smoke
     ui/ParamDialog.cpp
     ui/FontDialog.cpp
     ui/DialogBase.cpp
+    ui/WidgetRegistry.cpp
+    ui/ScriptDialogs.cpp
     ui/ImeInPlace.cpp
     ui/ToolChrome.cpp
     ui/UiBridge.cpp
-    LuaTool/LuaPipeServer.cpp
     mdview/preprocess.cpp
     mdview/image_export.cpp
     mdview/block_layout.cpp
@@ -1606,7 +1560,6 @@ target_include_directories(test_mainwindow_smoke PRIVATE
     ${CMAKE_SOURCE_DIR}/editor
     ${CMAKE_SOURCE_DIR}/script
     ${CMAKE_SOURCE_DIR}/ui
-    ${CMAKE_SOURCE_DIR}/LuaTool
     ${CMAKE_SOURCE_DIR}/build
     ${CMAKE_SOURCE_DIR}/mdview
     ${CMAKE_SOURCE_DIR}/../.thirdparty/litehtml-0.10/include
@@ -1659,24 +1612,6 @@ add_test(NAME mainwindow_smoke COMMAND test_mainwindow_smoke)
 set_tests_properties(mainwindow_smoke PROPERTIES TIMEOUT 90)
 add_dependencies(test_mainwindow_smoke pecia_copy_lang)
 add_dependencies(test_mainwindow_smoke pecia_copy_theme)
-
-# Pipe wire protocol: locks the frame format (4-byte tag + u32 LE length
-# + payload, OK/ERR reply) used by the Lua console Save As -> reload
-# scripts chain. Client links the REAL PipeClient.cpp (the exact
-# pipeSend call LuaToolWindow.cpp makes on save success); the server side
-# mirrors LuaPipeServer::listenLoop's frame parsing in-process.
-add_executable(test_pipe_protocol
-    test/test_pipe_protocol.cpp
-    core/PipeClient.cpp
-)
-target_include_directories(test_pipe_protocol PRIVATE ${CMAKE_SOURCE_DIR})
-if(MSVC)
-    target_compile_options(test_pipe_protocol PRIVATE /utf-8 /permissive- /W4 /WX /MD)
-    target_compile_definitions(test_pipe_protocol PRIVATE _CRT_SECURE_NO_WARNINGS)
-endif()
-target_link_libraries(test_pipe_protocol PRIVATE kernel32)
-add_test(NAME pipe_protocol COMMAND test_pipe_protocol)
-set_tests_properties(pipe_protocol PROPERTIES TIMEOUT 30)
 
 # Shortcut core: locks the canonical combo text format (parse/serialize),
 # validation rules and the conflict-checking registry used by the

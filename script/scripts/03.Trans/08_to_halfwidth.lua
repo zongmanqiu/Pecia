@@ -14,7 +14,7 @@
 -- @name.hi आधी चौड़ाई में
 -- @name.id Ke Lebar Setengah
 -- @name.tr Yarı Genişliğe
--- @name.vi Chuyển thành bán凫
+-- @name.vi Chuyển thành bán góc
 -- @author 邱宗满
 -- @date 20260810
 -- ==/Meta==

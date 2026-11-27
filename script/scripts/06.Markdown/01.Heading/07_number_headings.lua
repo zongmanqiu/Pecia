@@ -35,7 +35,7 @@ for line in (input:gsub("\r\n", "\n") .. "\n"):gmatch("(.-)\n") do
         local lv = #level
         counts[lv] = (counts[lv] or 0) + 1
         for i = lv + 1, 6 do counts[i] = nil end
-        text = text:gsub("^%d+%.%d*[ \t]*", "")   -- 移除旧编号
+        text = text:gsub("^%d+%.[%d%.]*[ \t]*", "")   -- 移除旧编号（1. / 1.2 / 1.2.3 ...）
         local num = {}
         for i = 1, lv do table.insert(num, counts[i] or 0) end
         table.insert(out, string.rep("#", lv) .. " " ..

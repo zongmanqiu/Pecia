@@ -295,6 +295,15 @@ static void test_replace_all_forward() {
     std::string t8 = "aXbXcX";
     CHECK_EQ(replaceAllForward(t8, "X", 1, "", 0, false, false), 3);
     CHECK(t8 == "abc");
+    // Regression: consecutive matches at the tail used to be skipped because
+    // the cursor advanced by needleLen rather than by the (zero) replacement
+    // length, so deleting "a" from "aaa" stopped at one remaining "a".
+    std::string t8b = "aaa";
+    CHECK_EQ(replaceAllForward(t8b, "a", 1, "", 0, false, false), 3);
+    CHECK(t8b == "");
+    std::string t8c = "baaa";
+    CHECK_EQ(replaceAllForward(t8c, "a", 1, "", 0, false, false), 3);
+    CHECK(t8c == "b");
     // empty needle rejected
     std::string t9 = "abc";
     CHECK_EQ(replaceAllForward(t9, "", 0, "X", 1, false, false), -1);

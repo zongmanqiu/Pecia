@@ -333,16 +333,25 @@ public:
 // theme background/text and a cursor colour matching the main window's
 // textPrimary. Replaces bare Fl_Input so every dialog input looks (and has
 // the same caret colour as) the main editor.
+//
+// The four lines live in applyInputTone() so an input that cannot use this
+// class (an integer-only field keeps Fl_Int_Input) still gets the same square
+// corners and tone - spelling the rule out twice is how one dialog ends up
+// with square fields and the next with rounded ones.
+inline void applyInputTone(Fl_Input *w, const ThemeColors &tc) {
+    w->box(FL_BORDER_BOX);
+    w->color(tc.background1);
+    w->textcolor(tc.text1);
+    w->cursor_color(tc.text1);
+    w->selection_color(tc.highlight1);
+}
+
 class ThemedInput : public BlinkInput {
 public:
     ThemedInput(int x, int y, int w, int h, const ThemeColors &tc,
                 const char *lbl = nullptr)
         : BlinkInput(x, y, w, h, lbl) {
-        box(FL_BORDER_BOX);
-        color(tc.background1);
-        textcolor(tc.text1);
-        cursor_color(tc.text1);
-        selection_color(tc.highlight1);
+        applyInputTone(this, tc);
     }
 
     // Re-apply colours from a (possibly newly reloaded) theme.

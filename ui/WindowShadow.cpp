@@ -459,7 +459,7 @@ void broadcastEnabled(bool on) {
 }  // namespace windowShadow
 
 // FLTK menu-window hooks (see the Pecia patch in Fl_Menu.cxx). They live here
-// because WindowShadow.cpp is linked into Pecia, PeciaLua, PeciaAIChat and the
+// because WindowShadow.cpp is linked into Pecia and the
 // two UI smoke tests; other fltk.lib consumers resolve the stub via
 // /alternatename in Fl_Menu.cxx.
 void peciaMenuShadowShown(Fl_Window *win) {

@@ -50,7 +50,7 @@ MIT / Apache-2.0 / BSD-2/3-Clause / Zlib / Unlicense（公有领域）等
 
 | 库 | 内容 | 记录文档 | 归档位置 |
 |----|------|----------|----------|
-| FLTK | 菜单勾选框填充色分离（check_color）；禁用内部 fakemenu 冗余窗口；菜单高亮切换强制双缓冲；文本撤销事务分组（begin/end_undo_transaction）；超链接下划线 1px 细化；垂直滚动量程封顶（`update_v_scrollbar`）；滚动条单一整轨道（去箭头区，`Fl_Scrollbar`）；弹出菜单分隔线扁平化（单色 1px，取 `g_borderColour`，`Fl_Menu.cxx`） | `build/FLTK_PATCHES.md` | `main/patches/fltk-1.4.5/` |
+| FLTK | 菜单勾选框填充色分离（check_color）；禁用内部 fakemenu 冗余窗口；菜单高亮切换强制双缓冲；文本撤销事务分组（undo_begin/undo_end）；超链接下划线 1px 细化；垂直滚动量程封顶（`update_v_scrollbar`）；滚动条单一整轨道（去箭头区，`Fl_Scrollbar`）；弹出菜单分隔线扁平化（单色 1px，取 `g_borderColour`，`Fl_Menu.cxx`） | `build/FLTK_PATCHES.md` | `main/patches/fltk-1.4.5/` |
 | litehtml | 超长非 CJK 词（长 URL / 长英文）按 8 字符拆词断行；CSS 属性实例共享（预览内存优化，含写时复制与文档级样式池）；`position::round()` 改为边对齐取整；深嵌套输入（数千层嵌套 `var()`）的栈溢出防护 | `build/LITEHTML_PATCHES.md` | `main/patches/litehtml-0.10/` |
 
 `main/patches/` 存放的是**修改后完整文件**，构建时由 `3_patch.bat` 自动覆盖到 `.thirdparty/`；将来升级库版本时按两张

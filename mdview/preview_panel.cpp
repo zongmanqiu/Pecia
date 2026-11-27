@@ -45,11 +45,27 @@ PreviewPanel::PreviewPanel()
 
 PreviewPanel::~PreviewPanel()
 {
+    // 容器被远程下载任务以 shared_ptr 持有，可能比本面板活得更久；下面这些
+    // 回调捕获的是本面板/视图的裸 this。回调都在主线程读取成员后触发，
+    // 与此处同线程，所以先清空即可阻断 delete m_view 之后的慢网下载回调
+    // 打进已释放对象（UAF）。注意 m_container 在成员表里声明在 m_view 之前，
+    // 这里必须显式先清回调、再删视图，不能依赖成员析构顺序。
+    if (m_container) {
+        m_container->set_remote_done_callback({});
+        m_container->set_remote_settled_callback({});
+        m_container->set_scroll_callback({});
+        m_container->set_anchor_callback({});   // 由 ViewWidget 构造时注册
+    }
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_stop = true;
         m_cv.notify_all();
     }
+    // 必须 join：m_worker 是成员，带 joinable 线程析构会 terminate。
+    // 覆盖式请求保证最多只有一份 md_to_html 在途；m_stop 已让 worker 丢弃
+    // 排队任务，但已经进入 md_to_html 的那一次没有取消点（Rust FFI 侧不提供
+    // 协作中断），强拆只会把 UAF 换成更难查的崩溃。极端大文档下这段等待是
+    // 已知代价，保留原行为。
     if (m_worker.joinable()) m_worker.join();
     if (m_pumpArmed) {
         m_pumpArmed = false;

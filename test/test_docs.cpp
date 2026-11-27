@@ -69,8 +69,7 @@ static void test_key_files_exist() {
     CHECK(exists("ui/ParamDialog.h"));
     CHECK(exists("ui/ShortcutDialog.h"));
     CHECK(exists("ui/MatchHighlight.h"));
-    CHECK(exists("LuaTool/main_lua.cpp"));
-    CHECK(exists("AIChat/main_ai.cpp"));
+    CHECK(exists("AIChat/AIChatPane.cpp"));
     CHECK(exists("script/scripts/01.No/folder.ini"));
     CHECK(exists("script/scripts/04.Row/01.Insert/01.prefix.lua"));
 }
@@ -152,6 +151,35 @@ static void test_documented_apis_registered() {
     for (const auto &m : missing)
         std::fprintf(stderr, "  documented API missing in LuaEngine: %s\n", m.c_str());
     CHECK(missing.empty());
+}
+
+// ---------------------------------------------------------------------------
+// 3b. HostOps registry projection gate (m020 single-source rule).
+// Every op registered in ui/MainWindow_ops.cpp must appear in
+// script/scripts/lua_api.txt under its underscore form (doc.get_text ->
+// pecia.doc_get_text). A drift here means scripts/AI read a stale manual.
+// ---------------------------------------------------------------------------
+static void test_hostops_documented() {
+    std::string doc = readFile(fs::path(g_mainDirW) / "script/scripts/lua_api.txt");
+    std::string ops = readFile(fs::path(g_mainDirW) / "ui/MainWindow_ops.cpp");
+    std::set<std::string> missing;
+    const std::string pat = "reg.add({\"";
+    size_t pos = 0;
+    while ((pos = ops.find(pat, pos)) != std::string::npos) {
+        size_t start = pos + pat.size();
+        size_t end = ops.find('"', start);
+        if (end == std::string::npos) break;
+        std::string name = ops.substr(start, end - start);
+        std::string fn;
+        for (char c : name) fn.push_back(c == '.' ? '_' : c);
+        if (doc.find("pecia." + fn) == std::string::npos) missing.insert(name);
+        pos = end;
+    }
+    for (const auto &m : missing)
+        std::fprintf(stderr, "  host op not documented in lua_api.txt: %s\n", m.c_str());
+    CHECK(missing.empty());
+    // the scan itself must not be blind: registry had at least one op
+    CHECK(!ops.empty());
 }
 
 // ---------------------------------------------------------------------------
@@ -441,17 +469,119 @@ static void test_dir_tree_matches() {
     CHECK_EQ(bad, 0);
 }
 
+// ---------------------------------------------------------------------------
+// 10. Source hygiene lints (m026)
+//
+// Both rules came out of the second-round audit. They are cheap to state in a
+// comment and cheap to break silently, so they are checked against the text
+// instead: comment lines are skipped, so explaining the rule is not a
+// violation - calling it is.
+// ---------------------------------------------------------------------------
+static bool lineContainsCall(const std::string &src, const char *needle)
+{
+    std::istringstream in(src);
+    std::string line;
+    while (std::getline(in, line)) {
+        size_t b = line.find_first_not_of(" \t\r");
+        if (b == std::string::npos) continue;
+        if (line.compare(b, 2, "//") == 0) continue;      // explanation, not a call
+        if (line.compare(b, 2, "/*") == 0) continue;
+        if (line.find(needle, b) != std::string::npos) return true;
+    }
+    return false;
+}
+
+static void test_source_hygiene()
+{
+    static const char *const dirs[] = { "core", "editor", "ui", "script",
+                                        "mdview", "agent", "AIChat", "LuaTool" };
+    int ansiBoxes = 0, foreignRegistrants = 0;
+    std::string lastOffender;
+    for (const char *d : dirs) {
+        std::error_code ec;
+        for (const auto &ent : fs::recursive_directory_iterator(
+                 fs::path(g_mainDirW) / fs::u8path(d), ec)) {
+            if (ec) break;
+            if (!ent.is_regular_file()) continue;
+            const fs::path p = ent.path();
+            if (p.extension() != L".cpp") continue;
+            const std::string src = readFile(p);
+            // Script text is UTF-8: MessageBoxA shows Chinese as mojibake on
+            // every code page that is not GBK. Native boxes are MessageBoxW.
+            if (lineContainsCall(src, "MessageBoxA(")) {
+                ++ansiBoxes;
+                lastOffender = p.filename().string();
+            }
+            // WidgetRegistry can only filter NULL entries; liveness depends on
+            // the registrant removing itself, which only DialogBase does.
+            if (lineContainsCall(src, "WidgetRegistry::instance().add(") &&
+                p.filename() != L"DialogBase.cpp") {
+                ++foreignRegistrants;
+                lastOffender = p.filename().string();
+            }
+        }
+    }
+    if (ansiBoxes) std::fprintf(stderr, "  MessageBoxA call in %s\n", lastOffender.c_str());
+    if (foreignRegistrants) std::fprintf(stderr, "  foreign registry add in %s\n", lastOffender.c_str());
+    CHECK_EQ(ansiBoxes, 0);
+    CHECK_EQ(foreignRegistrants, 0);
+}
+
+// ---------------------------------------------------------------------------
+// 11. The shipped-docs copy rule (m021)
+//
+// 使用说明.zh-CN.html / 使用说明.en.html and MCP接入.md must be copied next to the executable by
+// CMake (build/docs/), or the 帮助 > 使用说明 menu opens nothing. This rule
+// was silently lost in the m025 CMakeLists rebuild while every gate stayed
+// green, so its existence is now checked here. CMake comment lines (# ...)
+// do not count: naming a file in a comment is not shipping it.
+// ---------------------------------------------------------------------------
+static bool cmakeNonCommentHas(const std::string &src, const char *needle)
+{
+    std::istringstream in(src);
+    std::string line;
+    while (std::getline(in, line)) {
+        size_t b = line.find_first_not_of(" \t\r");
+        if (b == std::string::npos) continue;
+        if (line.compare(b, 1, "#") == 0) continue;   // explanation, not a rule
+        if (line.find(needle, b) != std::string::npos) return true;
+    }
+    return false;
+}
+
+static void test_shipped_docs_copy_rule()
+{
+    const std::string cm = readFile(fs::path(g_mainDirW) / "CMakeLists.txt");
+    // Narrow literals are UTF-8 bytes under /utf-8, matching the file bytes.
+    // The manual ships per language (r042 item 5): both editions must be in
+    // the copy rule or 帮助 > 使用说明 opens nothing for someone.
+    CHECK(cmakeNonCommentHas(cm, "使用说明.zh-CN.html"));
+    CHECK(cmakeNonCommentHas(cm, "使用说明.en.html"));
+    CHECK(cmakeNonCommentHas(cm, "MCP接入.md"));
+    CHECK(cmakeNonCommentHas(cm, "copy_if_different"));
+    CHECK(cmakeNonCommentHas(cm, "/docs"));
+    // both editions must exist on disk next to CMakeLists' docs/ folder
+    CHECK(exists("docs/使用说明.zh-CN.html"));
+    CHECK(exists("docs/使用说明.en.html"));
+    // the old single-file handbook must be gone (its name lives on only in
+    // the two new editions)
+    CHECK(!exists("docs/使用说明.html"));
+}
+
 int main() {
     g_mainDirW = (fs::path(exeDirW()) / L".." / L"main").lexically_normal();
     test_key_files_exist();
     test_doc_test_list_matches();
     test_documented_apis_registered();
+    test_hostops_documented();
     test_lang_entry_capacity();
     test_lang_key_parity();
     test_theme_name_translations();
     test_readme_thirdparty_dirs();
     test_manifest_files_exist();
     test_dir_tree_matches();
+    test_source_hygiene();
+    test_shipped_docs_copy_rule();
     int fails = test::failCount();
     std::fprintf(stderr, "%d checks, %d failures\n",
                  test::checkCount(), fails);

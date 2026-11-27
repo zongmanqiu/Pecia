@@ -9,8 +9,13 @@ Pecia Lua 脚本指南 / Script Reference
 - 用 `print(...)` 输出额外信息（显示在控制台）；**运行成功/失败的状态
   由控制台自动提示**（成功显示完成信息，失败显示错误），脚本无需自己 print。
 - 运行时错误会显示在控制台；请自行校验输入（如选区为空时 print 提示）。
-- 脚本执行有**指令计数超时**保护（约 500 万条指令），超过则中断并报错
-  （防止死循环冻死 UI）。
+- 脚本执行有**双重超时保护**：
+  - **指令预算**（默认约 500 万条 VM 指令）——纯 Lua 死循环一定会被
+    `lua_sethook` 掐断并报错，绝不会把 UI 冻住；
+  - **墙钟截止时间**（默认 5000 ms，宿主可请求更短）——限制在 C 函数
+    （如巨大的字符串运算）里消耗的时间；它在脚本再次执行 VM 指令时生效。
+- 保护**不可被脚本解除**：`debug` 库已从脚本环境移除，脚本无法调用
+  `debug.sethook()` 拆掉那个钩子（`require("debug")` 同样拿不到它）。
 
 返回值 / Return value
 --------------------------------------------------
@@ -27,8 +32,9 @@ return input:upper()
 安全提示 / Security note
 --------------------------------------------------
 - **脚本以当前用户权限运行，并非沙箱**：Lua 的 `os` / `io` / `package`
-  / `debug` 等库完整开放，脚本可执行系统命令、读写磁盘上的任意文件、
-  访问剪贴板等。
+  等库完整开放，脚本可执行系统命令、读写磁盘上的任意文件、
+  访问剪贴板等。唯一的例外是 `debug` 库——它能拆掉上面的超时保护，
+  因此已被移除（`debug.sethook` 与 `require("debug")` 都不可用）。
 - 因此**只运行你信任的、能看懂全文的脚本**（本项目脚本都是明文 .lua，
   运行前可先预览/审阅）。不要轻率运行来历不明的第三方脚本。
 - 对脚本造成的文件/系统改动，程序不做回滚或隔离。
@@ -141,6 +147,12 @@ insert(text, offset)          -- 在光标处插入文本，然后将光标移�
 --------------------------------------------------
 win:message("hi")             -- 提示框 / message box
 win:question("ok?")           -- 是/否询问 → bool / Yes-No → bool
+win:input(prompt, dflt)       -- 单行输入 → string|nil（取消 = nil）
+                              -- headless 运行（MCP 默认）直接回 nil 并把提示
+                              -- 记进 output，绝不弹模态卡住宿主
+win:select(prompt, {..}, pre) -- 列表选择 → 选中项|nil，pre 为 1-based 预选
+                              -- 有 UI 钩子时是 Pecia 风格对话框（可被
+                              -- pecia.ui_inspect / ui_send 量测与驱动）
 win:clipboard_get()           -- 读剪贴板 / read clipboard
 win:clipboard_set("t")        -- 写剪贴板 / write clipboard
 win:open("path-or-url")       -- 默认程序打开 / open with default handler
@@ -183,7 +195,9 @@ rex.gsub(subject, pattern, repl, max?) → result_string, count
                               -- 全局替换，返回替换后字符串和替换次数
                               -- repl 为字符串时支持 $0/$& (整个匹配)、$1-$99 (捕获组)、$$ (字面$)
                               -- repl 为函数时：每次匹配调用 repl(匹配全文, 捕获组1, ...)
-                              --   返回 string (替换) / nil (不替换) / number / boolean
+                              --   返回 string/number：作为替换文本；
+                              --   nil / false：保留原文（不替换，同 Lua string.gsub）；
+                              --   true 等其它非字符串真值：按空串处理（删除匹配）
                               -- max 可选，限制替换次数（0 或省略 = 不限）
                               -- / global replace: returns result, count
 
@@ -232,12 +246,97 @@ rex.new(pattern) → regex userdata
   * [\x{4e00}-\x{9fff}] 匹配 CJK 汉字
   * 支持 (?<name>...) 命名捕获组、(?:...) 非捕获组、(?=...) 前瞻
   * 贪婪/非贪婪：.* 贪婪、.*? 惰性
+  * 零宽匹配（'x*'、'(?=...)' 等）按 Lua string.gsub 的规则处理：先输出替换
+    文本，再原样保留匹配位置上的那个字节；空串与空主体不会死循环
+  * rex.split 遇零宽模式不分割（整串作为一段），空主体返回空表
 
 全局变量 / Globals
 --------------------------------------------------
 input                         -- 选中文本字符串（"" if 无选区）/ selection text
 pecia_lang                    -- 当前 UI 语言码（"en" / "zh-CN" ...）
                               -- 脚本可据此输出本地化提示 / localize your own messages
+
+pecia 宿主操作 / Host operations（core/HostOps 注册表投影，脚本与 MCP 同源）
+--------------------------------------------------
+pecia 表由宿主注册表自动生成：函数名 = 操作名点改下划线。
+The `pecia` table is projected from the host registry; "doc.get_text" -> pecia.doc_get_text.
+调用约定 / call forms:
+  * 位置参数 positional:  pecia.doc_get_text(0, 200)
+  * 表参数 table:         pecia.doc_get_text({ start = 0, length = 200 })
+  * 成功返回结果值；失败返回 nil, "原因: 详情"（不弹窗、不中断）
+    on failure returns nil + "bad_arg:…"/"perm_denied:…"/"not_found:…"
+
+读取 / Read
+--------------------------------------------------
+pecia.doc_get_text(start?, length?)   -- 当前文档文本（原样字节，含行尾）
+pecia.doc_info()                      -- {path,dirty,length,encoding,read_only,edit_locked}
+pecia.outline_list()                  -- 标题列表 [{level,text,id,line}]
+pecia.find_all(needle)                -- 纯文本查找，返回字节偏移列表
+pecia.script_list()                   -- 脚本栏目录 {root=[...],groups=[...]}
+pecia.doc_api(name)                   -- 读发行文档（lua_api.txt 等，限安装目录文件名）
+pecia.tab_list()                      -- [{index,path,dirty,active}]
+pecia.doc_reveal(pos)                 -- 滚动到指定字节位置（不改文本）
+
+写入 / Write（仅预览锁定或只读文件时一律返回 perm_denied）
+--------------------------------------------------
+pecia.doc_apply_edit(old_text, new_text, anchor?, start?)
+                              -- anchor=唯一上下文串定位（不唯一则报错）；
+                              -- 或 start=字节偏移；old_text 必须逐字命中
+pecia.doc_replace_all(search, replace)  -- 纯文本全替换，返回处数
+pecia.doc_save()              -- 保存活动文档（未命名会弹另存为）
+pecia.doc_open(path)          -- 打开文件（可能触发保存提示）
+pecia.doc_new()               -- 新建空标签页
+pecia.tab_switch(index)       -- 切换标签（0-based）
+
+执行 / Execution（m025：外部 AI 与脚本共用的写-验-跑闭环）
+--------------------------------------------------
+pecia.lua_validate(code)      -- 只编译不执行：{ok,error,line}；跑脚本前先验
+pecia.lua_run(code, sel_start?, sel_end?, timeout_ms?, out_cap?, headless?, answer?)
+                              -- 对当前文档执行脚本（scratch 副本：失败即
+                              -- 什么都没改）。返回 {verdict:pass|error,
+                              -- output, result, error, line, truncated, applied}。
+                              -- sel_start/sel_end 显式给选区（字节偏移）：脚本栏
+                              -- 类脚本只处理选区，而 agent 没有鼠标。
+                              -- headless 默认 true：win:* 弹窗捕获为文本，
+                              -- 绝不让模态框卡住 UI 线程；answer 预设 question。
+                              -- timeout_ms 折算成指令预算与墙钟截止时间
+                              -- （引擎默认 5000；MCP 未指定时宿主折算 3000，
+                              -- 硬上限 5000）：死循环由引擎的
+                              -- lua_sethook 掐断并回 timeout 类错误，
+                              -- 脚本无法用 debug.sethook 解除它。
+pecia.script_run(name, params?, sel_start?, sel_end?, timeout_ms?, out_cap?, headless?)
+                              -- 运行已安装脚本（name 取 script.list 的相对路径，
+                              -- 如 "pair"、"Row/dedupe"，模型看不到磁盘路径）。
+                              -- params 为 map：--!param 直传，跳过参数弹窗；
+                              -- 声明了必填而 params 缺项 → bad_arg，不弹模态。
+pecia.console_get()           -- Lua 草稿文本（无控制台窗口，m037；持久化在 script.last.txt）
+pecia.console_set(code)       -- 覆盖草稿（不运行、不落盘、不弹窗）
+pecia.console_show()          -- 把草稿开成一个普通编辑器标签给人过目（空草稿回错误）
+pecia.script_save(name, group?, overwrite?)
+                              -- 把控制台编辑区存为 script/<group>/<name>.lua
+                              -- 并刷新脚本栏；重名默认拒绝，overwrite=true 才覆盖
+pecia.ai_send(text)           -- 把文本作为用户消息追加进内置 AI 对话
+pecia.ai_get()                -- 内置 AI 对话最近一条 assistant 回复（无则 ""）
+
+界面量测 / UI（m025：脚本弹出的对话框必须"看得见"，自动化门禁才能回归界面）
+--------------------------------------------------
+  ⚠ 同一条 stdio 连接一次只处理一个请求：任何模态框开着时端点读不到
+    下一条命令，所以这组 op 供门禁/自动化使用，不是"AI 边等模态边注入"的
+    通道——要让脚本按指定输入运行，用 script.run 的 params。
+pecia.ui_windows()            -- 当前为脚本弹出的界面 [{id,kind,title,visible,modal,w,h}]
+pecia.ui_inspect(id)          -- 控件树 [{path,class,label,x,y,w,h,visible,sensitive,value}]
+                              -- 坐标相对对话框客户区；path 供 ui_send 使用
+pecia.ui_pixel(id, x, y)      -- PrintWindow 离屏取色，返回 "#rrggbb"（不要求前台）
+pecia.ui_send(id, path, event, text?)
+                              -- 合成交互：event=click 走真实 handle() 链，
+                              -- event=type 向 Fl_Input 追加文本
+pecia.ui_wait(title?, id?, timeout_ms?)
+                              -- 等待界面出现（按标题）或消失（按 id），回 {seen}
+
+自省 / Introspection
+--------------------------------------------------
+pecia.ops()                   -- 全部操作的 {name, perm, args} 清单
+                              -- list every registered op: name/perm/args
 
 参数 / Parameters（脚本头部 --!param 声明，运行前自动弹窗）
 --------------------------------------------------
@@ -293,11 +392,14 @@ pecia_lang                    -- 当前 UI 语言码（"en" / "zh-CN" ...）
 
 输出 / Output
 --------------------------------------------------
-print(...)                    -- 输出到控制台输出区 / to console output
+print(...)                    -- 进本次运行的 output / to the run's output
+                              -- 输出与返回值各自分帽（默认 32 KB，上限 64 KB），
+                              -- 截断点落在 UTF-8 字符边界，不会切出半个汉字
 
-标准库 / Standard libraries（全部可用 / all available）
+标准库 / Standard libraries（除 debug 外全部可用 / all available except debug）
 --------------------------------------------------
-string table math io os utf8 coroutine debug package
+string table math io os utf8 coroutine package
+debug                        -- 已移除：它能拆掉超时保护（见上文安全提示）
 
 提示 / Tips:
   * Pecia 内嵌 Lua 5.5（非 5.4）。

@@ -8,24 +8,27 @@
 | 文件 | 覆盖内容 | 需要更新的时候 |
 |------|----------|----------------|
 | `README.md` | 项目介绍、下载、界面、环境要求、构建入口、技术栈、顶层目录 | 构建流程变化、新增/移除技术依赖、新增顶层目录、架构描述变化 |
-| `docs/` | 文档目录:`docs/README/` 子目录(15 份语言 README + 8 张界面截图)、发行流程清单 RELEASE_CHECKLIST.md、产品演示文稿 intro*.pptx、更新清单 update.json、`docs/history/` 多语言版本历史(只放翻译) | 新增/删除语种、修改相对链接、更新演示文稿、main/ 顶层目录树变化、更新清单字段含义变化、或发版时漏写 `docs/history/en.md` 对应小节 |
+| `docs/` | 文档目录:`docs/README/` 子目录(15 份语言 README + 6 张界面截图)、发行流程清单 RELEASE_CHECKLIST.md、产品演示文稿 intro*.pptx、更新清单 update.json、帮助手册 使用说明.zh-CN.html / 使用说明.en.html(帮助菜单按界面语言打开,缺省英文,随包分发)、`docs/history/` 多语言版本历史(只放翻译) | 新增/删除语种、修改相对链接、更新演示文稿、main/ 顶层目录树变化、更新清单字段含义变化、使用说明.*.html 与功能不同步、或发版时漏写 `docs/history/en.md` 对应小节 |
 | `目录结构说明.md` | 每个目录/文件的职责、测试清单、新增代码规则 | 新增/删除/重命名/改职责的任何文件或目录；新增测试 |
 | `开发指南.md` | 架构速览、开发流程、改代码后需同步的文档对照、提交前检查清单、UI 改动规约（复用与刷新）、版本号位置、**第十节「平台契约与已知缺口」**（UI 线程/异常边界/持久化/更新/分层例外的现状与缺口，均带文件:行号） | 开发流程/检查项/版本号位置/构建方式/UI 复用与刷新约定变化时；**修复第十节某条缺口后必须同步删改对应条目** |
-| `script/scripts/lua_api.txt` | Lua 脚本指南（==Meta==/@name 声明规范 + editor/win/regex API、params、pecia_lang、folder.ini、--!pui；随 scripts 文件夹复制到 build/script，PeciaLua 帮助按钮读取；末尾可追加 AI 提示词，由 PeciaAIChat 拼接进 system 消息） | 新增/修改/删除任何 Lua API 或脚本声明语法 |
-| `lang/en.ini` `lang/zh-CN.ini` + 其余 14 份（ar/de/es/fr/hi/id/it/ja/ko/pt-BR/ru/tr/vi/zh-TW） | 官方 UI 文案：en/zh-CN 为母本，其余为翻译 | 新增/修改/删除任何 I18n 键——**16 份全改，键集一致**。注意 `test_docs` 只比对 en↔zh-CN，其余 14 份漏改不会被门禁发现 |
+| `docs/MCP接入.md` | MCP stdio 接入说明（配置示例/边界/工具一览/排错，面向用户与 AI） | 新增/改名/删除任何宿主操作（core/HostOps 注册表）、协议版本支持范围、或 --mcp 命令行开关变化时 |
+| `ui/ToolHost.h` · `ui/WidgetRegistry.{h,cpp}` · `ui/ScriptDialogs.{h,cpp}` | 工具窗与主窗口的窄接口、脚本界面的登记与量测面、脚本可弹的现成组件 | 新增宿主为脚本弹出的界面（必须 `enableInspection`）、增删 `win:*` 组件、或改动 `ui.*` / `lua.*` / `script.*` 宿主操作时（同步 `script/scripts/lua_api.txt` 与 `docs/MCP接入.md`） |
+| `script/scripts/lua_api.txt` | Lua 脚本指南（==Meta==/@name 声明规范 + editor/win/regex API、params、pecia_lang、folder.ini、--!pui；随 scripts 文件夹复制到 build/script；`doc.api("lua_api.txt")` 也读它；末尾可追加 AI 提示词，由 AI 对话窗拼接进 system 消息） | 新增/修改/删除任何 Lua API 或脚本声明语法 |
+| `lang/en.ini` `lang/zh-CN.ini` + 其余 14 份（ar/de/es/fr/hi/id/it/ja/ko/pt-BR/ru/tr/vi/zh-TW） | 官方 UI 文案：en/zh-CN 为母本，其余为翻译 | 新增/修改/删除任何 I18n 键——**16 份全改，键集一致**。`test_docs` 会比对**全部 16 份**的键集（不是只比 en↔zh-CN），漏改任何一份都会让门禁变红；键的**顺序**各文件按自己的分节注释排，不参与比对 |
 | `THIRD-PARTY-NOTICES.md` | 第三方组件许可证清单、修改说明与分发义务（随发布包分发） | 新增/移除/更换/修改任何第三方依赖（含 Rust crate 版本变化）时 |
 | `build/FLTK_PATCHES.md` | FLTK 源码修改记录 | 修改 `.thirdparty/fltk-*` 源码时（升级 FLTK 按此重放） |
 | `build/LITEHTML_PATCHES.md` | litehtml 源码修改记录（超长非 CJK 词拆词断行） | 修改 `.thirdparty/litehtml-*` 源码时（升级 litehtml 按此重放） |
 | `AGENTS.md` | 项目规则 | 本文件自身规则变化 |
 | `build/deps.txt` | 第三方库下载清单(2_download.bat 读取,`name=url\|marker` 格式,marker 为完整性探针) | 新增/移除/更换依赖库或下载地址、调整探针文件时 |
-| `build/full.bat` | 总入口脚本(双击即用,按序调用 2→3→4→5) | 构建总流程/脚本编排变化时 |
+| `build/full.bat` | 总入口脚本(双击即用,按序调用 1(体检工具链)→2→3→4→5) | 构建总流程/脚本编排变化时 |
 | `build/1_check_env.bat` | 只读工具链体检(cmake/cargo/cl/nmake/rc/tar/curl + Rust host 校验) | 工具链要求/检查项变化时 |
 | `build/2_download.bat` | 下载+解压第三方库到 .thirdparty/(含探针校验与残缺自动修复) | 下载/解压/完整性校验逻辑变化时 |
 | `build/3_patch.bat` | 把 main/patches/ 单向应用到 .thirdparty/ | 补丁同步范围/逻辑变化时 |
 | `build/4_build_rust.bat` | cargo fetch + cargo build --release 编两个 Rust FFI 静态库 | FFI 依赖拉取/构建逻辑变化时 |
 | `build/ensure_header_deps.ps1` | 手动恢复工具：怀疑构建残留陈旧 `.obj` 时删除项目对象（构建脚本不再自动调用；Makefile 依赖现由 `CMAKE_DEPENDS_USE_COMPILER=FALSE` + CMake 自带 include 扫描器负责） | 依赖探测策略或清理范围变化时 |
-| `build/5_build_pecia.bat` | 编译 FLTK+Pecia 三件套并跑 ctest(**真门禁**:测试失败即整条构建失败) | 编译流程/按需重编/依赖校验逻辑变化时 |
+| `build/5_build_pecia.bat` | 编译 FLTK+Pecia 并跑 ctest(**真门禁**:测试失败即整条构建失败) | 编译流程/按需重编/依赖校验逻辑变化时 |
 | `build/_common.bat` | 编号脚本共用的路径变量、tar/curl 解析、MSVC 环境装载与 `:fetch_rust_deps` 子例程 | 路径变量定义/tool 解析/环境探测入口变化时 |
+| `build/pecia_ai.rc` · `build/pecia_lua.rc` | 历史残留：旧 `PeciaAIChat.exe` / `PeciaLua.exe` 的资源脚本，CMakeLists 已无引用、**不再使用**；保留仅为历史归档，勿删 | 无（当前构建不引用） |
 | `build/msvc_env.bat` | MSVC/Windows SDK 环境自动探测(vswhere) | 环境探测逻辑变化时 |
 | `build/gen_update_json.py` | 生成更新清单 `docs/update.json`(版本取 CMakeLists、中文说明取 HISTORY.md、英文说明取 docs/history/en.md；清单不含哈希，也不比对两仓——GitHub 是 Gitee 的自动镜像) | 更新清单的字段、下载地址形态、或发布资产命名规则变化时 |
 | `.gitattributes` | 行尾与二进制属性(**.bat/.cmd 强制 CRLF**——cmd.exe 需要, LF 会导致解析错乱) | 新增文件类型/调整行尾策略时 |

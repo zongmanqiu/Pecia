@@ -1,5 +1,6 @@
 // DialogBase.cpp - Shared window shell for all Pecia dialogs & tool windows.
 #include "ui/DialogBase.h"
+#include "ui/WidgetRegistry.h"
 #include "core/Theme.h"
 #include "core/Config.h"
 #include "ui/TitleBar.h"
@@ -115,11 +116,23 @@ void DialogBase::commonCtor() {
 DialogBase::~DialogBase() {
     Fl::remove_timeout(fixToolTaskbarCb, this);
     Fl::remove_timeout(firstFrameFixCb, this);
+    // Measurement registration dies with the window (m025): an id that
+    // outlived its window would make ui.inspect hand back freed widgets.
+    if (m_inspectId) {
+        WidgetRegistry::instance().remove(m_inspectId);
+        m_inspectId = 0;
+    }
     // Destroy the glow before the window does - a shadow whose owner is gone
     // would be left floating on the desktop.
     windowShadow::detach(this);
     delete m_frame;
     delete m_ownedTheme;   // nullptr in modal/dialog mode (external theme)
+}
+
+void DialogBase::enableInspection(const char *kind)
+{
+    if (m_inspectId) return;          // idempotent: retheme/re-show safe
+    m_inspectId = WidgetRegistry::instance().add(this, kind);
 }
 
 const Theme &DialogBase::retheme(const Config &cfg) {

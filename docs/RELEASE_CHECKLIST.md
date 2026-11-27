@@ -15,26 +15,26 @@
 | `main/example/ex1.markdown/ex1.md` | 版本表 `Pecia \| x.y.z` | 示例文档中的版本引用 |
 | `main/HISTORY.md` | 在文件**顶部**追加新版本小节（日期 + 新增/修复/变更） | **增量原则：只追加，旧内容一律保持原样**，不修改不删除 |
 
-> **Windows 文件属性（VERSIONINFO）自动跟随，不算手工同步项**：三份 exe 的
+> **Windows 文件属性（VERSIONINFO）自动跟随，不算手工同步项**：exe 的
 > 「属性 → 详细信息」版本由 `main/build/version_info.rc.in` 在 CMake 配置阶段
 > 经 `configure_file` 注入 `PROJECT_VERSION` 生成（见 CMakeLists 的
 > 「Windows VERSIONINFO resources」段）。改完 CMakeLists 里的版本号重新构建即可，
-> **不要手工改任何 `.rc`**。
+> **不要手工改任何 `.rc`**。（m025 起只发布一个 `Pecia.exe`。）
 
 改完用 `grep -rn "旧版本号" main/` 复核零残留（注意排除 `.thirdparty/`）。
 
 ## 二、发行前质量门禁（全部通过才可发行）
 
 1. **全量构建**：双击 `build/full.bat`（或 `5_build_pecia.bat`）；
-2. **33 个 ctest 全绿**（构建链内置，红灯即中止）；
-3. **文档门禁**：`build/test_docs.exe` 输出 `168 checks, 0 failures`
+2. **36 个 ctest 全绿**（构建链内置，红灯即中止）；
+3. **文档门禁**：`build/test_docs.exe` 输出 `179 checks, 0 failures`
    （改过任何文档/API/目录后必跑）；
 4. **零 C 警告**（`/W4 /WX` 级别，构建日志无 `warning C`）；
 5. **压力测试**：按 `docs/STRESS_TEST_PLAN.md` 跑完 A–H 用例并填写记录表，
    重点确认大文档（`example/ex3.LargeMarkdown/` 3 档）与多标签场景；
-6. **文件属性校验**：`build/Pecia.exe`、`PeciaLua.exe`、`PeciaAIChat.exe`
-   右键 → 属性 → 详细信息，`文件版本 / 产品版本` 均等于 `CMakeLists.txt`
-   的版本号（由 `build/version_info.rc.in` 自动生成，三份 exe 应一致）。
+6. **文件属性校验**：`build/Pecia.exe`
+   右键 → 属性 → 详细信息，`文件版本 / 产品版本` 等于 `CMakeLists.txt`
+   的版本号（由 `build/version_info.rc.in` 自动生成；m025 起只发布一个 exe）。
 
 ## 三、打包（手动）
 
@@ -42,8 +42,10 @@
 
 - 把项目根 `build/` 里的产物复制到 `release/<版本>/`，再压成
   **`Pecia_x64_<版本>.zip`**；
-- zip 内容：`exe 三件套（Pecia / PeciaLua / PeciaAIChat）+ lang/ + theme/ +
-  script/ + LICENSE + THIRD-PARTY-NOTICES.md + licenses/`。
+- zip 内容：`exe（Pecia，工具窗已并入主程序）+ lang/ + theme/ +
+  script/ + docs/ + LICENSE + THIRD-PARTY-NOTICES.md + licenses/`。
+  `docs/` 随 `pecia_copy_docs` 复制到 `build/docs/`，内含
+  `使用说明.zh-CN.html`、`使用说明.en.html`、`MCP接入.md`——漏掉会让「帮助」菜单打不开文档。
   `build/` 里还有 `test_*.exe`，那是构建门禁产物，**不要放进发布包**；
 - ⚠️ **zip 文件名不可改**：清单里的下载地址由 `gen_update_json.py` 按
   `releases/download/<tag>/Pecia_x64_<tag>.zip` 拼出（程序只读清单，不自己拼名），
@@ -63,7 +65,7 @@
    手动打的包也能直接写清单；
 4. **顺序要求**：先把两个 release 的附件传完，**再**推 `docs/update.json`。
    反过来推，用户在清单生效、附件还没上传的窗口里点"检查更新"就是 404；
-5. 清单文件**不要进发布包**（包里是 exe 三件套 + lang/theme/script + 许可，见 §三）：
+5. 清单文件**不要进发布包**（包里是 exe + lang/theme/script + 许可，见 §三）：
    程序运行时的缓存放 exe 同级的 `update.cache.json`，名字刻意不同，
    robocopy 覆盖安装目录时不会把出厂清单盖回用户机器上；
 6. **自动更新验证要用旧版本 exe 点"检查更新"**——远端产物会覆盖被测 exe（本机实测教训）。

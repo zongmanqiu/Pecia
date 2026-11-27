@@ -9,7 +9,9 @@
 #include "core/CrashReport.h"
 #include "core/Theme.h"
 #include "core/PathUtils.h"
+#include "agent/McpServer.h"   // --mcp-stdio / --mcp-selftest (m021)
 #include <string>
+#include <thread>
 #include <filesystem>
 #include <fstream>
 
@@ -34,7 +36,7 @@ static void pecia_open_cb(const char *path) {
     }
 }
 
-int main(int /*argc*/, char ** /*argv*/) {
+int main(int argc, char **argv) {
     // 便携：禁止 FLTK 核心在 exe 之外读写 prefs（Windows 上默认落在
     // %APPDATA%\<vendor>\<app>.prefs）。Fl_File_Chooser 的收藏夹/预览开关、
     // Fl::option 等都走 CORE 权限，APP_OK 会把它们全部挡掉，且程序自身也不
@@ -44,14 +46,24 @@ int main(int /*argc*/, char ** /*argv*/) {
     // main thread has taken the FLTK lock once (measured 2026-11-02: with no
     // Fl::lock() the update page sat on "checking" although the result had
     // already arrived; adding this made it land by itself). Every process here
-    // posts awake callbacks - updater, Lua pipe server, AI chat, config watcher,
-    // remote image fetch - so this belongs at the top of each entry point.
+    // posts awake callbacks - updater, MCP stdio endpoint, AI chat, config
+    // watcher, remote image fetch - so this belongs at the top of each entry point.
     Fl::lock();
 #if defined(_WIN32)
     // Install the crash handler early so we capture failures during
     // scheme setup, config load, and window construction too.
     CrashReport::install("pecia");
 #endif
+
+    // MCP endpoint switches (m021). --mcp-selftest runs the scripted
+    // protocol round entirely in-process and exits: it executes the REAL
+    // production translation units (agent/*.cpp are compiled into this
+    // exe), so no separate test binary duplicates the handler logic.
+    for (int i = 1; i < argc; ++i) {
+        if (argv[i] && std::string(argv[i]) == "--mcp-selftest")
+            return mcp::runSelfTest();
+    }
+    const bool mcpStdio = mcp::stdioModeRequested(argc, argv);
 
 #if defined(_WIN32)
     // 命名互斥体只作「电脑上是否还开着另一个 Pecia」的探针：每个 Pecia
@@ -105,7 +117,9 @@ int main(int /*argc*/, char ** /*argv*/) {
     Fl::scheme(scheme);
 
 #if defined(_WIN32)
-    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    // Deliberate: RPC_E_CHANGED_MODE (an earlier ole init) is benign; the
+    // DropTarget/OleSetClipboard calls fail gracefully without our init.
+    (void)CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 #endif
 
     // Load persisted language preference. On first run there is no
@@ -228,9 +242,13 @@ int main(int /*argc*/, char ** /*argv*/) {
             int n = WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1,
                                         nullptr, 0, nullptr, nullptr);
             if (n > 0) {
-                std::string u8(n - 1, '\0');
+                // WideCharToMultiByte writes n bytes INCLUDING the trailing
+                // NUL; allocate n first, then drop it. Sizing to n-1 wrote
+                // past the string's size() (strict UB / heap corruption).
+                std::string u8(n, '\0');
                 WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1,
                                     &u8[0], n, nullptr, nullptr);
+                u8.resize(n - 1);
                 win.openFile(u8.c_str());
                 openedFromArgs = true;
                 break;  // only one file for now
@@ -253,7 +271,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     // 原本只会打开一个空白新文档（命令行没带文件）时，改为打开 exe 同级
     // 目录的 Test.txt；文件不存在就先建一个空文件再打开。这样开机双击
     // 就能直接记录、Ctrl+S 保存，不必再走文件对话框。
-    if (!openedFromArgs && !anotherPeciaRunning && cfg.getFixedStartupDoc()) {
+    if (!openedFromArgs && !anotherPeciaRunning && !mcpStdio && cfg.getFixedStartupDoc()) {
         std::string dir = pathutil::exeDir();
         if (!dir.empty()) {
             std::string fixedPath = dir + "/Test.txt";
@@ -264,6 +282,14 @@ int main(int /*argc*/, char ** /*argv*/) {
             }
             win.openFile(fixedPath.c_str());
         }
+    }
+
+    // The MCP stdio endpoint runs on a detached worker thread; it is NEVER
+    // joined (stdin ReadFile cannot be interrupted portably - joining would
+    // hang exit). Client disconnect just stops the loop; the window lives on.
+    if (mcpStdio) {
+        std::thread t(mcp::runStdioLoop);
+        t.detach();   // never joined: blocking stdin read cannot be interrupted portably
     }
 
     int rc = Fl::run();

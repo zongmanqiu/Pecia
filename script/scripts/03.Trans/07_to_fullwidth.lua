@@ -14,7 +14,7 @@
 -- @name.hi पूर्ण चौड़ाई में
 -- @name.id Ke Lebar Penuh
 -- @name.tr Tam Genişliğe
--- @name.vi Chuyển thành toàn凫
+-- @name.vi Chuyển thành toàn góc
 -- @author 邱宗满
 -- @date 20260810
 -- ==/Meta==

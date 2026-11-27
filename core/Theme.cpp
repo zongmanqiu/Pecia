@@ -1,7 +1,7 @@
 // Theme.cpp - Theme implementation.
 //
-// Colors come from per-theme files under exeDir/theme/<name>.txt (mirroring
-// exeDir/lang/<code>.txt). settings.ini only stores theme.name (the chosen
+// Colors come from per-theme files under exeDir/theme/<name>.ini (mirroring
+// exeDir/lang/<code>.ini). settings.ini only stores theme.name (the chosen
 // theme); the actual palette is read from the theme file at load time. The
 // light defaults below are a fallback only, so a missing/corrupt theme file
 // never leaves the app invisible.
@@ -39,7 +39,7 @@ static bool parseColor(const char *str, Fl_Color &out) {
 
 // Built-in light defaults: used as the initial object and as the fallback
 // when a theme file is missing or corrupt. NOT the source of truth — the
-// palette normally comes from exeDir/theme/<name>.txt.
+// palette normally comes from exeDir/theme/<name>.ini.
 static ThemeColors lightDefaults() {
     // ThemeColors has in-class light defaults; nothing extra to set here.
     return ThemeColors();
@@ -167,11 +167,11 @@ std::string Theme::displayName(const char *lang) const {
 void Theme::load(const Config &cfg) {
     char name[16];
     cfg.readStr("theme.name", name, sizeof(name), THEME_PRESET_LIGHT);
-    // Accept any theme name; if no matching theme file exists, light.txt is
+    // Accept any theme name; if no matching theme file exists, light.ini is
     // the fallback (via lightDefaults or by re-resolving below).
     m_preset = name ? name : THEME_PRESET_LIGHT;
 
-    // Resolve exeDir/theme/<name>.txt; start from the light fallback, then
+    // Resolve exeDir/theme/<name>.ini; start from the light fallback, then
     // overlay the theme file. If the file is missing we keep light.
     std::string dir = pathutil::exeDir();
     m_colors = lightDefaults();
@@ -198,8 +198,9 @@ void Theme::setPreset(const char *name, Config &cfg) {
     cfg.writeStr("theme.name", m_preset.c_str());
 }
 
-// Scan theme/ directory and return all .ini file stems (excluding
-// light/dark which are built-in).
+// Scan theme/ directory and return all .ini file stems. Only the built-in
+// `light` is excluded; `dark.ini` is shipped as a regular extra theme and
+// must stay in the menu (see theme/README.txt).
 std::vector<std::string> Theme::scanExtraThemes() {
     std::vector<std::string> themes;
     std::string dir = pathutil::exeDir();
@@ -228,7 +229,7 @@ std::vector<std::string> Theme::scanExtraThemes() {
         char *dot = strrchr(fileName, '.');
         if (dot) *dot = '\0';
 
-        // Skip built-in themes
+        // Skip the only built-in theme (light); dark is a shipped extra.
         if (strcmp(fileName, "light") == 0) continue;
 
         themes.push_back(fileName);

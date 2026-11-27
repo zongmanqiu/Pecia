@@ -5,6 +5,7 @@
 // are part of the same MainWindow class declared in ui/MainWindow.h.
 #include "ui/MainWindow.h"
 
+#include "AIChat/AIChatPane.h"
 #include "editor/Document.h"
 #include "editor/Editor.h"
 #include "ui/FindReplace.h"
@@ -16,6 +17,7 @@
 #include "core/Config.h"
 #include "core/Theme.h"
 #include "core/I18n.h"
+#include "core/OpLog.h"
 #include "ui/Layout.h"
 #include "resource.h"
 #include <FL/Fl_Tabs.H>
@@ -94,6 +96,13 @@ int MainWindow::handle(int event) {
     // consumes Ctrl+A for Select All, but if we check here first we
     // can still let other shortcuts through).
     if (event == FL_KEYDOWN || event == FL_SHORTCUT) {
+        // Docked AI pane (m037): its combos used to win because it was the
+        // focused top-level window. Now it shares this window's key space, so
+        // it wins only while it holds the keyboard - otherwise Ctrl+Enter in
+        // the editor would send a chat message.
+        if (m_aiChatDocked && m_aiChat && m_aiChat->visible()
+            && m_aiChat->contains(Fl::focus())
+            && m_aiChat->dispatchShortcut()) return 1;
         int key = Fl::event_key();
         int state = Fl::event_state();
         if (dispatchShortcut(key, state)) return 1;
@@ -103,6 +112,16 @@ int MainWindow::handle(int event) {
     case FL_MOUSEWHEEL: {
         bool ctrl = (Fl::event_state() & (FL_CTRL | FL_COMMAND)) != 0;
         int dy = Fl::event_dy();
+        // m039: the pointer over the AI column belongs to the chat. FLTK's
+        // Fl_Group::handle asks every child until one claims the wheel, so
+        // letting it fall through would scroll the preview as well - hand the
+        // event to the pane and consume it here instead.
+        if (m_aiChatDocked && m_aiChat && m_aiChat->visible()
+            && Fl::event_x() >= m_aiChat->x()
+            && Fl::event_x() < m_aiChat->x() + m_aiChat->w()) {
+            m_aiChat->handle(FL_MOUSEWHEEL);
+            return 1;
+        }
         // 鼠标在预览区：普通滚轮滚动预览；Ctrl+滚轮与编辑区同一套缩放
         // （setFontSize，预览比例 = 字号/基准字号）。
         if (m_previewActive) {
@@ -116,10 +135,15 @@ int MainWindow::handle(int event) {
                 }
                 return 1;
             }
-            // 内容区可能被左侧面板挤窄：分界点 = 侧栏宽 + 内容区内编辑区宽
+            // 预览带 = 预览列自己的矩形（m039：它右边可能还站着 AI 列，
+            // 指针在 AI 列上时必须交给对话面板自己滚，不能算进预览）
             const int cl = contentLeft();
-            const int divX = cl + (int)((w() - cl) * m_previewRatio);
-            if (Fl::event_x() >= divX) {
+            int edW = 0, prevW = 0, aiW = 0;
+            columnWidths(w() - cl, false, &edW, &prevW, &aiW);
+            const int prevLeft = cl + edW + kDividerW;
+            const int prevRight = prevLeft + prevW;
+            if (Fl::event_x() >= prevLeft
+                && (!m_aiChatDocked || Fl::event_x() < prevRight)) {
                 if (ctrl) {
                     if (dy < 0) setFontSize(fontSize() + 1);
                     else if (dy > 0) setFontSize(fontSize() - 1);
@@ -201,6 +225,17 @@ int MainWindow::dispatchShortcut(int key, int state) {
 // menu.edit.goto keeps its toggle-bar behavior even when the shortcut
 // is customized (the menu callback itself only shows the bar).
 void MainWindow::toggleGoToBar() {
+    // Edit-locked (preview-only): the menu entry is deactivated, but the
+    // shortcut-registry path in dispatchShortcut() runs before test_shortcut,
+    // so the gate has to live here too (AGENTS red line: Ctrl+G greyed out).
+    Tab *cur = activeTab();
+    if (cur && cur->doc && cur->doc->isEditLocked()) {
+        if (m_goToBar && m_goToBar->visible()) {
+            m_goToBar->hide();
+            layoutTabs();
+        }
+        return;
+    }
     if (m_goToBar && m_goToBar->visible()) {
         m_goToBar->hide();
         layoutTabs();
@@ -297,6 +332,8 @@ static unsigned long long bandSignature(Fl_Widget *w, int depth) {
 
 static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
                                               WPARAM wp, LPARAM lp) {
+    // 原生回调边界：异常不能逃出 WndProc（AGENTS.md 一.6 / 开发指南十.2）。
+    try {
     switch (msg) {
     // --- Detect maximize/restore from system (Win+Up, system menu, etc.)
     case WM_SIZE: {
@@ -335,10 +372,15 @@ static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
     // detach would return early and leave the glow floating on screen after
     // the window has closed.
     case WM_DESTROY:
-    case WM_NCDESTROY:
+    case WM_NCDESTROY: {
+        // detachAll() 会删掉整条子类链；之后函数末尾的 forward() 就找不到
+        // FLTK 原 wndproc，只能落到 DefWindowProcW —— FLTK 收不到销毁消息。
+        // 所以先把消息转给下家，再拆链与阴影窗口。
+        LRESULT ret = nativeSubclass::forward(hwnd, mainWindowSubclassProc, msg, wp, lp);
         windowShadow::detachHwnd(reinterpret_cast<void *>(hwnd));
         nativeSubclass::detachAll(hwnd);
-        break;
+        return ret;
+    }
 
     // --- Constrain maximized size to work area (excludes taskbar)
     // WM_GETMINMAXINFO is the standard Windows mechanism for this.
@@ -469,6 +511,10 @@ static LRESULT WINAPI mainWindowSubclassProc(HWND hwnd, UINT msg,
     }
     }
     return nativeSubclass::forward(hwnd, mainWindowSubclassProc, msg, wp, lp);
+    } catch (...) {
+        opLog("mainWindowSubclassProc: unknown exception");
+        return 0;
+    }
 }
 #endif
 
@@ -689,10 +735,10 @@ void MainWindow::draw() {
     // that no longer lined up with anything, one of them bare FLTK grey).
     // Re-invalidate whenever the layout or any widget colour changes.
     if (HWND hwnd = fl_xid(this)) {
-        static unsigned long long s_bandSig = 0;
+        // 签名按窗口实例保存（见 MainWindow::m_bandSig），不能用静态变量。
         const unsigned long long sig = bandSignature(this, 3);
-        if (sig != s_bandSig) {
-            s_bandSig = sig;
+        if (sig != m_bandSig) {
+            m_bandSig = sig;
             RedrawWindow(hwnd, nullptr, nullptr,
                          RDW_FRAME | RDW_INVALIDATE | RDW_NOCHILDREN);
         }

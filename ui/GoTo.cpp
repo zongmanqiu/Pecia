@@ -165,7 +165,9 @@ void GoTo::gotoLine() {
 
     char *endptr = nullptr;
     long lineNum = strtol(val, &endptr, 10);
-    if (endptr == val || lineNum <= 0) return;
+    // strtol stops at the first non-digit; require the WHOLE field to be
+    // a number so "12abc" is rejected instead of silently jumping to 12.
+    if (endptr == val || *endptr != '\0' || lineNum <= 0) return;
 
     if (m_onGo) m_onGo(lineNum);
 }
@@ -175,8 +177,12 @@ void GoTo::refreshLabels() {
     m_btnGo->label(I18n::get("gotoline.go"));
     // Close button stays "X" 鈥?not translated
 
-    int goW = (int)fl_width(m_btnGo->label()) + 10;
-    m_btnGo->resize(m_btnGo->x(), m_btnGo->y(), goW, m_btnGo->h());
+    // Reuse layout(): it already sizes the Go button with
+    // HoverButton::fitWidth() (same rule as every other Pecia button).
+    // Measuring with fl_width()+10 here made this path disagree with the
+    // constructor/layout() and left a too-narrow button after a language
+    // switch.
+    layout(w());
 }
 
 void GoTo::updateHintVisibility() {
@@ -215,7 +221,11 @@ void GoTo::cbClose(Fl_Widget * /*w*/, void *data) {
     if (!self) return;
     self->hide();
     if (self->m_onClose) self->m_onClose();
-    if (self->m_editor) Fl::focus(self->m_editor);
+    // Only hand focus back to the editor when it is actually visible: in
+    // preview-only mode the editor is hidden and focus must stay with the
+    // preview view (same contract as tab switching).
+    if (self->m_editor && self->m_editor->visible())
+        Fl::focus(self->m_editor);
 }
 
 

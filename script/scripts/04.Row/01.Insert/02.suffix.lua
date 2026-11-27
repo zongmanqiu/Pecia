@@ -11,7 +11,7 @@
 -- @name.pt-BR Sufixo
 -- @name.it Suffisso
 -- @name.ar لاحق
--- @name.hi उपसर्ग
+-- @name.hi प्रत्यय
 -- @name.id Akhiran
 -- @name.tr Sonek
 -- @name.vi Hậu tố

@@ -13,6 +13,7 @@
 #include "ui/Layout.h"   // MENU_H（仅注释引用；按钮栏删除后本文件不再用它）
 #include "ui/PreviewMode.h"   // 空文档判据（仅预览的准入条件）
 #include "ui/SidePanel.h"     // 左侧面板（layoutPreviewPanes 需要完整类型）
+#include "AIChat/AIChatPane.h" // 右区另一种占位（m037）
 #include "ui/FindReplace.h"   // 仅预览时把查找交给预览（setPreviewFinder）
 #include <FL/Fl.H>
 #include <FL/Fl_Menu_Bar.H>
@@ -27,6 +28,7 @@
 #include "core/PathUtils.h"   // fromUtf8（本地相对路径解析）
 #include <filesystem>
 #include <string.h>   // _strnicmp：协议白名单（与编辑区 Ctrl+Click 同一判断）
+#include <algorithm>   // std::all_of：PID 目录名数字校验
 
 // --------------------------------------------------------------------------
 // 预览临时目录管理（exe 同级 temp/<文档名>-<PID>/）：
@@ -77,6 +79,7 @@ static void removeDirTree(const std::string &dir)
     op.wFunc = FO_DELETE;
     std::wstring wdir = widen(dir);
     std::wstring from = wdir + L"\\\0";
+    from.push_back(L'\0');   // SHFileOperationW 的 pFrom 必须以双 NUL 结尾
     op.pFrom = from.c_str();
     op.fFlags = FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI;
     SHFileOperationW(&op);
@@ -148,9 +151,9 @@ void MainWindow::cleanupOldTempDirs()
 }
 
 
-namespace {
-constexpr int kDividerW = 4;        // 分隔条宽度
-} // namespace
+// 分隔条宽度：布局与滚轮命中带共用同一份（声明在 ui/MainWindow.h）。
+// 不能放进匿名 namespace——那会和 extern 声明打架，MSVC 报"不明确的符号"。
+int kDividerW = 4;
 
 // MainWindow 成员实现：活动标签全文
 std::string MainWindow::activeDocumentText() const
@@ -239,6 +242,122 @@ void MainWindow::syncPreviewMenu()
     m_menu->redraw();
 }
 
+// The zone divider (m037). It used to be built inside the preview panel's
+// lazy block, which left a chat-only right zone with a null divider and the
+// layout dereferenced it. One creation site, two callers.
+// The editor column's width from its ratio, with the same 20%~80% clamp the
+// first bar's callback uses.
+int MainWindow::editorColumnWidth(int contentW) const
+{
+    int editorW = (int)(contentW * m_previewRatio);
+    if (editorW < (int)(contentW * 0.20f)) editorW = (int)(contentW * 0.20f);
+    if (editorW > (int)(contentW * 0.80f)) editorW = (int)(contentW * 0.80f);
+    return editorW;
+}
+
+void MainWindow::columnWidths(int contentW, bool noEditor,
+                              int *editorW, int *prevW, int *aiW) const
+{
+    const bool prevOn = m_previewActive && m_preview;
+    const bool aiOn   = m_aiChatDocked && m_aiChat;
+    const bool editorShown = !noEditor && (prevOn || aiOn);
+    // The chat's floor is its own button row, measured in the current
+    // language (m040 cut it from four buttons to two, so 320 was already wrong).
+    const int aiMin = (m_aiChatDocked && m_aiChat) ? m_aiChat->minRowWidth() : 200;
+    const int prevMin = 160;    // a preview this narrow is mostly whitespace
+    const int edFloor = (int)(contentW * 0.20f);
+
+    int edW = (!prevOn && !aiOn) ? contentW
+            : (editorShown ? editorColumnWidth(contentW) : 0);
+    // One bar per visible seam: editor|column, and preview|AI.
+    const int bars = (editorShown ? 1 : 0) + (prevOn && aiOn ? 1 : 0);
+
+    // Both columns want their floor and the stack cannot give it: the editor
+    // yields first (down to its own 20% floor) - it only gets narrower, while a
+    // chat below aiMin loses buttons it cannot re-place.
+    if (editorShown && prevOn && aiOn) {
+        const int need = aiMin + prevMin + bars * kDividerW;
+        if (contentW - edW < need) {
+            edW = contentW - need;
+            if (edW < edFloor) edW = edFloor;
+            if (edW < 1) edW = 1;
+        }
+    }
+
+    int stackW = contentW - edW - bars * kDividerW;
+    if (stackW < 1) stackW = 1;
+
+    int ai = 0, prev = 0;
+    if (prevOn && aiOn) {
+        ai = (int)(stackW * m_aiRatio);
+        if (ai < aiMin) ai = aiMin;
+        // The chat floor outranks the preview's comfort: below prevMin the
+        // preview still renders (it wraps), a chat under aiMin loses buttons
+        // that cannot re-place. prevMin only asks the editor to yield above.
+        if (ai > stackW - 1) ai = stackW - 1;
+        if (ai < 1) ai = 1;
+        prev = stackW - ai;
+        if (prev < 1) prev = 1;
+    } else if (aiOn) {
+        ai = stackW;
+    } else {
+        prev = stackW;
+    }
+    if (editorW) *editorW = edW;
+    if (prevW)   *prevW = prev;
+    if (aiW)     *aiW = ai;
+}
+
+void MainWindow::ensureZoneDivider()
+{
+    if (m_previewDivider) return;
+    m_previewDivider = new PreviewDivider(0, 0, kDividerW, 100);
+    // 分隔条颜色与编辑区边框统一（状态栏/行号列同色 bgChrome）
+    m_previewDivider->setDividerColor(m_theme.colors().background2);
+    m_previewDivider->hide();
+    add(m_previewDivider);
+    m_previewDivider->onDrag = [this](float ratio) {
+        // 分隔条按整窗宽度算比例；有侧栏时换算成"内容区（侧栏右侧）"的比例
+        const int cl = contentLeft();
+        if (cl > 0) {
+            const float cw = (float)(w() - cl);
+            if (cw > 1.0f) ratio = (ratio * (float)w() - (float)cl) / cw;
+        }
+        if (ratio < 0.20f) ratio = 0.20f;
+        if (ratio > 0.80f) ratio = 0.80f;
+        m_previewRatio = ratio;
+        layoutTabs();
+    };
+}
+
+// The bar between the preview column and the AI column. Same widget as the
+// first bar, but its ratio is "share of the right stack", so it converts
+// through columnWidths() instead of inventing its own math.
+void MainWindow::ensureAiDivider()
+{
+    if (m_aiDivider) return;
+    m_aiDivider = new PreviewDivider(0, 0, kDividerW, 100);
+    m_aiDivider->setDividerColor(m_theme.colors().background2);
+    m_aiDivider->hide();
+    add(m_aiDivider);
+    m_aiDivider->onDrag = [this](float ratio) {
+        const int cl = contentLeft();
+        const int cw = w() - cl;
+        if (cw < 1) return;
+        int edW = 0, prevW = 0, aiW = 0;
+        columnWidths(cw, false, &edW, &prevW, &aiW);
+        const int stackLeft = cl + edW + kDividerW;
+        const int stackW = prevW + kDividerW + aiW;
+        if (stackW < 1) return;
+        const int pointerX = (int)(ratio * (float)w());
+        float r = (float)(pointerX - stackLeft) / (float)stackW;
+        if (r < 0.15f) r = 0.15f;
+        if (r > 0.85f) r = 0.85f;
+        m_aiRatio = r;
+        layoutTabs();
+    };
+}
+
 void MainWindow::togglePreview()
 {
     if (m_previewActive) {
@@ -283,31 +402,16 @@ void MainWindow::togglePreview()
         Fl::remove_timeout(destroyPreviewCb, this);
         m_previewDestroyPending = false;
     }
+    ensureZoneDivider();
     if (!m_preview) {
         m_preview = new PreviewPanel();
         // 远程图全部落盘后复用已有的工作集回收（2s 去抖；大文档由
         // trimSoonCb 内部跳过）。只回收 working set，不改变缓存/文件/布局。
         m_preview->setRemoteSettledCallback([this]() { scheduleTrimSoon(); });
-        m_previewDivider = new PreviewDivider(0, 0, kDividerW, 100);
-        // 分隔条颜色与编辑区边框统一（状态栏/行号列同色 bgChrome）
-        m_previewDivider->setDividerColor(m_theme.colors().background2);
-        m_previewDivider->hide();
         // 预览滚动条颜色与编辑区统一：轨道 background1，滑块 background2
         m_preview->view()->setScrollbarColors(
             m_theme.colors().background1,
             m_theme.colors().background2);
-        m_previewDivider->onDrag = [this](float ratio) {
-            // 分隔条按整窗宽度算比例；有侧栏时换算成"内容区（侧栏右侧）"的比例
-            const int cl = contentLeft();
-            if (cl > 0) {
-                const float cw = (float)(w() - cl);
-                if (cw > 1.0f) ratio = (ratio * (float)w() - (float)cl) / cw;
-            }
-            if (ratio < 0.20f) ratio = 0.20f;
-            if (ratio > 0.80f) ratio = 0.80f;
-            m_previewRatio = ratio;
-            layoutTabs();
-        };
         // 拖放打开文件
         m_preview->view()->set_open_callback([this](const std::string &path) {
             openFile(path.c_str());
@@ -338,7 +442,6 @@ void MainWindow::togglePreview()
         });
         // 加入窗口（Fl_Group 层）
         m_preview->view()->hide();
-        add(m_previewDivider);
         add(m_preview->view());
 
         // 预览顶部按钮栏已删除（2026-10-20 用户反馈：一行按钮太占地，而
@@ -478,16 +581,31 @@ void MainWindow::cbTogglePreviewOnly(Fl_Widget *w, void *data)
 }
 
 // 关闭预览的延迟销毁：事件队列清空后再删除面板（避免 FLTK 悬垂指针崩溃）
+// 预览面板与它的分隔条都是本窗口的子控件：必须先从窗口摘掉再 delete，否则
+// FLTK 会连着我们自己释放的那份一起销毁，留下 PreviewPanel（30ms pump 定时器
+// + 渲染线程）指向已释放的 view。延迟关闭的 destroyPreviewCb 与 ~MainWindow
+// 走同一条路。
+void MainWindow::shutdownPreview()
+{
+    m_previewDestroyPending = false;
+    if (m_preview) {
+        if (m_preview->view()) remove(m_preview->view());
+        delete m_preview;
+        m_preview = nullptr;
+    }
+    // m039: both bars stay - they are column furniture, they hold no timer and
+    // no thread, so they cannot outlive their owner the way the panel did;
+    // layoutPreviewPanes hides whichever bar has no seam beside it today.
+}
+
 void MainWindow::destroyPreviewCb(void *data)
 {
     auto *win = static_cast<MainWindow *>(data);
     if (!win) return;
-    win->m_previewDestroyPending = false;
     win->m_tocLabels.clear();
     win->m_tocLevels.clear();
     win->m_tocIds.clear();
-    if (win->m_previewDivider) { win->remove(win->m_previewDivider); delete win->m_previewDivider; win->m_previewDivider = nullptr; }
-    if (win->m_preview) { win->remove(win->m_preview->view()); delete win->m_preview; win->m_preview = nullptr; }
+    win->shutdownPreview();
     // 释放 mmdr FFI 的全局字体索引缓存 + 内存精简
     mmdr_fontdb_clear();
     win->scheduleTrimSoon();
@@ -1116,40 +1234,64 @@ void MainWindow::layoutPreviewPanes(int contentTop, int contentH, int tabsH)
     int contentW = w() - contentX;
     if (contentW < 1) contentW = 1;
 
-    if (m_previewActive && m_preview && m_previewDivider) {
-        if (m_previewOnly) {
-            // 纯预览：没有第二栏，编辑区（含标签页）与分隔条一并隐藏，
-            // 预览吃满整个内容区。m_previewRatio 在这里不参与排布，
-            // 保留原值——退出纯预览时按它还原分屏。
-            m_tabs->hide();
-            m_previewDivider->hide();
-            m_preview->view()->resize(contentX, contentTop, contentW, tabsH);
-            m_preview->view()->show();
-            return;
-        }
-        // 分屏：编辑区 | 分隔条 | 预览
-        m_tabs->show();
-        int editorW = (int)(contentW * m_previewRatio);
-        if (editorW < (int)(contentW * 0.20f)) editorW = (int)(contentW * 0.20f);
-        if (editorW > (int)(contentW * 0.80f)) editorW = (int)(contentW * 0.80f);
-        int previewW = contentW - editorW - kDividerW;
-        if (previewW < 1) previewW = 1;
+    // Two independent columns (m039): 编辑 | 预览 | AI 对话. Each flag drives
+    // only its own column; a column that is off simply takes no width, so one
+    // column open lays out exactly like the old two-pane window.
+    const bool prevOn = m_previewActive && m_preview;
+    const bool aiOn   = m_aiChatDocked && m_aiChat;
 
-        const int divX = contentX + editorW;
-        const int px = divX + kDividerW;
-
-        m_tabs->resize(contentX, contentTop, editorW, tabsH);
-        m_previewDivider->resize(divX, contentTop, kDividerW, tabsH);
-        // 顶部按钮栏已删除：预览视图从内容区顶缘开始，吃满 tabsH
-        m_preview->view()->resize(px, contentTop, previewW, tabsH);
-        m_preview->view()->show();
-        m_previewDivider->show();
-        m_previewDivider->redraw();
-    } else {
+    if (!prevOn && !aiOn) {
         m_tabs->show();
         m_tabs->resize(contentX, contentTop, contentW, tabsH);
         if (m_previewDivider) m_previewDivider->hide();
+        if (m_aiDivider) m_aiDivider->hide();
         if (m_preview) m_preview->view()->hide();
+        if (m_aiChat) m_aiChat->hide();
+        return;
+    }
+
+    // 纯预览：编辑区（含标签页）与第一条分隔条隐藏。AI 列照旧独立存在，
+    // 所以这里只是把"编辑区那一份"让给预览，不是把对话踢掉。
+    const bool noEditor = (m_previewOnly && prevOn);
+    int editorW = 0, prevW = 0, aiW = 0;
+    columnWidths(contentW, noEditor, &editorW, &prevW, &aiW);
+
+    if (noEditor) {
+        m_tabs->hide();
+        m_previewDivider->hide();
+    } else {
+        m_tabs->show();
+        m_tabs->resize(contentX, contentTop, editorW, tabsH);
+        m_previewDivider->resize(contentX + editorW, contentTop, kDividerW, tabsH);
+        m_previewDivider->show();
+        m_previewDivider->redraw();
+    }
+
+    const int stackLeft = contentX + editorW + (noEditor ? 0 : kDividerW);
+    if (prevOn) {
+        m_preview->view()->resize(stackLeft, contentTop, prevW, tabsH);
+        m_preview->view()->show();
+    } else if (m_preview) {
+        // 只有对话列开着时，面板可能从来没建过——不能对它解引用。
+        m_preview->view()->hide();
+    }
+
+    if (aiOn) {
+        // The AI column is outermost. The second bar exists only when the
+        // preview sits beside it; with the preview off, the first bar already
+        // is its bar.
+        if (prevOn) {
+            m_aiDivider->resize(stackLeft + prevW, contentTop, kDividerW, tabsH);
+            m_aiDivider->show();
+            m_aiChat->resize(stackLeft + prevW + kDividerW, contentTop, aiW, tabsH);
+        } else {
+            m_aiDivider->hide();
+            m_aiChat->resize(stackLeft, contentTop, prevW + kDividerW + aiW, tabsH);
+        }
+        m_aiChat->show();
+    } else {
+        if (m_aiDivider) m_aiDivider->hide();
+        if (m_aiChat) m_aiChat->hide();
     }
 }
 

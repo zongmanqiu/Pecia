@@ -40,7 +40,8 @@ public:
 private:
     Config *m_cfg;
 
-    // Internal helper: show the native Save As dialog.
+    // Internal helper: show the native Save As dialog, keeping its modal
+    // relationship with `parent` (nullptr = no specific owner).
     // Returns the chosen path (empty if cancelled).
     std::string showSaveDialog(Config *cfg, Fl_Window *parent);
 };

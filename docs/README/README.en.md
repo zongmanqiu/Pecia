@@ -1,14 +1,16 @@
-> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
+# Pecia — Minimalist Text Editor
+> A Windows text editor: extremely lightweight, multi-tab, instant opening of large files, Lua scripting extensions, and Markdown preview.
+
+> **🌐 Languages**: [中文](../../README.md) | [繁體中文](README.zh-TW.md) | [English](README.en.md) | [日本語](README.ja.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [한국어](README.ko.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 ---
 
-# Pecia — Minimalist Text Editor
+**⬇️ Download 1.2.0: [Gitee](https://gitee.com/qiuzongman/pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
+ ｜ **[GitHub](https://github.com/zongmanqiu/Pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
 
-**[⬇️ Download 1.1.3 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ Download 1.1.3 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Gitee Repo](https://gitee.com/qiuzongman/pecia) ｜ [GitHub Mirror](https://github.com/zongmanqiu/Pecia) | [Bilibili Demo](https://www.bilibili.com/video/BV144Yo6oEz9/)
+> Repo: [Gitee](https://gitee.com/qiuzongman/pecia) | [GitHub](https://github.com/zongmanqiu/Pecia)
 
-A lightweight text editor for Windows built with C++17 + FLTK. Multi-tab, instant opening of large files, multiple encoding support, Lua scripting extensions. New: side panel (file tree / outline), font picker dialog, window shadows; chunked Markdown preview for very large documents.
-
-> **Platform scope**: Supports **Windows x64 (64-bit) only**. No 32-bit version is provided, and cross-platform support (Linux/macOS/32-bit) is no longer maintained. The build scripts include a built-in 64-bit check (see the top of CMakeLists); attempting to build for 32-bit will produce an error.
+> Demo: [Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 ## Software Interface
 
@@ -22,10 +24,6 @@ A lightweight text editor for Windows built with C++17 + FLTK. Multi-tab, instan
   - ![3.选项](3.选项.png)
 - Shortcut settings
   - ![4.快捷键](4.快捷键.png)
-- AI chat
-  - ![5.AI对话](5.AI对话.png)
-- Lua console
-  - ![6.Lua控制台](6.Lua控制台.gif)
 - Lua scripts
   - ![7.Lua脚本](7.Lua脚本.gif)
 
@@ -47,8 +45,8 @@ A lightweight text editor for Windows built with C++17 + FLTK. Multi-tab, instan
 ```bat
 REM After downloading the source, just double-click this single script.
 REM It runs everything in sequence: 1 check toolchain → 2 download 6 third-party libraries → 3 apply patches →
-REM 4 cargo fetch + compile two Rust FFI libraries → 5 compile FLTK + CMake builds Pecia trio →
-REM run 33 unit tests.
+REM 4 cargo fetch + compile two Rust FFI libraries → 5 compile FLTK + CMake builds Pecia →
+REM run 36 unit tests.
 REM First build time depends on network and machine; subsequent builds reuse the cache, incremental compile + test takes about 1-2 minutes.
 build\full.bat
 ```
@@ -74,8 +72,8 @@ main/
 ├── core/               Core pure logic (no UI)
 ├── editor/             Editor widget
 ├── ui/                 Windows/dialogs/toolbars
-├── LuaTool/            PeciaLua standalone tool (window/entry/pipeline server)
-├── AIChat/             PeciaAIChat standalone tool (window/entry)
+├── AIChat/             AI chat pane (own column) + chat log helpers
+├── agent/              MCP stdio endpoint (tool list projected from the host registry)
 ├── script/             Lua script engine
 ├── DOCS_MANIFEST.md    Documentation manifest (check each item after code changes, test_docs gate; dev-only, not shipped with exe)
 ├── image/              Image resources (pecia.ico / ai_bot.ico / lua.ico …)

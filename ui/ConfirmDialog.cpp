@@ -23,30 +23,16 @@ ConfirmDialog::ConfirmDialog(const char *title, const char *message,
     fl_font(FL_HELVETICA, uiFontSize ? uiFontSize : 14);
     int textW = w() - 2 * MARGIN;
     int textH = 0;
-    if (message) {
-        // Approximate wrapped text height
-        const char *p = message;
-        int lines = 1;
-        while (*p) { if (*p++ == '\n') ++lines; }
-        // Also check word-wrap by measuring line width
-        int maxW = 0;
-        const char *start = message;
-        const char *end;
-        while ((end = strchr(start, '\n')) != nullptr) {
-            int lw = (int)fl_width(start, (int)(end - start));
-            if (lw > maxW) maxW = lw;
-            start = end + 1;
-        }
-        int lw = (int)fl_width(start);
-        if (lw > maxW) maxW = lw;
-
-        if (maxW > textW) {
-            // Rough: add extra lines for wrapping
-            lines += maxW / textW;
-            if (maxW % textW == 0) lines--;
-        }
-        if (lines < 1) lines = 1;
-        textH = lines * (uiFontSize + 4) + 8;
+    if (message && *message) {
+        // fl_measure() with a non-zero incoming width wraps with the same
+        // word-boundary/newline rules as Fl_Box's FL_ALIGN_WRAP drawing,
+        // so the box height matches what is actually rendered. The old
+        // `maxW / textW` guess under-counted long messages and let the
+        // text overlap the button bar.
+        int measureW = textW;
+        int measureH = 0;
+        fl_measure(message, measureW, measureH);
+        textH = measureH + 8;   // small breathing room around the text
         if (textH < 40) textH = 40;
     }
 

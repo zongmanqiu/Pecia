@@ -87,8 +87,11 @@ Fl_Menu_Item g_menu[] = {
     { nullptr },
 
     // View
-    //   Menu Bar / Script Bar / Status Bar / Side Panel / Line Numbers /
-    //   Highlight Current Line / Show Space Symbol / Word Wrap   (toggles)
+    //   region toggles:   Menu Bar / Script Bar / Status Bar / Side Panel /
+    //                     AI Chat                    (mirror on-screen position)
+    //   ─────────────────────────
+    //   presentation:     Line Numbers / Highlight Current Line /
+    //                     Show Space Symbol / Word Wrap
     //   ─────────────────────────
     //   Font
     //   Rounded Corners
@@ -97,18 +100,30 @@ Fl_Menu_Item g_menu[] = {
     //   Zoom  ▶        (Zoom Out Ctrl+- / Zoom In Ctrl++ / Reset Zoom Ctrl+0)
     //   ─────────────────────────
     //   Statistics...
+    // View is organized into two semantic groups (r042c, user-specified):
+    //   1. region toggles - items whose visibility changes the window layout,
+    //      ordered to mirror their on-screen position: top bars first
+    //      (menu/script/status), then the panes (side panel left, AI chat right);
+    //   2. presentation toggles - text rendering effects, layout untouched.
     { "View", 0, nullptr, nullptr, FL_SUBMENU },
     { "Menu Bar",                 0, MainWindow::cbToggleMenuBar,           nullptr, FL_MENU_TOGGLE },
     { "Script Bar",                0, MainWindow::cbToggleScriptBar,          nullptr, FL_MENU_TOGGLE },
     { "Status Bar",             0, MainWindow::cbToggleStatusbar,        nullptr, FL_MENU_TOGGLE },
+    // Side Panel sits right above AI Chat (r042b: user-specified order) -
+    // both are pane toggles and read as one pair.
     { "Side Panel",  FL_COMMAND | 'b', MainWindow::cbToggleSidePanel,         nullptr, FL_MENU_TOGGLE },
+    // AI Chat is a pane toggle like Side Panel, so it lives in the toggle
+    // group too (r042: Tools menu dissolved - it held only this one item).
+    // It carries the group's FL_MENU_DIVIDER: FLTK draws the divider after
+    // the flagged item, so the line lands between the region group and the
+    // presentation group below.
+    { "AI Chat",                0, MainWindow::cbAIChat,                 nullptr, FL_MENU_TOGGLE | FL_MENU_DIVIDER },
     { "Line Numbers",           0, MainWindow::cbToggleLineNumbers,      nullptr, FL_MENU_TOGGLE },
     { "Highlight Current Line", 0, MainWindow::cbToggleHighlightLine,    nullptr, FL_MENU_TOGGLE },
     { "Show Space Symbol",      0, MainWindow::cbToggleShowWhitespace,   nullptr, FL_MENU_TOGGLE },
     { "Word Wrap",              0, MainWindow::cbToggleWrap,             nullptr, FL_MENU_TOGGLE | FL_MENU_DIVIDER },
-    // Font - opens the system font picker (FontDialog). 原先分隔开关组的那条
-    // 线(FL_MENU_DIVIDER)移到了 Word Wrap 上——FLTK 的分隔线画在带旗标的
-    // 项之后,线必须保持在“开关组 | 其余”之间。
+    // Font - opens the system font picker (FontDialog). 开关组与下面这一组
+    // 的分隔线画在 AI Chat 项上（FLTK 把线画在带旗标的项之后）。
     //
     // This used to be a radio submenu with a hard-coded 9-entry list, one
     // "representative face" per writing system. That list was wrong: SimHei /
@@ -156,12 +171,6 @@ Fl_Menu_Item g_menu[] = {
     { "Export HTML...",       0,                MainWindow::cbExportHtml,             nullptr, 0 },
     { nullptr },
 
-    // Tools
-    { "Tools", 0, nullptr, nullptr, FL_SUBMENU },
-    { "Lua Script...", 0, MainWindow::cbLuaScript, nullptr, 0 },
-    { "AI Chat...", 0, MainWindow::cbAIChat, nullptr, 0 },
-    { nullptr },
-
     // Settings - Preferences, Shortcuts, and Language (radio submenu).
     { "Settings", 0, nullptr, nullptr, FL_SUBMENU },
     { "Options...",   0,                      MainWindow::cbSettings,      nullptr, 0 },
@@ -175,6 +184,7 @@ Fl_Menu_Item g_menu[] = {
     // Help
     { "Help", 0, nullptr, nullptr, FL_SUBMENU },
     { "Check for Updates", 0, MainWindow::cbCheckUpdates, nullptr, 0 },
+    { "User Guide",      0, MainWindow::cbUserGuide,       nullptr, 0 },
     { "About",             0, MainWindow::cbAbout,        nullptr, 0 },
     { nullptr },
 

@@ -4,6 +4,7 @@
 #include "core/I18n.h"
 #include "core/ShortcutCore.h"
 #include "ui/BlinkInput.h"    // 与主编辑器同周期闪烁的输入框
+#include "ui/SettingsNav.h"
 #include "ui/ThemeWidgets.h"
 #include "ui/SmokeTest.h"
 #include "core/Config.h"
@@ -29,54 +30,6 @@
 #include <windows.h>
 #endif
 
-// A scroll group that draws its scrollbar in the same flat style as the
-// main-editor custom scrollbar (Editor::drawCustomScrollbar), instead of
-// the FLTK native scrollbar appearance.
-class SettingsScroll : public Fl_Scroll {
-    const Theme *m_theme;
-public:
-    SettingsScroll(int X, int Y, int W, int H, const Theme *theme)
-        : Fl_Scroll(X, Y, W, H), m_theme(theme) {}
-
-    void draw() override {
-        // Force full redraw — fl_scroll (BitBlt) moves pixels in the
-        // window DC, displacing custom borders.  damage(FL_DAMAGE_ALL)
-        // makes Fl_Scroll take the draw_box+draw_clip path instead.
-        damage(FL_DAMAGE_ALL);
-        Fl_Scroll::draw();
-
-        // Overlay custom scrollbar matching main window style.
-        Fl_Scrollbar &sb = scrollbar;
-        if (!sb.visible_r()) return;
-
-        int sx = sb.x();
-        int sy = sb.y();
-        int sw = sb.w();
-        int sh = sb.h();
-
-        double minv = sb.minimum();
-        double maxv = sb.maximum();
-        double val  = sb.value();
-        float  sl   = sb.slider_size();
-
-        Fl_Color trackColor, thumbColor;
-        if (m_theme) scrollbarColors(m_theme->colors(), trackColor, thumbColor);
-        else { trackColor = fl_rgb_color(240, 240, 240); thumbColor = fl_rgb_color(180, 180, 180); }
-
-        // Track
-        ::fl_color(trackColor);
-        ::fl_rectf(sx, sy, sw, sh);
-
-        // Thumb (vertical only)
-        int thumb_h = (int)(sh * sl);
-        if (thumb_h < 20) thumb_h = 20;
-        int thumb_y = sy;
-        if (maxv > minv)
-            thumb_y = sy + (int)((val - minv) * (sh - thumb_h) / (maxv - minv));
-        ::fl_color(thumbColor);
-        ::fl_rectf(sx, thumb_y, sw, thumb_h);
-    }
-};
 
 // (SettingsChoice moved to ThemeWidgets.h - shared with ParamDialog.)
 
@@ -178,13 +131,15 @@ static void addToOpenWithList(const std::wstring &ext, const std::wstring &exeNa
     DWORD mruSz = sizeof(mruList);
     RegQueryValueExW(hk, L"MRUList", nullptr, nullptr, (LPBYTE)mruList, &mruSz);
 
-    wchar_t nameBuf[2]; DWORD nameSz;
+    wchar_t nameBuf[64]; DWORD nameSz;
     wchar_t valBuf[MAX_PATH]; DWORD valSz; DWORD type;
     for (int i = 0; ; ++i) {
-        nameSz = 2; valSz = sizeof(valBuf);
-        if (RegEnumValueW(hk, i, nameBuf, &nameSz, nullptr, &type,
-                          (LPBYTE)valBuf, &valSz) != ERROR_SUCCESS) break;
-        if (nameSz == 0 || wcslen(nameBuf) == 0) continue;
+        nameSz = sizeof(nameBuf) / sizeof(nameBuf[0]); valSz = sizeof(valBuf);
+        LONG rc = RegEnumValueW(hk, i, nameBuf, &nameSz, nullptr, &type,
+                                (LPBYTE)valBuf, &valSz);
+        if (rc == ERROR_MORE_DATA) continue;   // 别人的长值名：跳过，别中断扫描
+        if (rc != ERROR_SUCCESS) break;
+        if (nameSz != 1) continue;             // 只认单字母值名（MRUList 等不算）
         wchar_t ch = nameBuf[0];
         if (ch >= L'a' && ch <= L'z') used[ch - L'a'] = true;
         if (_wcsicmp(valBuf, exeName.c_str()) == 0) existingLetter = ch;
@@ -282,8 +237,10 @@ static void applyNewTxtRegistry(bool doNewTxt) {
                 RegCloseKey(hk);
             }
         } else {
-            // Cleanup: remove ShellNew, reset .txt to txtfile
-            RegDeleteTreeW(HKEY_CURRENT_USER, L"Software\\Classes\\.txt\\ShellNew");
+            // Cleanup: remove only our own ShellNew\NullFile value; the key
+            // and any values from other apps must survive (they may own the
+            // "New" entry for .txt too).
+            RegDeleteKeyValueW(HKEY_CURRENT_USER, L"Software\\Classes\\.txt\\ShellNew", L"NullFile");
             HKEY hk;
             if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\.txt", 0, KEY_SET_VALUE | sam, &hk) == ERROR_SUCCESS) {
                 RegSetValueExW(hk, nullptr, 0, REG_SZ, (const BYTE*)L"txtfile",
@@ -389,18 +346,29 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
     //     输入框也宽到 442px —— 用户 2026-10-31 反馈"太宽了"。
     // 现在两列都按 fl_width 实测，中文界面自然收窄（约 490px），法/俄自动变宽。
     // 注意：只能在这里改宽度，标题栏/按钮栏/滚动区都是按 w() 建的。
+    // Measuring text needs a selected font: fl_width() before fl_font() makes
+    // FLTK look up size 0, fl_find_font() answers -1 and fc_face() reads
+    // fonts[-1] - a crash, not a wrong number.
+    fl_font(FL_HELVETICA, uiFontSize);
     static const char *kLabelKeys[] = {
         "settings.tabwidth", "settings.longline", "settings.searchurl",
         "settings.autosave", "settings.autopreviewmd",
     };
     // 占据控件列的复选框文案（Fl_Check_Button 的标签不换行，宽度不够就被裁）
+    // m040 S3: the switcher column is part of the width the rows need, and it
+    // is measured the same way here as in the layout below (same cap).
+    // The rail measures itself: the dialog asks for the width instead of
+    // repeating the label arithmetic (two copies drift, and the rail clips
+    // its own labels).
+    const std::vector<std::string> navLabels = SettingsNav::pageLabels();
+    const int navNeed = SettingsNav::widthFor(navLabels, uiFontSize);
+
     static const char *kCtrlKeys[] = {
         "settings.autoindent",   "settings.detecturls",   "settings.cleanuptemp",
         "settings.trimtrailing", "settings.trimleading",  "settings.trimending",
         "settings.expandtabs",   "settings.multitab",     "settings.fixedstartupdoc",
         "settings.newtxtdoc",    "settings.pastemedia",
     };
-    fl_font(FL_HELVETICA, uiFontSize);
     int labelNeed = 110;
     for (const char *k : kLabelKeys) {
         const int px = (int)(fl_width(I18n::get(k)) + 0.5f) + 12;
@@ -417,83 +385,110 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
     }
     if (ctrlNeed > 520) ctrlNeed = 520;
 
-    const int minW = 12 * 2 + labelNeed + 20 + ctrlNeed;
-    if (w < minW) {
-        w = minW;
-        size(w, h + TITLE_H);
-    }
+    const int minW = 12 * 2 + navNeed + 16 + labelNeed + 20 + ctrlNeed;
+    const int grownW = (w < minW) ? minW : w;
 
     begin();
     initShell(title);
+    // The width is decided above but applied only now: DialogBase::resize()
+    // refreshes the rounded-corner region and the window shadow, and neither
+    // exists before initShell() has built the chrome. (This call used to be
+    // unreachable - minW stayed under the 480/520 the callers pass; the
+    // switcher column pushed it over, and the window died on the shadow.)
+    // ParamDialog already resizes after initShell for the same reason.
+    if (grownW != w) {
+        w = grownW;
+        size(w, h + TITLE_H);
+    }
 
     int margin = 12;
     int rowH = 24;
 
-    // Height: row count decides the CONTENT height; the window is then capped
-    // (see kPrefH below) and anything past the cap scrolls.
-    // Row counts must match the actual controls below (currently 16: edit 6,
-    // save&exit 6, interface&system 4 - one of them with a +4 gap),
-    // plus 3 group titles and 2 half blank rows between groups.
-    int rowsH = 15 * (rowH + 6) + (rowH + 4) + 3 * (rowH - 2) + 2 * (rowH / 2);
-    // Add m_pad top/bottom padding (outside the scroll) plus the
-    // bottom button bar (gBarH).
-    int needH = rowsH + 2 * m_pad + gBarH;
-    // 高度不再硬撑到"一屏放下全部行"：那会算到 600px，在笔记本上快贴满屏。
-    // 现在封顶 450px（用户 2026-10-31 定的），放不下的行由滚动区自己滚 ——
-    // 设置本来就是低频操作，滚动比"顶天立地"对话框好受。
-    constexpr int kPrefH = 450;
-    const int wantH = (needH < kPrefH) ? needH : kPrefH;
-    if (h < wantH) {
-        h = wantH;
+    // Height: the TALLEST page decides the content height (kRowsPerGroup
+    // below), and the window is that tall - no cap, no scrollbar. Row counts
+    // must match the actual controls per page (currently 21: edit 6,
+    // save&exit 6, interface&system 5 - one of them with a +4 gap, AI 4),
+    // m040 S3: vertical pages instead of one long scrolling column. The
+    // window is as tall as its TALLEST page (6 rows today) and never scrolls -
+    // the user asked for the browser-style switcher and accepted a fixed
+    // height over a scrollbar that hid half of every page.
+    static const int kRowsPerGroup[] = { 6, 6, 5, 4 };   // edit / save / ui+sys / AI
+    int maxRows = 0;
+    for (int r : kRowsPerGroup) if (r > maxRows) maxRows = r;
+    const int pageRowsH = maxRows * (rowH + 6);
+    // m_pad above and below the rows, plus the bottom button bar: the page
+    // area has to be at least as tall as the tallest page or its last row
+    // would sit under the button bar.
+    const int needH = pageRowsH + 2 * m_pad + gBarH;
+    // Height is DERIVED, not a request: one page is six rows, and the 480 the
+    // callers used to pass would leave half the window empty below it.
+    if (h != needH) {
+        h = needH;
         size(w, h + TITLE_H);
     }
 
     int labelW = labelNeed;
-    int ctrlW = w - margin * 2 - labelW - 20;
+    // Rows sit right of the switcher: rowMargin is the left edge of a row's
+    // label column inside a page (the old flat layout used `margin` here).
+    // There is no divider column any more - the rail and the page are told
+    // apart by their tone alone, so the gap is plain padding.
+    const int rowMargin = navNeed + margin;
+    int ctrlW = w - rowMargin - margin - labelW - 20;
+    if (ctrlW < 120) ctrlW = 120;
 
     int btnH = gBtnH;
     // Bottom button bar: same height as the title bar, buttons centered.
     // Flush to the very bottom of the window.
     int btnBarY = TITLE_H + h - gBarH;      // bottom bar top (window coords)
-    // Scroll area sits below a fixed m_pad gap (outside the scroll, so
-    // it does NOT scroll away with the content).
-    int scrollY = TITLE_H + m_pad;
-    int scrollH = btnBarY - scrollY;           // fill remaining content area
-    Fl_Scroll *scroll = new SettingsScroll(0, scrollY, w, scrollH, theme);
-    scroll->type(Fl_Scroll::VERTICAL);
-    scroll->box(FL_FLAT_BOX);
-    scroll->color(theme ? theme->colors().background1 : FL_WHITE);
+    // Flush under the title bar: the rail is part of this area, and starting
+    // the area one pad lower left a white band between the title bar and the
+    // switcher (user 2026-11-27: "顶部白色不要了"). The rows keep their own
+    // padding inside it via rowsY.
+    const int contentY = TITLE_H;
+    const int contentH = btnBarY - contentY;
+    const int rowsY = contentY + m_pad;
 
-    // Content Y starts flush at the scroll top; the m_pad gap above is
-    // outside the scroll and therefore fixed (doesn't scroll away).
-    int y = scrollY;
+    Fl_Group *content = new Fl_Group(0, contentY, w, contentH);
+    m_content = content;
+    content->box(FL_FLAT_BOX);
+    content->color(theme ? theme->colors().background1 : FL_WHITE);
+    content->begin();
 
-    // Group title row: left-aligned, bold, secondary color, slightly
-    // smaller than the option text. A blank row separates each group
-    // from the previous one (except the first, which follows the dialog
-    // padding).
-    bool firstTitle = true;
-    auto addGroupTitle = [&](const char *label) {
-        if (!firstTitle) y += rowH / 2;   // 半行间距分隔分组（整行偏高，标题样式已足够区分）
-        firstTitle = false;
-        int ty = y + 3;
-        Fl_Box *t = new Fl_Box(FL_NO_BOX, margin, ty, w - 2 * margin, rowH - 6,
-                               label);
-        t->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-        t->labelsize(uiFontSize > 2 ? uiFontSize - 2 : uiFontSize);
-        t->labelfont(FL_HELVETICA_BOLD);
-        t->labelcolor(theme ? theme->colors().text2
-                            : fl_rgb_color(120, 120, 120));
-        t->user_data((void*)1);   // group-title marker: skip right-align pass
-        y += rowH - 2;
+    int y = rowsY;                    // row cursor, reset per page
+
+    const int pageX = rowMargin;
+    const int pageY = rowsY;
+    const int pageW = w - rowMargin - margin;
+    const int pageH = contentH - 2 * m_pad;
+
+    m_nav = new SettingsNav(0, contentY, navNeed, contentH, theme, uiFontSize);
+    m_nav->setItems(navLabels);
+
+    // One page per group. beginPage() closes the previous page and puts the
+    // row cursor back at the page top; every `new` in between parents itself
+    // into the page that is current.
+    auto beginPage = [&](int idx) {
+        // Closing the previous page hands 'current' back to `content`, which
+        // is where the next page group is parented.
+        if (!m_pages.empty()) m_pages.back()->end();
+        Fl_Group *pg = new Fl_Group(pageX, pageY, pageW, pageH);
+        pg->box(FL_NO_BOX);
+        pg->begin();
+        m_pages.push_back(pg);
+        y = pageY;
+        (void)idx;
     };
 
-    // ---------- Editing ----------
-    addGroupTitle(I18n::get("settings.group_edit"));
+    beginPage(0);
+
+    // One tone for every field in this dialog, taken from the shared helper
+    // so the fields here match the main window's inputs (square corners).
+    static const ThemeColors kNoTheme;
+    const ThemeColors &inkTone = theme ? theme->colors() : kNoTheme;
 
     // --- Tab width (2 / 4 / 8 spaces) ---
-    new Fl_Box(FL_NO_BOX, margin, y, labelW, rowH, I18n::get("settings.tabwidth"));
-    m_tabWidthChoice = new SettingsChoice(margin + labelW, y, 80, rowH);
+    new Fl_Box(FL_NO_BOX, rowMargin, y, labelW, rowH, I18n::get("settings.tabwidth"));
+    m_tabWidthChoice = new SettingsChoice(rowMargin + labelW, y, 80, rowH);
     for (int i = 0; i < g_tabWidthCount; ++i) {
         char buf[8];
         snprintf(buf, sizeof(buf), "%d", g_tabWidths[i]);
@@ -502,75 +497,74 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
     y += rowH + 6;
 
     // --- Long line marker (0 = off, >0 = column) ---
-    new Fl_Box(FL_NO_BOX, margin, y, labelW, rowH, I18n::get("settings.longline"));
-    m_longLineInput = new BlinkIntInput(margin + labelW, y, 80, rowH);
+    new Fl_Box(FL_NO_BOX, rowMargin, y, labelW, rowH, I18n::get("settings.longline"));
+    m_longLineInput = new BlinkIntInput(rowMargin + labelW, y, 80, rowH);
+    applyInputTone(m_longLineInput, inkTone);
     m_longLineInput->value("0");
     y += rowH + 6;
 
     // --- Search engine URL template (%s = selection) ---
-    new Fl_Box(FL_NO_BOX, margin, y, labelW, rowH, I18n::get("settings.searchurl"));
-    m_searchUrlInput = new BlinkInput(margin + labelW, y, ctrlW, rowH);
+    new Fl_Box(FL_NO_BOX, rowMargin, y, labelW, rowH, I18n::get("settings.searchurl"));
+    m_searchUrlInput = new ThemedInput(rowMargin + labelW, y, ctrlW, rowH, inkTone);
     y += rowH + 6;
 
     // --- Auto indent（编辑行为，属编辑分组）---
-    m_autoIndentChk = new Fl_Check_Button(margin + labelW, y, ctrlW, rowH,
+    m_autoIndentChk = new Fl_Check_Button(rowMargin + labelW, y, ctrlW, rowH,
                                             I18n::get("settings.autoindent"));
     y += rowH + 6;
 
     // --- Detect URLs（编辑行为，属编辑分组）---
-    m_detectUrlsChk = new Fl_Check_Button(margin + labelW, y, ctrlW, rowH,
+    m_detectUrlsChk = new Fl_Check_Button(rowMargin + labelW, y, ctrlW, rowH,
         I18n::get("settings.detecturls"));
     y += rowH + 6;
 
     // --- 粘贴图片/文件时插入路径（唯一会建目录+写文件的编辑动作，默认关）---
     // 素材目录名不设选项：它恒等于"文档名去后缀"（bba.txt → bba\），
     // 一旦允许多篇文档共用一个目录，拷走一篇就带不走图了。
-    m_pasteMediaChk = new Fl_Check_Button(margin + labelW, y, ctrlW, rowH,
+    m_pasteMediaChk = new Fl_Check_Button(rowMargin + labelW, y, ctrlW, rowH,
         I18n::get("settings.pastemedia"));
     y += rowH + 6;
 
-    // --- Auto-save interval ---
-    addGroupTitle(I18n::get("settings.group_save"));
-    new Fl_Box(FL_NO_BOX, margin, y, labelW, rowH, I18n::get("settings.autosave"));
-    m_autoSaveChoice = new SettingsChoice(margin + labelW, y, 120, rowH);
+    beginPage(1);
+    new Fl_Box(FL_NO_BOX, rowMargin, y, labelW, rowH, I18n::get("settings.autosave"));
+    m_autoSaveChoice = new SettingsChoice(rowMargin + labelW, y, 120, rowH);
     m_autoSaveChoice->add(I18n::get("settings.autosaveitems"));
     y += rowH + 6;
 
     // --- Clean temp files older than 7 days (exit) ---
-    m_cleanupTempChk = new Fl_Check_Button(margin + labelW, y, ctrlW, rowH,
+    m_cleanupTempChk = new Fl_Check_Button(rowMargin + labelW, y, ctrlW, rowH,
         I18n::get("settings.cleanuptemp"));
     y += rowH + 6;
 
     // --- Trim trailing whitespace on save ---
-    m_trimTrailingChk = new Fl_Check_Button(margin + labelW, y, ctrlW, rowH,
+    m_trimTrailingChk = new Fl_Check_Button(rowMargin + labelW, y, ctrlW, rowH,
                                               I18n::get("settings.trimtrailing"));
     y += rowH + 6;
 
     // --- Trim leading blank (document start) ---
-    m_trimLeadingChk = new Fl_Check_Button(margin + labelW, y, ctrlW, rowH,
+    m_trimLeadingChk = new Fl_Check_Button(rowMargin + labelW, y, ctrlW, rowH,
         I18n::get("settings.trimleading"));
     y += rowH + 6;
 
     // --- Trim ending blank (document end) ---
-    m_trimEndingChk = new Fl_Check_Button(margin + labelW, y, ctrlW, rowH,
+    m_trimEndingChk = new Fl_Check_Button(rowMargin + labelW, y, ctrlW, rowH,
         I18n::get("settings.trimending"));
     y += rowH + 6;
 
     // --- Expand tabs on save ---
-    m_expandTabsChk = new Fl_Check_Button(margin + labelW, y, ctrlW, rowH,
+    m_expandTabsChk = new Fl_Check_Button(rowMargin + labelW, y, ctrlW, rowH,
         I18n::get("settings.expandtabs"));
     y += rowH + 6;
 
-    // ---------- Interface ----------
-    addGroupTitle(I18n::get("settings.group_ui_sys"));
+    beginPage(2);
 
     // --- Multi tab ---
-    m_multiTabChk = new Fl_Check_Button(margin + labelW, y, ctrlW, rowH,
+    m_multiTabChk = new Fl_Check_Button(rowMargin + labelW, y, ctrlW, rowH,
                                           I18n::get("settings.multitab"));
     y += rowH + 6;
 
     // --- 固定启动文档：无其它 Pecia 进程时，启动直接打开 exe 同级目录的 Test.txt ---
-    m_fixedStartupDocChk = new Fl_Check_Button(margin + labelW, y, ctrlW, rowH,
+    m_fixedStartupDocChk = new Fl_Check_Button(rowMargin + labelW, y, ctrlW, rowH,
                                                I18n::get("settings.fixedstartupdoc"));
     y += rowH + 6;
 
@@ -580,14 +574,14 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
     // 只对"新打开的文件"生效（MainWindow::openFile 末尾），切标签页 /
     // 另存为 / 重新打开已开的文件都不触发。渲染延后一帧执行，避免大文档把
     // "打开"这一步本身拖成白屏无响应。
-    new Fl_Box(FL_NO_BOX, margin, y, labelW, rowH,
+    new Fl_Box(FL_NO_BOX, rowMargin, y, labelW, rowH,
                I18n::get("settings.autopreviewmd"));
-    m_autoPreviewChoice = new SettingsChoice(margin + labelW, y, 160, rowH);
+    m_autoPreviewChoice = new SettingsChoice(rowMargin + labelW, y, 160, rowH);
     m_autoPreviewChoice->add(I18n::get("settings.autopreviewitems"));
     y += rowH + 6;
 
     // --- System Integration ---
-    m_integNewTxt = new Fl_Check_Button(margin + labelW, y, ctrlW, rowH,
+    m_integNewTxt = new Fl_Check_Button(rowMargin + labelW, y, ctrlW, rowH,
         I18n::get("settings.newtxtdoc"));
     y += rowH + 4;
     // "Add to file Open with menu" button opens the ExtensionsDialog.
@@ -599,36 +593,62 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
         const char *kLabel = I18n::get("settings.addopenwith");
         int txtW = (int)(fl_width(kLabel) + 0.5);
         int btnW = txtW + 16;  // 8px padding on each side
-        int btnX = margin + labelW;  // left-align with checkboxes
+        int btnX = rowMargin + labelW;  // left-align with checkboxes
         m_chooseExtsBtn = new HoverButton(btnX, y, btnW, rowH, kLabel);
     }
     m_chooseExtsBtn->callback(cbChooseExts, this);
     m_chooseExtsBtn->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
     y += rowH + 6;
 
-    // Bottom spacer inside the scroll content: the last row sits m_pad
-    // above the scroll bottom (= button bar top), symmetric with the
-    // fixed top gap below the title bar.
-    new Fl_Box(FL_NO_BOX, 0, y, 0, m_pad, nullptr);
+    // 这三个键的唯一写入口。对话栏以前自己开一个窗写同一批键，两处写
+    // 一处读就是两套口径；现在对话栏只读，改配置回到选项窗。
+    beginPage(3);
 
-    scroll->end();
+    new Fl_Box(FL_NO_BOX, rowMargin, y, labelW, rowH, I18n::get("ai.endpoint"));
+    m_aiEndpoint = new ThemedInput(rowMargin + labelW, y, ctrlW, rowH, inkTone);
+    y += rowH + 6;
 
-    // Uniform font size and primary text color for all controls
+    new Fl_Box(FL_NO_BOX, rowMargin, y, labelW, rowH, I18n::get("ai.model"));
+    m_aiModel = new ThemedInput(rowMargin + labelW, y, ctrlW, rowH, inkTone);
+    y += rowH + 6;
+
+    new Fl_Box(FL_NO_BOX, rowMargin, y, labelW, rowH, I18n::get("ai.key"));
+    m_aiKey = new ThemedInput(rowMargin + labelW, y, ctrlW, rowH, inkTone);
+    y += rowH + 6;
+
+    // Context depth (r042d): in conversation turns; the chat pane converts
+    // to messages. Same int-input pattern as the long-line ruler on page 0.
+    new Fl_Box(FL_NO_BOX, rowMargin, y, labelW, rowH, I18n::get("ai.context"));
+    m_aiContext = new BlinkIntInput(rowMargin + labelW, y, 80, rowH);
+    applyInputTone(m_aiContext, inkTone);
+    m_aiContext->value("25");
+    y += rowH + 6;
+    // No "where do I get a key" button here: the page names the vendor in
+    // neither its title nor its fields, and a link baked into the app points
+    // at one supplier for everybody (m041, user asked for it gone).
+
+    if (!m_pages.empty()) m_pages.back()->end();
+    content->end();
+
+    // Every control now lives in a page, so the shared styling passes walk
+    // the pages - not a single flat list. A control that ended up in no page
+    // would be invisible here and is what the gate counts on purpose.
     Fl_Color fg = theme ? theme->colors().text1 : FL_BLACK;
-    for (int i = 0; i < scroll->children(); ++i) {
-        auto *wdg = scroll->child(i);
-        wdg->labelsize(uiFontSize);
-        wdg->labelcolor(fg);
+    for (Fl_Group *pg : m_pages) {
+        if (!pg) continue;
+        for (int i = 0; i < pg->children(); ++i) {
+            Fl_Widget *wdg = pg->child(i);
+            wdg->labelsize(uiFontSize);
+            wdg->labelcolor(fg);
+            // Label column is right-aligned; controls (x == rowMargin + labelW)
+            // keep their own alignment.
+            if (wdg->x() == rowMargin && dynamic_cast<Fl_Box *>(wdg))
+                wdg->align(FL_ALIGN_RIGHT | FL_ALIGN_INSIDE);
+        }
     }
 
-    // Right-align label boxes (x == margin, box type FL_NO_BOX). Group
-    // titles are marked via user_data and stay left-aligned.
-    for (int i = 0; i < scroll->children(); ++i) {
-        auto *wdg = scroll->child(i);
-        if (wdg->x() == margin && dynamic_cast<Fl_Box *>(wdg) &&
-            wdg->user_data() == nullptr)
-            wdg->align(FL_ALIGN_RIGHT | FL_ALIGN_INSIDE);
-    }
+    m_nav->setOnSelect([this](int i) { showPage(i); });
+    showPage(0);
 
     // Style all checkboxes — same as FindReplace "Match case".
     Fl_Color chkBg = theme ? theme->colors().background1 : FL_WHITE;
@@ -718,14 +738,6 @@ SettingsDialog::SettingsDialog(int w, int h, const char *title, const Theme *the
     btnBar->resizable(nullptr);
     btnBar->end();
 
-    // Style the scrollbar: width, no-arrow type, and flat box to avoid
-    // FLTK's default 3D border lines bleeding through the custom draw.
-    scroll->scrollbar_size(10);  // match main window scrollbar width
-    scroll->scrollbar.type(FL_VERT_SLIDER);  // no arrow buttons, like main window
-    scroll->scrollbar.box(FL_FLAT_BOX);
-    scroll->scrollbar.color(theme ? theme->colors().background1 : fl_rgb_color(170, 170, 170));
-    scroll->scrollbar.selection_color(theme ? theme->colors().background2 : fl_rgb_color(235, 235, 235));
-
     // The shared title bar is created by DialogBase (initShell).
     end();
     finalizeShell();
@@ -737,25 +749,25 @@ void SettingsDialog::loadFrom(const Config &cfg) {
     // Tab width: map the persisted value to one of {2, 4, 8}.
     // Anything else (e.g. edited manually in settings.ini) falls back
     // to 4, which is also the default for a fresh install.
-    int tw = const_cast<Config &>(cfg).getTabWidth();
+    int tw = cfg.getTabWidth();
     int twIdx = 1;  // default = 4
     for (int i = 0; i < g_tabWidthCount; ++i) {
         if (g_tabWidths[i] == tw) { twIdx = i; break; }
     }
     m_tabWidthChoice->value(twIdx);
 
-    m_autoIndentChk->value(const_cast<Config &>(cfg).getAutoIndent() ? 1 : 0);
-    m_multiTabChk->value(const_cast<Config &>(cfg).getMultiTab() ? 1 : 0);
-    m_fixedStartupDocChk->value(const_cast<Config &>(cfg).getFixedStartupDoc() ? 1 : 0);
+    m_autoIndentChk->value(cfg.getAutoIndent() ? 1 : 0);
+    m_multiTabChk->value(cfg.getMultiTab() ? 1 : 0);
+    m_fixedStartupDocChk->value(cfg.getFixedStartupDoc() ? 1 : 0);
     // 打开 .md 时做什么：0=无操作 1=分屏预览 2=仅预览（枚举下标与选项同序）
-    m_autoPreviewChoice->value(const_cast<Config &>(cfg).getAutoPreviewMode());
-    m_trimTrailingChk->value(const_cast<Config &>(cfg).getTrimTrailingWhitespace() ? 1 : 0);
-    m_trimLeadingChk->value(const_cast<Config &>(cfg).getTrimLeadingBlank() ? 1 : 0);
-    m_trimEndingChk->value(const_cast<Config &>(cfg).getTrimEndingBlank() ? 1 : 0);
-    m_expandTabsChk->value(const_cast<Config &>(cfg).getExpandTabsOnSave() ? 1 : 0);
+    m_autoPreviewChoice->value(cfg.getAutoPreviewMode());
+    m_trimTrailingChk->value(cfg.getTrimTrailingWhitespace() ? 1 : 0);
+    m_trimLeadingChk->value(cfg.getTrimLeadingBlank() ? 1 : 0);
+    m_trimEndingChk->value(cfg.getTrimEndingBlank() ? 1 : 0);
+    m_expandTabsChk->value(cfg.getExpandTabsOnSave() ? 1 : 0);
 
     // Auto-save interval: map 0,30,60,120,300 → index 0..4
-    int as = const_cast<Config &>(cfg).getAutoSaveInterval();
+    int as = cfg.getAutoSaveInterval();
     static const int asVals[] = { 0, 30, 60, 120, 300 };
     int asIdx = 0;
     for (int i = 0; i < 5; ++i) { if (asVals[i] == as) { asIdx = i; break; } }
@@ -777,17 +789,29 @@ void SettingsDialog::loadFrom(const Config &cfg) {
     // already associated", which is exactly what we must avoid.
     m_openWithExts.clear();
 
-    m_detectUrlsChk->value(const_cast<Config &>(cfg).getDetectUrls() ? 1 : 0);
-    m_pasteMediaChk->value(const_cast<Config &>(cfg).getPasteMediaPath() ? 1 : 0);
-    m_cleanupTempChk->value(const_cast<Config &>(cfg).getCleanupTempOld() ? 1 : 0);
+    m_detectUrlsChk->value(cfg.getDetectUrls() ? 1 : 0);
+    m_pasteMediaChk->value(cfg.getPasteMediaPath() ? 1 : 0);
+    m_cleanupTempChk->value(cfg.getCleanupTempOld() ? 1 : 0);
 
     char urlBuf[512];
-    const_cast<Config &>(cfg).getSearchEngineUrl(urlBuf, sizeof(urlBuf));
+    cfg.getSearchEngineUrl(urlBuf, sizeof(urlBuf));
     m_searchUrlInput->value(urlBuf);
 
     char llBuf[16];
-    snprintf(llBuf, sizeof(llBuf), "%d", const_cast<Config &>(cfg).getLongLineMarker());
+    snprintf(llBuf, sizeof(llBuf), "%d", cfg.getLongLineMarker());
     m_longLineInput->value(llBuf);
+
+    char aiBuf[512];
+    cfg.getAiEndpoint(aiBuf, sizeof(aiBuf), "");
+    m_aiEndpoint->value(aiBuf);
+    cfg.getAiModel(aiBuf, sizeof(aiBuf), "");
+    m_aiModel->value(aiBuf);
+    cfg.getAiKey(aiBuf, sizeof(aiBuf), "");
+    m_aiKey->value(aiBuf);
+
+    char ctxBuf[16];
+    snprintf(ctxBuf, sizeof(ctxBuf), "%d", cfg.getAiContextTurns());
+    m_aiContext->value(ctxBuf);
 }
 
 bool SettingsDialog::saveTo(Config &cfg) const {
@@ -906,15 +930,15 @@ bool SettingsDialog::saveTo(Config &cfg) const {
         changed = true;
     }
 
-    // 搜索引擎 URL 模板（%s = 选中内容）
+    // 搜索引擎 URL 模板（%s = 选中内容）。空串也是合法值：清空输入框必须
+    // 写回，否则已保存的模板永远删不掉。
     const char *su = m_searchUrlInput->value();
-    if (su && *su) {
-        char cur[512];
-        cfg.getSearchEngineUrl(cur, sizeof(cur));
-        if (strcmp(cur, su) != 0) {
-            cfg.setSearchEngineUrl(su);
-            changed = true;
-        }
+    const char *url = su ? su : "";
+    char cur[512];
+    cfg.getSearchEngineUrl(cur, sizeof(cur));
+    if (strcmp(cur, url) != 0) {
+        cfg.setSearchEngineUrl(url);
+        changed = true;
     }
 
     int ll = atoi(m_longLineInput->value());
@@ -922,6 +946,41 @@ bool SettingsDialog::saveTo(Config &cfg) const {
     if (cfg.getLongLineMarker() != ll) {
         cfg.setLongLineMarker(ll);
         changed = true;
+    }
+
+    // m040: hand-typed endpoint/model/key are trimmed the way the old AI
+    // dialog trimmed them - a trailing space in a URL is a silent 404.
+    {
+        auto trim = [](const char *s) -> std::string {
+            std::string v = s ? s : "";
+            size_t i = 0;
+            while (i < v.size() && (v[i] == ' ' || v[i] == '\t')) ++i;
+            v = v.substr(i);
+            while (!v.empty() && (v.back() == ' ' || v.back() == '\t')) v.pop_back();
+            return v;
+        };
+        char aiCur[512];
+        const std::string ep = trim(m_aiEndpoint->value());
+        cfg.getAiEndpoint(aiCur, sizeof(aiCur), "");
+        if (ep != aiCur) { cfg.setAiEndpoint(ep.c_str()); changed = true; }
+        const std::string md = trim(m_aiModel->value());
+        cfg.getAiModel(aiCur, sizeof(aiCur), "");
+        if (md != aiCur) { cfg.setAiModel(md.c_str()); changed = true; }
+        const std::string ky = trim(m_aiKey->value());
+        cfg.getAiKey(aiCur, sizeof(aiCur), "");
+        if (ky != aiCur) { cfg.setAiKey(ky.c_str()); changed = true; }
+
+        // Context turns: atoi of a garbage string is 0, which the setter
+        // clamps to the minimum; a huge number clamps to the maximum. A
+        // blank field stays blank-on-reload only if unchanged, so normalize
+        // always (same policy as the tab-width normalization above).
+        int ctx = atoi(m_aiContext->value());
+        int curCtx = cfg.getAiContextTurns();
+        int clamped = ctx < Config::kMinAiContextTurns ? Config::kMinAiContextTurns
+                    : ctx > Config::kMaxAiContextTurns ? Config::kMaxAiContextTurns
+                                                       : ctx;
+        cfg.setAiContextTurns(clamped);
+        if (clamped != curCtx) changed = true;
     }
 
     return changed;
@@ -1036,7 +1095,7 @@ struct ExtensionsDialog : DialogBase {
         // the right column. This keeps related extensions (plain text,
         // config, code, ...) visually grouped.
         const int cols = 2;
-        int perCol = (kAssocExtCount + cols - 1) / cols;  // ceil(22/2) = 11
+        int perCol = (kAssocExtCount + cols - 1) / cols;  // ceil(20/2) = 10
         int colW = (W - margin * 2) / cols;
 
         fl_font(FL_HELVETICA, uiFontSize);
@@ -1253,13 +1312,25 @@ void SettingsDialog::openExtensionsForTest() {
     while (dlg.shown()) Fl::wait();
 }
 
+void SettingsDialog::showPage(int i) {
+    for (size_t k = 0; k < m_pages.size(); ++k) {
+        Fl_Group *pg = m_pages[k];
+        if (!pg) continue;
+        if ((int)k == i) pg->show();
+        else             pg->hide();
+    }
+    if (m_nav) m_nav->setActive(i);
+    if (m_content) m_content->redraw();
+    redraw();
+}
+
 void SettingsDialog::cbChooseExts(Fl_Widget * /*w*/, void *data) {
     SettingsDialog *self = static_cast<SettingsDialog *>(data);
     if (!self) return;
 
     // Dialog width: wide enough for two columns of checkboxes plus the
-    // three auto-sized bottom buttons. Height fits 11 rows (one column's
-    // worth for the 22-extension preset list) plus the custom input row
+    // three auto-sized bottom buttons. Height fits 10 rows (one column's
+    // worth for the 20-extension preset list) plus the custom input row
     // and the title bar, with a small margin so no scrollbar appears.
     const int dlgW = 400;
     const int rowH = 22;

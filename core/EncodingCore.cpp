@@ -16,7 +16,8 @@
 #endif
 
 bool isValidUtf8(const unsigned char *data, int len) {
-    if (!data || len <= 0) return true;
+    if (len <= 0) return true;         // empty input is trivially valid
+    if (!data) return false;           // non-empty input with no buffer is not
     int i = 0;
     while (i < len) {
         unsigned char b = data[i];
@@ -46,22 +47,21 @@ bool isValidUtf8(const unsigned char *data, int len) {
         }
         if (check < need) return true;     // window cut mid-sequence: OK
 
-        // Extra checks for surrogates and 4-byte range
+        // Extra checks for surrogates and 4-byte range. need counts
+        // CONTINUATION bytes: 3-byte seq -> need 2, 4-byte -> need 3
+        // (2-byte needs nothing: the minFirst lead check already rejects C0/C1).
         if (need == 2) {
-            unsigned char b2 = data[i + 1];
-            // reject UTF-16 surrogates encoded as UTF-8 (U+D800..U+DFFF)
-            if (b == 0xED && b2 >= 0xA0) return false;
+            // 3-byte lead: reject UTF-16 surrogates (ED A0-BF) and
+            // 3-byte overlong encodings (E0 80-9F). The lead check
+            // b >= minFirst only catches E0 itself, not a second byte
+            // below A0, so U+0800..U+0FFF encoded in 3 bytes slipped through.
+            if (b == 0xED && data[i + 1] >= 0xA0) return false;
+            if (b == 0xE0 && data[i + 1] < 0xA0) return false;
         } else if (need == 3) {
-            // reject code points above U+10FFFF
+            // 4-byte lead: reject code points above U+10FFFF and 4-byte
+            // overlong encodings (F0 80-8F).
             if (b > 0xF4) return false;
             if (b == 0xF4 && data[i + 1] > 0x8F) return false;
-            // reject 3-byte overlong encodings (E0 80-9F): the lead check
-            // b >= minFirst only catches E0 itself, not a second byte below
-            // A0, so U+0800..U+0FFF encoded in 3 bytes slipped through.
-            if (b == 0xE0 && data[i + 1] < 0xA0) return false;
-        } else if (need == 4) {
-            // reject 4-byte overlong encoding (F0 80-8F): the lead check
-            // only catches F0, so U+0000..U+FFFF in 4 bytes slipped through.
             if (b == 0xF0 && data[i + 1] < 0x90) return false;
         }
 

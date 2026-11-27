@@ -218,12 +218,12 @@ ga_result <- ga(
   fitness = fitness_func,
   lower = lower,
   upper = upper,
-  popSize = 1000,            # 2000 降到 1500，省下时间给 optim
+  popSize = 1000,            # 2000 降到 1000，省下时间给 optim
   maxiter = 400,             # 400 代 + optim 局部搜索，比 500 代效果好
   run = 150,                 # 增加停滞期，避免早期优秀个体被误杀
   pcrossover = 0.9,
   pmutation = 0.03,
-  elitism = floor(1500 * 0.05), # 默认 5% 精英保留
+  elitism = floor(1000 * 0.05), # 默认 5% 精英保留（与 popSize 一致）
   optim = TRUE,                  # 开启混合优化！
   optimArgs = list(
     method = "L-BFGS-B",

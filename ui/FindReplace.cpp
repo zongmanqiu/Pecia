@@ -288,10 +288,13 @@ FindReplace::~FindReplace() {
 }
 
 void FindReplace::setEditor(Fl_Text_Editor *e) {
-    // The find bar follows the active tab; any in-flight chunked count
+    // The find bar follows the active tab; only an in-flight chunked count
     // belongs to the previous tab's buffer and must be discarded, or the
-    // old file's match numbers would show up on the new tab.
-    if (e != m_editor && (m_countChunkActive || !m_countDone))
+    // old file's match numbers would show up on the new tab. A completed
+    // count (or an ordinary buffer counted synchronously) must be kept:
+    // !m_countDone is also true there, and cancelling reset a valid
+    // "index/total" to "-1" on every tab switch.
+    if (e != m_editor && m_countChunkActive)
         cancelCount();
     m_editor = e;
     updateButtonStates();
@@ -1166,7 +1169,8 @@ void FindReplace::replaceAll() {
 
     if (count > 0) {
         buf->undo_begin();
-        buf->replace(0, buf->length(), text.c_str());
+        // 传文本长度：文档含 NUL 时 c_str() 会被截断，尾部内容会丢。
+        buf->replace(0, buf->length(), text.c_str(), (int)text.size());
         buf->undo_end();
     }
     m_editor->redraw();
@@ -1217,7 +1221,10 @@ void FindReplace::cbClose(Fl_Widget * /*w*/, void *data) {
     self->clearMatchHighlight();
     self->hide();
     if (self->m_onClose) self->m_onClose();
-    if (self->m_editor) Fl::focus(self->m_editor);
+    // Same contract as GoTo::cbClose: never hand focus to a hidden editor
+    // (preview-only mode keeps it on the preview view).
+    if (self->m_editor && self->m_editor->visible())
+        Fl::focus(self->m_editor);
 }
 
 void FindReplace::setTheme(const Theme *theme) {
@@ -1277,9 +1284,6 @@ void FindReplace::setFontSize(int sz) {
     const int CHK_PAD = m_fontSize + 14;
     int cx = x() + GAP;
 
-    int fiw = m_btnClose->x() - GAP - cx;  // remaining width for everything
-    if (fiw < 100) fiw = 100;
-
     m_findInput->resize(cx, m_findInput->y(), 120, m_findInput->h());
     cx += m_findInput->w() + GAP;
 
@@ -1295,6 +1299,7 @@ void FindReplace::setFontSize(int sz) {
     int wCase = (int)fl_width(I18n::get("find.matchcase")) + CHK_PAD;
     int wWhole = (int)fl_width(I18n::get("find.wholeword")) + CHK_PAD;
     int wWrap = (int)fl_width(I18n::get("find.wrap")) + CHK_PAD;
+    // remaining width for everything
     int leftForChk = m_btnClose->x() - GAP - cx;
     if (wCase + wWhole + wWrap < leftForChk) {
         m_chkCase->show();    m_chkCase->resize(cx, m_chkCase->y(), wCase, m_chkCase->h());   cx += wCase + 2;

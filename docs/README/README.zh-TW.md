@@ -1,15 +1,16 @@
-> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
-
 # Pecia — 極簡文字編輯器
+> Windows 文字編輯器：極致輕量、多標籤、大檔案秒開、Lua 腳本擴充、Markdown 預覽。
+
+> **🌐 Languages**: [中文](../../README.md) | [繁體中文](README.zh-TW.md) | [English](README.en.md) | [日本語](README.ja.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [한국어](README.ko.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 ---
 
-**[⬇️ 下載 1.1.3 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ 下載 1.1.3 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Gitee 主倉](https://gitee.com/qiuzongman/pecia) ｜ [GitHub 鏡像](https://github.com/zongmanqiu/Pecia) | [B 站影片示範](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**⬇️ 下載 1.2.0: [Gitee](https://gitee.com/qiuzongman/pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
+ ｜ **[GitHub](https://github.com/zongmanqiu/Pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
 
-基於 C++17 + FLTK 的 Windows 輕量級文字編輯器。多標籤、大檔案秒開、多編碼支援、Lua 腳本擴充。新增：側邊欄（檔案樹/大綱）、字型選擇對話方塊、視窗陰影；Markdown 預覽對超大檔案分塊渲染。
+> 主倉: [Gitee](https://gitee.com/qiuzongman/pecia) | [GitHub](https://github.com/zongmanqiu/Pecia)
 
-> **平台定位**：僅支援 **Windows x64（64 位元）**。不提供 32 位元版本，也不再維護跨平台
->（Linux/mac/32 位元）。建構腳本已內建 64 位元校驗（見 CMakeLists 頂部），誤配 32 位元會直接報錯。
+> 影片示範: [Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 ## 軟體介面
 
@@ -23,10 +24,6 @@
   - ![3.選項](3.选项.png)
 - 快捷鍵設定
   - ![4.快捷鍵](4.快捷键.png)
-- AI對話
-  - ![5.AI對話](5.AI对话.png)
-- Lua主控台
-  - ![6.Lua主控台](6.Lua控制台.gif)
 - Lua腳本
   - ![7.Lua腳本](7.Lua脚本.gif)
 
@@ -52,8 +49,8 @@
 ```bat
 REM 下載原始碼後，只需按兩下這一個腳本。
 REM 它按順序跑完：1 體檢工具鏈 → 2 下載 6 個第三方庫 → 3 套用補丁 →
-REM 4 cargo fetch + 編兩個 Rust FFI → 5 編 FLTK + CMake 編 Pecia 三件套 →
-REM 運行 33 個單測。
+REM 4 cargo fetch + 編兩個 Rust FFI → 5 編 FLTK + CMake 編 Pecia →
+REM 運行 36 個單測。
 REM 首次耗時取決於網路與機器；之後複用快取，增量編譯 + 測試約 1-2 分鐘。
 build\full.bat
 ```
@@ -79,8 +76,8 @@ main/
 ├── core/               核心純邏輯（無 UI）
 ├── editor/             編輯器控制項
 ├── ui/                 視窗/對話方塊/工具列
-├── LuaTool/            PeciaLua 獨立工具（視窗/入口/管道伺服端）
-├── AIChat/             PeciaAIChat 獨立工具（視窗/入口）
+├── AIChat/             AI 對話面板（獨立一欄）＋對話記錄
+├── agent/              MCP stdio 端點（工具清單由宿主註冊表投影）
 ├── script/             Lua 腳本引擎
 ├── DOCS_MANIFEST.md    文件清單（改程式碼後逐項核對，test_docs 門禁；純開發用，不隨 exe 釋出）
 ├── image/              圖片資源（pecia.ico / ai_bot.ico / lua.ico …）

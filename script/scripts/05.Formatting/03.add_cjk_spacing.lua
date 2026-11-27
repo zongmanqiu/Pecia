@@ -29,12 +29,16 @@ if #input == 0 then
     return
 end
 
-local out, err = rex.gsub(input, "(\\p{Han})(?=[A-Za-z0-9])", "$1 ")
+-- rex.gsub raises on a bad pattern; pcall turns it into nil,err so these
+-- error branches are actually reachable.
+local ok, out, err = pcall(rex.gsub, input, "(\\p{Han})(?=[A-Za-z0-9])", "$1 ")
+if not ok then out, err = nil, out end
 if out == nil then
     print("Regex error: " .. tostring(err))
     return
 end
-out, err = rex.gsub(out, "([A-Za-z0-9])(?=\\p{Han})", "$1 ")
+ok, out, err = pcall(rex.gsub, out, "([A-Za-z0-9])(?=\\p{Han})", "$1 ")
+if not ok then out, err = nil, out end
 if out == nil then
     print("Regex error: " .. tostring(err))
     return

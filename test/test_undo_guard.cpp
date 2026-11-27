@@ -25,6 +25,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -56,18 +57,23 @@ static int g_failures = 0;
 
 // Run fn on a worker thread; return true iff it finishes within ms.
 // A hanging thread is detached (the test process exits anyway, and CTest
-// enforces its own timeout as a backstop).
-static bool runWithTimeout(const std::function<void()> &fn, int ms) {
-    std::atomic<bool> done{false};
-    std::thread t([&] {
-        fn();
-        done = true;
+// enforces its own timeout as a backstop). Both the callable and the done
+// flag are held by shared_ptr captured BY VALUE into the thread: a detached
+// worker therefore never references this function's stack frame, even if it
+// finishes after we have returned. Callers that pass a lambda capturing local
+// state must likewise give that state shared ownership (see test 1 below).
+static bool runWithTimeout(std::function<void()> fn, int ms) {
+    auto done = std::make_shared<std::atomic<bool>>(false);
+    auto work = std::make_shared<std::function<void()>>(std::move(fn));
+    std::thread t([work, done] {
+        (*work)();
+        *done = true;
     });
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
-    while (!done.load() && std::chrono::steady_clock::now() < deadline) {
+    while (!done->load() && std::chrono::steady_clock::now() < deadline) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    if (done.load()) {
+    if (done->load()) {
         t.join();
         return true;
     }
@@ -88,10 +94,14 @@ static void test_fltk_hang_exists() {
         fprintf(stderr, "hang-test skipped (ASan build)\n");
         return;
     }
-    Fl_Text_Buffer buf(64);
-    CHECK_EQ(buf.length(), 0);
+    // This call HANGS by design, so its worker is detached and outlives this
+    // function. Give the buffer shared ownership and capture it by value:
+    // otherwise the detached thread would keep touching this stack object
+    // after return (use-after-free).
+    auto buf = std::make_shared<Fl_Text_Buffer>(64);
+    CHECK_EQ(buf->length(), 0);
     bool finished = runWithTimeout(
-        [&] { volatile int r = buf.count_displayed_characters(0, 4); (void)r; }, 300);
+        [buf] { volatile int r = buf->count_displayed_characters(0, 4); (void)r; }, 300);
     // Expected: HANGS (finished == false). FLTK 1.4.5 never returns.
     CHECK(!finished);
     if (finished) {

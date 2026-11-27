@@ -284,12 +284,6 @@ const ShortcutAction g_shortcutActions[] = {
     { "win.button.run",   "shortcut.loc.button", "shortcut.button.run",   FL_Enter, FL_CTRL, SG_WINDOW },
     { "win.button.clear", "shortcut.loc.button", "shortcut.button.clear", 0, 0, SG_WINDOW },
     { "win.button.ok",    "shortcut.loc.button", "shortcut.button.ok",    0, 0, SG_WINDOW },
-    { "win.button.todoc", "shortcut.loc.button", "shortcut.button.todoc", 0, 0, SG_WINDOW },
-    { "win.button.tolua", "shortcut.loc.button", "shortcut.button.tolua", 0, 0, SG_WINDOW },
-    { "win.button.toai",  "shortcut.loc.button", "shortcut.button.toai",  0, 0, SG_WINDOW },
-    { "win.button.saveas","shortcut.loc.button", "shortcut.button.saveas",0, 0, SG_WINDOW },
-    { "win.button.help",  "shortcut.loc.button", "shortcut.button.help",  0, 0, SG_WINDOW },
-    { "win.button.settings","shortcut.loc.button", "shortcut.button.settings", 0, 0, SG_WINDOW },
 };
 
 const int g_shortcutActionCount =
@@ -309,21 +303,36 @@ static const ShortcutCombo &dialogOkCombo() {
     if (!s_dialogOkLoaded) {
         s_dialogOkLoaded = true;
         Config cfg;
-        std::string text = cfg.getShortcut("win.button.ok");
-        if (!text.empty()) {
-            ShortcutCombo c;
-            if (shortcutParse(text, &c)) {
-                s_dialogOk = c;
-            } else {
-                s_dialogOk.key = FL_Enter;
-                s_dialogOk.mods = FL_CTRL;
-            }
-        } else {
+        // getShortcut() returns "" for BOTH "cleared by the user" and
+        // "absent" - Config.h requires gating on hasKey() to tell them
+        // apart. Absent: keep the built-in Ctrl+Enter default;
+        // cleared (key present, empty): no combo, the shortcut is off.
+        if (!cfg.hasKey("shortcut.win.button.ok")) {
             s_dialogOk.key = FL_Enter;
             s_dialogOk.mods = FL_CTRL;
+        } else {
+            std::string text = cfg.getShortcut("win.button.ok");
+            ShortcutCombo c;
+            if (!text.empty() && shortcutParse(text, &c)) {
+                s_dialogOk = c;
+            } else {
+                // Cleared (or unparseable): NO binding. The old code left the
+                // previously cached combo in place, so "clear the shortcut"
+                // did not clear it - the stale binding kept firing until the
+                // process restarted.
+                s_dialogOk = ShortcutCombo();
+            }
         }
     }
     return s_dialogOk;
+}
+
+void shortcutCore_resetDialogOkCache() {
+    s_dialogOkLoaded = false;
+    // The cached combo itself must go too: the reload path above only
+    // assigns s_dialogOk when a usable value is found, so a stale combo
+    // would survive the reset and be handed out again.
+    s_dialogOk = ShortcutCombo();
 }
 
 bool dialogOkShortcutMatches(int key, unsigned mods) {

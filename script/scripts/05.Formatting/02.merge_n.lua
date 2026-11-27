@@ -84,7 +84,7 @@ end
 local n = tonumber(params.n) or 2
 if n < 1 then n = 1 end
 local sep = params.sep
-if sep == nil then sep = " " end  -- empty string = no separator
+if sep == nil or sep == "" then sep = " " end  -- default param arrives as ""
 
 local parts = {}
 local start = 1

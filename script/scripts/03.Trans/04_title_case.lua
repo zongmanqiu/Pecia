@@ -73,7 +73,10 @@ while i <= #input do
         i = i + #w
     else
         out[#out + 1] = c
-        if c:match("[%.%?!%。！？]") then sentStart = true end
+        -- 整串字面比较：字符集中的全角标点 UTF-8 续字节会误伤汉字（如"一"）
+        if c == "." or c == "!" or c == "?" or c == "。" or c == "！" or c == "？" then
+            sentStart = true
+        end
         i = i + clen
     end
 end

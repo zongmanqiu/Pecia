@@ -24,6 +24,7 @@
 #include "core/PathUtils.h"
 #include "core/UiBridge.h"
 #include "script/ScriptManager.h"
+#include "AIChat/AIChatPane.h"
 #include "ui/Layout.h"
 #include <FL/Fl_Menu_Item.H>
 #include <FL/Fl_Tooltip.H>
@@ -126,11 +127,7 @@ void MainWindow::buildMenuKeys() {
         // name.<lang> and are refreshed by refreshThemeMenuLabels()).
         { "View/Theme",            "menu.view.theme" },
         { "View/Multi Tab",               "menu.view.multitab" },
-
-        { "Tools",                         "menu.tools" },
-        { "Tools/Lua Script...",           "menu.tools.lua" },
-        { "Tools/AI Chat...",              "menu.tools.aichat" },
-        { "Tools/Refresh",          "menu.tools.refresh" },
+        { "View/AI Chat",                 "menu.view.aichat" },
 
         { "Settings",                      "menu.settings" },
         { "Settings/Options...",  "menu.settings.options" },
@@ -142,6 +139,7 @@ void MainWindow::buildMenuKeys() {
 
         { "Help",                          "menu.help" },
         { "Help/Check for Updates",   "menu.help.checkupdates" },
+        { "Help/User Guide",        "menu.help.userguide" },
         { "Help/About",              "menu.help.about" },
     };
     m_menuKeys.clear();
@@ -265,6 +263,10 @@ void MainWindow::applyTooltipTheme(const ThemeColors &tc, int uiFontSize) {
 void MainWindow::applyThemeColors() {
     m_theme.load(*m_cfg);   // re-read theme.name + any ini overrides
     theme_updateBorderColour(m_theme.colors());
+
+    // m025: in-process tool windows own DialogBase-managed palettes;
+    // retheme() re-reads settings.ini (freshly saved above) and repaints.
+    if (m_aiChat)  m_aiChat->applyTheme();
 
     // Window root / chrome
     // background1, not background2: this colour shows through wherever no child
@@ -899,6 +901,9 @@ void MainWindow::saveSettings() {
     }
 #endif
     m_cfg->setToolSize("main", persistW, persistH);
+    // m025: in-process tool windows persist their own sizes too (the old
+    // standalone processes did this at Fl::run() exit; the windows live as
+    // long as the main window does, so the close path is here).
     m_cfg->setWindowPos(persistX, persistY);
     m_cfg->setWindowMax(persistMax);
     // NOTE: Font size is intentionally NOT persisted here. The zoom level

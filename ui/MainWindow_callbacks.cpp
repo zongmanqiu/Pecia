@@ -7,10 +7,11 @@
 
 #include "core/I18n.h"
 #include "core/Config.h"
+#include "core/ShortcutCore.h"
+#include "core/PathUtils.h"   // exeDir (cbUserGuide)
+#include "core/ShortcutCore.h"   // shortcutCore_resetDialogOkCache
 #include "core/EncodingCore.h"   // wideToUtf8（时间/日期插入用）
 #include "AIChat/AiChatLog.h"     // 文件即状态的对话日志（与 AI 窗口共用）
-#include "LuaTool/LuaPipeServer.h"
-#include "PipeProtocol.h"
 
 #include "editor/Document.h"
 #include "editor/Editor.h"
@@ -297,67 +298,75 @@ void MainWindow::cbSelectAll(Fl_Widget * /*w*/, void *data) {
 // "18:53 2026/10/5"、英文系统出 "6:53 PM 10/5/2026"，16 个语言版本都不用
 // 维护格式表，也和记事本的行为保持一致。
 void MainWindow::cbTimeDate(Fl_Widget * /*w*/, void *data) {
-    MainWindow *self = static_cast<MainWindow *>(data);
-    if (!self) return;
-    Tab *t = self->activeTab();
-    // 与 cbDelete 一致：不可编辑（只读文件 / 仅预览编辑锁）不写入。
-    if (!t || !t->doc || !t->editor || !t->doc->isEditable()) return;
+    // FLTK 回调边界：异常不能逃出事件循环（AGENTS.md 一.6 / 开发指南十.2）。
+    try {
+        MainWindow *self = static_cast<MainWindow *>(data);
+        if (!self) return;
+        Tab *t = self->activeTab();
+        // 与 cbDelete 一致：不可编辑（只读文件 / 仅预览编辑锁）不写入。
+        if (!t || !t->doc || !t->editor || !t->doc->isEditable()) return;
 
-    SYSTEMTIME st;
-    GetLocalTime(&st);
+        SYSTEMTIME st;
+        GetLocalTime(&st);
 
-    wchar_t timeBuf[64] = {0};
-    wchar_t dateBuf[64] = {0};
-    // TIME_NOSECONDS：记事本只到分钟，秒对"插入时间戳"没有意义。
-    GetTimeFormatEx(LOCALE_NAME_USER_DEFAULT, TIME_NOSECONDS, &st,
-                    nullptr, timeBuf, (int)std::size(timeBuf));
-    GetDateFormatEx(LOCALE_NAME_USER_DEFAULT, DATE_SHORTDATE, &st,
-                    nullptr, dateBuf, (int)std::size(dateBuf), nullptr);
+        wchar_t timeBuf[64] = {0};
+        wchar_t dateBuf[64] = {0};
+        // TIME_NOSECONDS：记事本只到分钟，秒对"插入时间戳"没有意义。
+        GetTimeFormatEx(LOCALE_NAME_USER_DEFAULT, TIME_NOSECONDS, &st,
+                        nullptr, timeBuf, (int)std::size(timeBuf));
+        GetDateFormatEx(LOCALE_NAME_USER_DEFAULT, DATE_SHORTDATE, &st,
+                        nullptr, dateBuf, (int)std::size(dateBuf), nullptr);
 
-    // 时区/区域名可能带 Unicode，先转 UTF-8 再交给 buffer（内部统一 UTF-8）。
-    // 注意 wideToUtf8() 对 len<=0 直接返回 out=nullptr，所以必须传真实长度，
-    // 不能图省事传 -1。
-    char *timeUtf8 = nullptr;
-    char *dateUtf8 = nullptr;
-    int timeLen = 0;
-    int dateLen = 0;
-    const int timeWLen = (int)wcslen(timeBuf);
-    const int dateWLen = (int)wcslen(dateBuf);
-    if (timeWLen == 0) return;
-    if (!wideToUtf8(timeBuf, timeWLen, &timeUtf8, &timeLen) || !timeUtf8) return;
-    std::string stamp(timeUtf8);
-    free(timeUtf8);
-    if (dateWLen > 0 &&
-        wideToUtf8(dateBuf, dateWLen, &dateUtf8, &dateLen) && dateUtf8) {
-        stamp += ' ';
-        stamp += dateUtf8;
-        free(dateUtf8);
+        // 时区/区域名可能带 Unicode，先转 UTF-8 再交给 buffer（内部统一 UTF-8）。
+        // 注意 wideToUtf8() 对 len<=0 直接返回 out=nullptr，所以必须传真实长度，
+        // 不能图省事传 -1。
+        char *timeUtf8 = nullptr;
+        char *dateUtf8 = nullptr;
+        int timeLen = 0;
+        int dateLen = 0;
+        const int timeWLen = (int)wcslen(timeBuf);
+        const int dateWLen = (int)wcslen(dateBuf);
+        if (timeWLen == 0) return;
+        if (!wideToUtf8(timeBuf, timeWLen, &timeUtf8, &timeLen) || !timeUtf8) return;
+        std::string stamp(timeUtf8);
+        delete[] timeUtf8;   // wideToUtf8() 用 new[] 分配，必须配对 delete[]
+        if (dateWLen > 0 &&
+            wideToUtf8(dateBuf, dateWLen, &dateUtf8, &dateLen) && dateUtf8) {
+            stamp += ' ';
+            stamp += dateUtf8;
+            delete[] dateUtf8;   // 同上
+        }
+        if (stamp.empty()) return;
+
+        Fl_Text_Buffer *buf = t->doc->buffer();
+        int start = 0;
+        int end = 0;
+        if (buf->selection_position(&start, &end)) {
+            buf->replace(start, end, stamp.c_str());
+            end = start + (int)stamp.size();
+        } else {
+            start = t->editor->insert_position();
+            buf->insert(start, stamp.c_str());
+            end = start + (int)stamp.size();
+        }
+        // 光标移到插入内容之后，并清掉选区（否则下一次 F5 会把刚插入的内容又替掉）。
+        buf->unselect();
+        t->editor->insert_position(end);
+        t->editor->show_insert_position();
+        t->editor->redraw();
+    } catch (...) {
+        opLog("cbTimeDate: unknown exception");
     }
-    if (stamp.empty()) return;
-
-    Fl_Text_Buffer *buf = t->doc->buffer();
-    int start = 0;
-    int end = 0;
-    if (buf->selection_position(&start, &end)) {
-        buf->replace(start, end, stamp.c_str());
-        end = start + (int)stamp.size();
-    } else {
-        start = t->editor->insert_position();
-        buf->insert(start, stamp.c_str());
-        end = start + (int)stamp.size();
-    }
-    // 光标移到插入内容之后，并清掉选区（否则下一次 F5 会把刚插入的内容又替掉）。
-    buf->unselect();
-    t->editor->insert_position(end);
-    t->editor->show_insert_position();
-    t->editor->redraw();
 }
 
 // 取选中文本（trim 后返回）；无选中返回空
 static std::string selected_trimmed(Fl_Text_Buffer *buf)
 {
-    if (!buf || !buf->selection_text()) return {};
+    if (!buf) return {};
+    // selection_text() 每次调用都会 malloc 一块；只调一次并复用结果，
+    // 否则第一次判空拿到的那块永远没人释放。
     char *raw = buf->selection_text();
+    if (!raw) return {};
     std::string s = raw;
     ::free((void *)raw);   // selection_text() returns malloc'd memory
     size_t b = s.find_first_not_of(" \t\r\n");
@@ -445,50 +454,9 @@ bool MainWindow::sendToAiChat(const std::string &text, std::string *errMsg) {
     fclose(f);
     opLog("sendtoai: appended to chat log");
 
-    // AI 窗口通过 lua 管道连回主进程：先确保 server 存在。
-    if (!m_luaPipe) m_luaPipe = new LuaPipeServer(this);
-    // AI 窗口必须正在运行（未运行则启动，带管道名参数才能连回主进程）。
-    ensureAiChatRunning();
-    return true;
-}
-
-bool MainWindow::ensureAiChatRunning() {
-    // ★ 不能只查一次互斥量：AI 窗口关闭 = 进程退出，但内核回收互斥量晚于
-    //   窗口销毁。用户"刚关窗就发送"时，单次查询误判"已在运行"，既不重启
-    //   也不激活，推送进队列后无人接收 —— 界面上就是"点了没反应"
-    //   （2026-10-31 用户实测）。与 launchTool 同一套轮询：激活得到窗口 =
-    //   真在运行；激活不到 = 退出路上，等互斥量释放后走正常启动。
-    for (int i = 0; i < 20; ++i) {
-        HANDLE hMutex = CreateMutexA(nullptr, FALSE, MUTEX_AI_CHAT);
-        bool already = (GetLastError() == ERROR_ALREADY_EXISTS);
-        CloseHandle(hMutex);
-        if (!already) break;
-        if (activateByTitle(I18n::get("chat.title"))) return true;
-        Sleep(100);
-    }
-
-    // 启动 PeciaAIChat.exe（与当前 exe 同目录），带 lua 管道名与语言参数。
-    // 宽字符路径：中文安装目录下 GetModuleFileNameA/CreateProcessA 失效。
-    wchar_t exePathW[MAX_PATH];
-    GetModuleFileNameW(nullptr, exePathW, MAX_PATH);
-    wchar_t *slashW = wcsrchr(exePathW, L'\\');
-    if (!slashW) return false;
-    wcscpy_s(slashW + 1, MAX_PATH - (slashW + 1 - exePathW), L"PeciaAIChat.exe");
-    if (GetFileAttributesW(exePathW) == INVALID_FILE_ATTRIBUTES) return false;
-
-    char langCode[16];
-    m_cfg->getLang(langCode, sizeof(langCode), "en");
-    std::wstring cmd = std::wstring(L"\"") + exePathW + L"\" \"" +
-                       widen(m_luaPipe->pipeName()) + L"\" " + widen(langCode);
-
-    STARTUPINFOW si = { sizeof(si) };
-    PROCESS_INFORMATION pi = {};
-    if (!CreateProcessW(exePathW, &cmd[0], nullptr, nullptr, FALSE, 0,
-                        nullptr, nullptr, &si, &pi)) {
-        return false;
-    }
-    CloseHandle(pi.hThread);
-    CloseHandle(pi.hProcess);
+    // m025: the AI window is in-process; opening it lets its log poller
+    // pick the appended turn up immediately.
+    showAIChat();
     return true;
 }
 
@@ -575,6 +543,9 @@ void MainWindow::refreshAll() {
     // 1. Re-read settings.ini for any external changes (e.g. another
     //    Pecia process changed theme/language, or the user hand-edited it).
     m_cfg->reloadFromDisk();
+    // The dialog-OK combo is cached process-wide in ShortcutCore; a changed
+    // shortcut would otherwise only take effect after a restart.
+    shortcutCore_resetDialogOkCache();
 
     // 2. Re-scan script/ folder and rebuild the script toolbar buttons.
     rebuildScriptBar();
@@ -764,6 +735,55 @@ void MainWindow::cbAbout(Fl_Widget * /*w*/, void *data) {
 // Everything network-related (check, download, hash verify, hand-off to the
 // updater script) lives behind that window, so this callback stays a one-liner
 // and the old "verdict dialog + second progress window" pair is gone.
+// Help > User Guide: open the offline HTML handbook shipped next to the exe.
+// The handbook ships per language (docs/使用说明.zh-CN.html, docs/使用说明.en.html,
+// r042 item 5): the current UI language picks the file - Chinese UIs read the
+// zh-CN edition, everything else falls back to the English one, and a missing
+// localized file falls back to English too (never to "file not found" when an
+// English copy is present). Missing file reports itself instead of the menu
+// click dying silently.
+static bool guideFileExists(const std::string &utf8Path)
+{
+    int wn = MultiByteToWideChar(CP_UTF8, 0, utf8Path.c_str(), -1, nullptr, 0);
+    if (wn <= 0) return false;
+    std::wstring wpath(wn, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8Path.c_str(), -1, &wpath[0], wn);
+    return GetFileAttributesW(wpath.c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
+static bool shellOpenFile(const std::wstring &wpath)
+{
+    HINSTANCE r = ShellExecuteW(nullptr, L"open", wpath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if ((INT_PTR)r > 32) return true;
+    uiBridge()->message("Pecia",
+                        "no program is associated with .html files on this system", "OK");
+    return false;
+}
+
+void MainWindow::cbUserGuide(Fl_Widget * /*w*/, void * /*data*/)
+{
+    const std::string dir = pathutil::exeDir();
+    // zh-CN and zh-TW both read the simplified-Chinese edition; every other
+    // language gets English.
+    std::string code = I18n::currentCode();
+    std::string preferred =
+        (code.rfind("zh", 0) == 0) ? "\\docs\\\u4f7f\u7528\u8bf4\u660e.zh-CN.html"
+                                   : "\\docs\\\u4f7f\u7528\u8bf4\u660e.en.html";
+    std::string english = "\\docs\\\u4f7f\u7528\u8bf4\u660e.en.html";
+    std::string target = guideFileExists(dir + preferred) ? dir + preferred
+                        : guideFileExists(dir + english)  ? dir + english
+                                                          : std::string();
+    if (target.empty()) {
+        uiBridge()->message("Pecia",
+                            "docs/使用说明.html not found; the release package should contain the docs folder.", "OK");
+        return;
+    }
+    int wn = MultiByteToWideChar(CP_UTF8, 0, target.c_str(), -1, nullptr, 0);
+    std::wstring wpath(wn, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, target.c_str(), -1, &wpath[0], wn);
+    shellOpenFile(wpath);
+}
+
 void MainWindow::cbCheckUpdates(Fl_Widget * /*w*/, void *data) {
     MainWindow *self = static_cast<MainWindow *>(data);
     if (!self) return;
@@ -792,7 +812,7 @@ void MainWindow::cbShortcuts(Fl_Widget * /*w*/, void *data) {
     self->rebuildScriptBar();
 }
 
-// 工具窗口（独立进程）——通过 Tools 菜单触发（cbAIChat/cbLuaScript）。
+// AI 对话窗（同进程）——通过 Tools 菜单触发（cbAIChat）。
 
 void MainWindow::cbModify(int pos, int nInserted, int nDeleted,
                           int nRestyled, const char *deletedText,
@@ -888,7 +908,7 @@ void MainWindow::cbWindowClose(Fl_Widget * /*w*/, void *data) {
         if (r == 0) {
             if (!self->doSave(i)) return;          // Save failed/cancelled
         }
-        // r == 2 -> Don't Save, continue
+        // r == 1 -> Don't Save, continue（按钮顺序：Save=0 / Don't Save=1 / Cancel=2）
     }
     Fl::hide_all_windows();
 }

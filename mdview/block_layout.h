@@ -95,8 +95,8 @@ public:
     // Number of blocks whose layout FAILED (parse error or exception).
     // A failed block has no document, so the draw path skips it and the
     // panel shows the background with nothing on it. Counted over the whole
-    // table, not just the visible window: a block that failed stays failed
-    // (it is not retried), so the count only grows.
+    // table, not just the visible window: a block stays failed until the
+    // next width change (set_width clears the flag so the block is retried).
     size_t failed_count() const;
     double px_per_kb() const { return m_pxPerKb; }
 

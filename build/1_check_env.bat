@@ -39,7 +39,7 @@ REM ---- cmake ----------------------------------------------------------------
 where cmake >nul 2>&1
 if !ERRORLEVEL! neq 0 (
     echo   [ERROR] wei zhao dao cmake
-    echo           qing an zhuang CMake 3.20+ bing jia ru PATH
+    echo           qing an zhuang CMake 3.16+ bing jia ru PATH
     set "ENV_FAIL=1"
 ) else (
     for /f "delims=" %%v in ('cmake --version 2^>nul') do (

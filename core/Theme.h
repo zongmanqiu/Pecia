@@ -1,6 +1,6 @@
 // Theme.h - Semantic color and style management (8-key palette).
 //
-// Theme colors live in per-theme files under exeDir/theme/<name>.txt (like
+// Theme colors live in per-theme files under exeDir/theme/<name>.ini (like
 // language files under exeDir/lang/). settings.ini only records the chosen
 // theme via `theme.name`; the palette itself comes from the theme file. The
 // built-in light defaults below are only a fallback when a theme file is
@@ -12,8 +12,8 @@
 //   background1  main work area background (editor, input fields, dialogs)
 //   background2  secondary frame background (title/status bar, scrollbar thumb)
 //   background3  transition background (menu bar, line#, find/go-to bars)
-//   highlight1   selection / hover / active (primary accent)
-//   highlight2   current line + pressed state
+//   highlight1   hover / current line / active tab / selected button (primary accent)
+//   highlight2   text selection + pressed state + menu check fill
 //   highlight3   special semantics (close hover, search hits, links, conflicts)
 #pragma once
 
@@ -41,7 +41,7 @@ struct ThemeColors {
     Fl_Color background1  = fl_rgb_color(255, 255, 255);  // work area (editor/inputs)
     Fl_Color background2  = fl_rgb_color(225, 225, 225);  // frame (title/status bar, scrollbar thumb)
     Fl_Color background3  = fl_rgb_color(240, 240, 240);  // transition (menu/line#/find-bar track)
-    Fl_Color highlight1   = fl_rgb_color(230, 255, 230);  // hover/current line/tab active/selected
+    Fl_Color highlight1   = fl_rgb_color(230, 255, 230);  // hover/current line/tab active/button selected
     Fl_Color highlight2   = fl_rgb_color(150, 255, 200);  // selection/pressed/menu check
     Fl_Color highlight3   = fl_rgb_color(255, 100, 100);  // search hit/link/close hover/conflict
 
@@ -65,9 +65,10 @@ struct ThemeColors {
     }
 
     // Derived colors (not theme keys; computed on demand).
-    // Selection text: pick contrast against the selection background.
+    // Selection text: pick contrast against the actual text-selection
+    // background (highlight2, per theme/README.txt), not highlight1.
     Fl_Color selectionText() const {
-        return theme_contrast_text(highlight1);
+        return theme_contrast_text(highlight2);
     }
     // Border/divider: a softened text1 so a 1px rule reads as a divider,
     // not a hard outline (text1 blended toward the background).
@@ -101,7 +102,8 @@ void theme_registerBorderBox();
 
 // Update the global border colour from the current theme palette.
 inline void theme_updateBorderColour(const ThemeColors &tc) {
-    g_borderColour = tc.text1;
+    g_borderColour = tc.borderLine();   // softened text1, matching the
+                                        // startup default and the comment above
 }
 
 class Theme {
@@ -116,7 +118,7 @@ public:
     std::string displayName(const char *lang = nullptr) const;
 
     // Load from Config: reads theme.name, then reads the matching
-    // exeDir/theme/<name>.txt palette. On a missing/corrupt file, falls
+    // exeDir/theme/<name>.ini palette. On a missing/corrupt file, falls
     // back to the built-in light defaults so the window still opens.
     void load(const Config &cfg);
 
@@ -128,8 +130,10 @@ public:
     // color values (they stay in the theme file).
     void setPreset(const char *name, Config &cfg);
 
-    // Scan theme/ directory and return all .ini file stems (excluding
-    // light/dark which are built-in). Used to populate the Theme menu.
+    // Scan theme/ directory and return all .ini file stems, excluding only
+    // the built-in `light`. `dark.ini` is a shipped extra theme and IS listed
+    // (matching the code in Theme.cpp and theme/README.txt). Used to populate
+    // the Theme menu.
     static std::vector<std::string> scanExtraThemes();
 
 private:

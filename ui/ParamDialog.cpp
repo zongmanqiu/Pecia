@@ -133,7 +133,12 @@ ParamDialog::ParamDialog(const char *title,
                 if (prm.choices[k] == prm.defValue) defIdx = (int)k;
             }
             ch->value(defIdx);
-            ch->callback(cbKey, this);   // Enter acts like OK
+            // Fl_Choice ignores Enter entirely (it only reacts to Space and
+            // clicks); its callback would fire on a mouse selection. Keep
+            // it inert here and route Enter from ParamDialog::handle to
+            // cbKey, which treats the last dropdown like the last input.
+            ch->when(FL_NO_EVENT);
+            ch->callback(cbKey, this);
             m_choices.push_back(ch);
             m_params.push_back(prm);
         } else {
@@ -179,6 +184,9 @@ ParamDialog::ParamDialog(const char *title,
     btnBar->end();
     end();
     finalizeShell();
+    // m025: a parameter dialog is shown ON A SCRIPT'S BEHALF, so it is part
+    // of the surface an external agent must be able to see and drive.
+    enableInspection("param");
 
     // Focus the first input, select its default text for easy overwrite.
     if (!m_inputs.empty()) {
@@ -197,7 +205,16 @@ int ParamDialog::handle(int event) {
     // OK shortcut (Window > Button > OK). Checked on FL_KEYDOWN so it
     // wins over the input fields' Enter handling.
     if (event == FL_KEYDOWN) {
-        if (dialogOkShortcutMatches(Fl::event_key(), Fl::event_state())) {
+        int key = Fl::event_key();
+        // Enter on the last dropdown submits like Enter in the last input.
+        // Fl_Choice does not consume Enter, so the key reaches the dialog;
+        // send it through cbKey so both field kinds share one submit path.
+        if ((key == FL_Enter || key == FL_KP_Enter) &&
+            !m_choices.empty() && Fl::focus() == m_choices.back()) {
+            cbKey(m_choices.back(), this);
+            return 1;
+        }
+        if (dialogOkShortcutMatches(key, Fl::event_state())) {
             cbBtn(m_ok, this);
             return 1;
         }
@@ -264,11 +281,12 @@ void ParamDialog::cbBtn(Fl_Widget *w, void *data) {
 }
 
 void ParamDialog::cbKey(Fl_Widget *w, void *data) {
-    // Enter in an input field acts like OK. Guard: m_inputs may be empty
-    // (pure checkbox/choice dialog) - nothing to submit via Enter, and
-    // .back() on an empty vector is undefined behavior.
+    // Enter in the LAST field acts like OK. Both vectors may be empty
+    // (pure checkbox dialog), so guard .back() before comparing.
     auto *self = static_cast<ParamDialog *>(data);
-    if (self->m_inputs.empty()) return;
-    if (w == self->m_inputs.back()) collectAndOk(self);
+    const bool lastInput = !self->m_inputs.empty() && w == self->m_inputs.back();
+    const bool lastChoice = !self->m_choices.empty() && w == self->m_choices.back();
+    if (!lastInput && !lastChoice) return;
+    collectAndOk(self);
 }
 

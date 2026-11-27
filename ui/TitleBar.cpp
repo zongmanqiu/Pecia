@@ -160,8 +160,10 @@ void TitleBar::drawTabs() {
         fl_draw(label, cx + 4, y(), labelW, h(), FL_ALIGN_LEFT | FL_ALIGN_CLIP);
         fl_pop_clip();
 
-        // Close button on tab
-        {
+        // Close button on tab. A tab squeezed below 17px has no room for the
+        // glyph (cx+tw-17 would land in the previous tab) - skip it, matching
+        // hitTest so the painted and clickable regions never drift apart.
+        if (tw >= 17) {
             int closeSz = 14;
             int closeX = cx + tw - closeSz - 3;
             int closeY = y() + (h() - closeSz) / 2;
@@ -216,7 +218,9 @@ int TitleBar::enabledButtonsTotalW() const {
 }
 
 int TitleBar::hitTest(int mx, int my) const {
-    if (my < y() || my > y() + h()) return BTN_NONE;
+    // y()+h() is one past the last owned row (FLTK widget spans
+    // y()..y()+h()-1); with `>` a click 1px below the bar still hit.
+    if (my < y() || my >= y() + h()) return BTN_NONE;
     int lx = x() + w();
     for (int b = BTN_COUNT - 1; b >= 0; --b) {
         Btn btn = (Btn)b;
@@ -252,9 +256,13 @@ int TitleBar::hitTest(int mx, int my) const {
             if (cx + tw > tabAreaX + availW) tw = tabAreaX + availW - cx;
             if (tw < 0) break;
 
-            if (mx >= cx + tw - 17 && mx < cx + tw)
+            // Compressed tabs: clamp the close hot zone to this tab so it
+            // cannot reach left into the previous one; below 17px there is
+            // no close zone at all (matches drawTabs).
+            const int closeStart = (std::max)(cx, cx + tw - 17);
+            if (tw >= 17 && mx >= closeStart && mx < cx + tw)
                 return HIT_CLOSE_BASE + i;
-            if (mx >= cx && mx < cx + tw - 17)
+            if (mx >= cx && mx < closeStart)
                 return HIT_TAB_BASE + i;
 
             cx += tw;

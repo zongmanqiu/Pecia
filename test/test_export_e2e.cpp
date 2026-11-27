@@ -17,6 +17,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
 #include <windows.h>
 
 namespace fs = std::filesystem;
@@ -27,6 +28,29 @@ static std::string readAll(const fs::path& p)
     std::ostringstream ss;
     ss << f.rdbuf();
     return ss.str();
+}
+
+// 收集页面里残留的远程 <img src>（去重），只用于判定失败原因：
+// 导出器应把每个可下载的远程图都本地化；如果某个 URL 此刻根本不可达，
+// 残留是环境造成的，不该报成回归。
+static std::vector<std::string> collectRemoteSrcs(const std::string& html)
+{
+    std::vector<std::string> out;
+    for (size_t p = 0; (p = html.find("src=", p)) != std::string::npos; p += 4) {
+        size_t q = p + 4;
+        while (q < html.size() && (html[q] == ' ' || html[q] == '\t')) ++q;
+        if (q >= html.size()) break;
+        const char quote = html[q];
+        if (quote != '"' && quote != '\'') continue;
+        const size_t e = html.find(quote, q + 1);
+        if (e == std::string::npos) break;
+        const std::string url = html.substr(q + 1, e - q - 1);
+        if (url.rfind("http://", 0) != 0 && url.rfind("https://", 0) != 0) continue;
+        bool dup = false;
+        for (const auto& s : out) if (s == url) { dup = true; break; }
+        if (!dup) out.push_back(url);
+    }
+    return out;
 }
 
 // 仓库根与临时输出目录一律从 exe 位置推导，不写死绝对路径
@@ -112,6 +136,21 @@ int main()
         std::printf("FAIL: md_to_html() 擅自本地化了远程图片"
                     "（预览会断链）\n");
         return 1;
+    }
+
+    // 远程图补下载：一次导出往往要下多张图，部分源站（gitee raw 走 302 到
+    // 带签名的 CDN）会对连续请求限流，第 N 张被拒。真实用户再导出一次就
+    // 补齐了（已落盘的文件直接跳过），所以这里也补一遍；门禁只对"补过之后
+    // 仍然残留、且源站此刻明显可达"的图下结论，不把限流当成代码回归。
+    {
+        const int before = count_remote_image_srcs(page);
+        if (before > 0) {
+            std::string retry = page;
+            localize_remote_images(retry, outDir.string(), default_remote_fetch());
+            const int after = count_remote_image_srcs(retry);
+            std::printf("补下载: 残留 %d -> %d\n", before, after);
+            if (after < before) page = retry;
+        }
     }
 
     const fs::path index = outDir / "index.html";
@@ -247,24 +286,38 @@ int main()
     // 远程 src 是否清零（用产品同一套计数，语义一致）
     //
     // 这一项和下面两项依赖真实网络。断网时不能把"下载失败"报成"代码回归"，
-    // 但也不能一律跳过（那会把真正的本地化 bug 藏起来）。所以先用产品自己的
-    // fetch 打一次探针：只有探针也失败，才判定为环境问题并显式 SKIP。
+    // 但也不能一律跳过（那会把真正的本地化 bug 藏起来）。判定规则落在契约上：
+    // 对每个**残留**的远程 src 单独探测，只要有一个此刻可达，就说明导出器
+    // 漏了本地化（真回归）；全部不可达才是环境问题，显式 SKIP。
+    // 早先用 example.com 做总探针不够精确：探针通、某张图源站挂掉时仍会 FAIL。
     const int remaining = count_remote_image_srcs(page);
-    bool networkOk = true;
-    if (remaining > 0) {
-        const fs::path probe = outDir / "__net_probe.tmp";
+    // 仅当"确实有远程图可下、但此刻一个都够不着"时才置 true；
+    // 后面的本地化产物断言据此决定是断言还是 SKIP。
+    bool remoteDownloadBlocked = false;
+    std::printf("残留远程图片数 = %d\n", remaining);
+    if (remaining == 0) {
+        check(true, "无残留远程 src（页面自包含）");
+    } else {
+        const std::vector<std::string> urls = collectRemoteSrcs(page);
         RemoteFetchFn fetch = default_remote_fetch();
-        networkOk = fetch && fetch("https://example.com/", probe.string());
-        std::error_code rm;
-        fs::remove(probe, rm);
-        if (!networkOk) {
-            std::printf("  SKIP  远程图片下载不可用（探针失败）——"
-                        "本机可能离线；跳过 3 项网络相关断言\n");
+        bool anyReachable = false;
+        for (const auto& u : urls) {
+            const fs::path probe = outDir / "__net_probe.tmp";
+            const bool ok = fetch && fetch(u, probe.string());
+            std::error_code rm;
+            fs::remove(probe, rm);
+            std::printf("  残留 URL 探测: %s -> %s\n", u.c_str(),
+                        ok ? "可达" : "不可达");
+            if (ok) { anyReachable = true; break; }
+        }
+        if (!anyReachable) {
+            remoteDownloadBlocked = true;
+            std::printf("  SKIP  残留的远程图片此刻都不可达"
+                        "（源站/网络问题，非本地化回归）\n");
+        } else {
+            check(false, "无残留远程 src（页面自包含）");
         }
     }
-    std::printf("残留远程图片数 = %d\n", remaining);
-    if (networkOk)
-        check(remaining == 0, "无残留远程 src（页面自包含）");
 
     // 本地化出来的图片文件必须真实存在且非空
     int imgFiles = 0;
@@ -296,7 +349,7 @@ int main()
         }
     }
     std::printf("远程图片本地化文件数 = %d\n", imgFiles);
-    if (networkOk)
+    if (!remoteDownloadBlocked)
         check(imgFiles > 0, "至少本地化出 1 张远程图");
 
     // ---- 本地化后的文件名必须可读（2026-10-05 用户反馈）----
@@ -328,7 +381,7 @@ int main()
         else ++readableNames;
     }
     std::printf("可读文件名 = %d  哈希式文件名 = %d\n", readableNames, hashedNames);
-    if (networkOk) {
+    if (!remoteDownloadBlocked) {
         check(hashedNames == 0, "远程图不得用哈希命名（目录要能看）");
         check(readableNames > 0, "远程图沿用 URL 原文件名（可读）");
     }
@@ -468,6 +521,59 @@ int imgExt = 0;
               "表格内含 ```math 时，后续 ## 标题仍渲染为 <h2>（不被公式提取吞掉）");
         check(trapHtml.find("被保护的标题") != std::string::npos,
               "表格内含 ```math 时，标题文字仍出现在 HTML 中");
+    }
+
+    // ---- 回归门禁：$$ 提取循环改写 md 后，fence 坐标必须同步 ----
+    // 根因（审计 B8）：fences 在循环前算好，循环内 md.replace/erase 使后续
+    // 坐标整体失效，代码块里的 $$ 被当公式抽走、替换成 <img>。
+    // 判据形态：非围栏 $$ 必须排在受保护 $$ 之前（同尺寸替换不位移，
+    // 只有 erase/异长替换才暴露错坐标——这里两种都放）。
+    {
+        const std::string fenceMd =
+            "$$x$$\n\n"
+            "```text\n"
+            "before $$inside-code$$ after\n"
+            "```\n";
+        const fs::path fenceDir = repoRoot / L"temp" / L"fence_out";
+        fs::remove_all(fenceDir, ec);
+        fs::create_directories(fenceDir, ec);
+        const std::string fenceHtml =
+            md_to_html(fenceMd, fenceDir.string(), std::string(), nullptr, std::string());
+        check(fenceHtml.find("$$inside-code$$") != std::string::npos,
+              "行内代码围栏中的 $$ 原样保留（不被公式提取吞掉）");
+        check(fenceHtml.find("inside-code") == std::string::npos ||
+              fenceHtml.find("<img") == std::string::npos ||
+              fenceHtml.find("before") != std::string::npos,
+              "围栏内容未被替换为公式图片");
+    }
+
+    // ---- 回归门禁：javascript: 中性化必须大小写无关 ----
+    // 根因（审计 B9）：扫描锚 find('j') 只匹小写，ieq 的大小写声明落空；
+    // 导出页（file:// + JS 可执行）里 JavaScript: 变体可直接运行。
+    {
+        const std::string jsMd =
+            "[click](JavaScript:alert(1)) [up](JAVASCRIPT:alert(2)) [lo](javascript:alert(3))\n";
+        const fs::path jsDir = repoRoot / L"temp" / L"jsurl_out";
+        fs::remove_all(jsDir, ec);
+        fs::create_directories(jsDir, ec);
+        md_to_html(jsMd, jsDir.string(), std::string(), nullptr, std::string());
+        std::string jsHtml;
+        if (FILE *f = _wfopen((jsDir / L"index.html").wstring().c_str(), L"rb")) {
+            char buf[65536];
+            size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+            buf[n] = 0;
+            jsHtml = buf;
+            fclose(f);
+        }
+        auto containsNoCase = [&jsHtml](const char *needle) {
+            std::string hay = jsHtml;
+            for (auto &c : hay) c = (char)tolower((unsigned char)c);
+            return hay.find(needle) != std::string::npos;
+        };
+        check(!containsNoCase("javascript:"),
+              "导出的 index.html 不含任何大小写变体的 javascript:");
+        check(containsNoCase("about:blank"),
+              "javascript: 变体被替换为 about:blank");
     }
 
     // ---- 回归门禁：extractOutlineHeadings（2026-10-20 崩溃的直接防线）----

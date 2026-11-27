@@ -34,7 +34,7 @@ build/         最终分发目录（项目根：Pecia.exe / lang/ / theme/ / scr
 
 | 工具 | 用途 | 备注 |
 |---|---|---|
-| **CMake**（≥3.20） | 配置并驱动 FLTK 与 Pecia 的编译 | 可用 VS 自带的 CMake 组件 |
+| **CMake**（≥3.16） | 配置并驱动 FLTK 与 Pecia 的编译 | 可用 VS 自带的 CMake 组件；与 `CMakeLists.txt` 的 `cmake_minimum_required(VERSION 3.16)` 一致 |
 | **Visual Studio 2022 / MSVC Build Tools** | C++ 编译器 `cl.exe`、链接器 `link.exe`、资源编译器 `rc.exe`、`nmake` | **无需** Developer Command Prompt——`msvc_env.bat` 用 `vswhere.exe` 自动探测 MSVC 与 Windows SDK 并设好 `PATH`/`INCLUDE`/`LIB`，普通 cmd 双击即可 |
 | **Rust 工具链**（cargo，`stable-x86_64-pc-windows-msvc`） | 编译两个 Rust FFI 静态库 | `rustup` 安装，目标需为 MSVC |
 | ~~Git~~ | **不需要** | 下载只用 `curl`+`tar`，脚本不做任何 git 检查 |
@@ -113,7 +113,7 @@ build/         最终分发目录（项目根：Pecia.exe / lang/ / theme/ / scr
 | ② | **`2_download.bat`** | 下载 + 解压 6 个 C/C++ 第三方库到 `.thirdparty/` | 首次搭建、或新增依赖库后 |
 | ③ | **`3_patch.bat`** | 把 `main/patches/` 应用到 `.thirdparty/`（单向） | 改了补丁、想单独同步 |
 | ④ | **`4_build_rust.bat`** | `cargo fetch` 拉取 Rust 依赖 → `cargo build --release` 编出 `mermaid_ffi.lib` / `ratex_ffi.lib` | 改了 FFI 壳、或 Rust 依赖有变动时 |
-| ⑤ | **`5_build_pecia.bat`** | 编 FLTK → CMake 配置 + 编译 Pecia 三件套 → `ctest` 跑 27 个测试（**测试不过 = 构建失败**） | 日常改代码后重编 |
+| ⑤ | **`5_build_pecia.bat`** | 编 FLTK → CMake 配置 + 编译 Pecia → `ctest` 跑全部测试（**测试不过 = 构建失败**） | 日常改代码后重编 |
 | ★ | **`full.bat`** | **总入口**：①→②→③→④→⑤ 全自动（① 为只读工具链体检，不下载不编译） | 只想双击一次完成全部工作 |
 
 关于 `full.bat` 的两个开关（它默认已打开）：
@@ -149,7 +149,7 @@ full.bat
 
 | 检查项 | 说明 |
 |---|---|
-| `cmake` | 版本 ≥3.20，打印实际版本号 |
+| `cmake` | 版本 ≥3.16（与 `CMakeLists.txt` 一致），打印实际版本号 |
 | `cargo` / `rustc -vV` | 必须存在，且 host 须含 `pc-windows-msvc`（GNU 工具链编不出可链接的 `.lib`） |
 | `cl.exe` / `nmake` | 走 `msvc_env.bat` 探测到的 MSVC 环境 |
 | `rc.exe` | 走 SDK bin（链接资源需要） |
@@ -232,7 +232,7 @@ FLTK 从旧源码重编、源码随后恢复，而 `5_build_pecia.bat` 看到"�
 6. `[7/7]` `ctest --output-on-failure` 运行全部单元测试。
    **这一步是门禁（GATE），不是报告**：任一测试失败 → 脚本 `exit /b 1`，
    `full.bat` 随即中止并报 `[ERROR] 5_build_pecia.bat shi bai`。
-   > 理由：`README.md` / `目录结构说明.md` / 本文档都把"14 tests green"
+   > 理由：`README.md` / `目录结构说明.md` / 本文档都把"全部测试全绿"
    > 当作可交付标准，所以测试红了就不该报"全部完成"。
    > 只想快速编一遍不看测试：设 `PECIA_SKIP_TESTS=1`（如
    > `set PECIA_SKIP_TESTS=1 && 5_build_pecia.bat`）。
@@ -271,14 +271,17 @@ FLTK 从旧源码重编、源码随后恢复，而 `5_build_pecia.bat` 看到"�
 
 ```
 build/
-├── Pecia.exe          主程序
-├── PeciaLua.exe       Lua 工具（独立进程，命名管道通信）
-├── PeciaAIChat.exe    AI 对话工具（独立进程）
-├── test_*.exe         ×25 单元测试可执行（含 test_docs 文档一致性门禁）
+├── Pecia.exe          主程序（AI 对话是同进程窗口，m025 起不再各自一个 exe；
+│                      Lua 无窗口，草稿在 script.last.txt，m037）
+├── test_*.exe         ×36 单元测试可执行（含 test_docs 文档一致性门禁）
 ├── lang/  theme/  script/  运行时资源（构建时从 main/ 复制）
 ├── LICENSE / THIRD-PARTY-NOTICES.md   （由 CMake 目标 pecia_copy_licenses 复制）
 └── licenses/          各直接链接库的许可证原文（自 .thirdparty/ 拷贝 ×7）
 ```
+
+- **历史残留（勿删）**：`main/build/pecia_ai.rc`、`main/build/pecia_lua.rc` 是旧
+  `PeciaAIChat.exe` / `PeciaLua.exe` 的资源脚本；CMakeLists 已无引用、**不再使用**，
+  仅为历史归档保留。
 
 许可证文件由 `main/CMakeLists.txt` 里的 `pecia_copy_licenses` 目标负责
 （`ALL` 目标，每次构建都跑，用 `copy_if_different` 保证幂等）：
@@ -287,7 +290,7 @@ build/
 （注意上游文件名不统一：FLTK 是 `COPYING`、Lua 的 MIT 声明在 `doc/readme.html`）。
 **因此 `build/` 目录本身即可直接分发**，与 `release/` 内容一致。
 
-- **质量门禁**：零警告（`/W4 /WX`）、27 个测试全绿、文档一致性（`test_docs`）通过。
+- **质量门禁**：零警告（`/W4 /WX`）、36 个测试全绿、文档一致性（`test_docs`）通过。
 - **分发打包**：本仓库不提供打包脚本，**手动**把上列内容（去掉 `test_*.exe`）
   复制到 `release/<版本>/` 并压成 `Pecia_x64_<版本>.zip`；命名规则见
   `docs/RELEASE_CHECKLIST.md` 第三节，写错会让自动更新 404。

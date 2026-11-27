@@ -26,8 +26,11 @@ if input == "" then
 end
 
 local crlf = input:find("\r\n") ~= nil
+local body = input:gsub("\r\n", "\n")
+local trailingNL = body:sub(-1) == "\n"
+if not trailingNL then body = body .. "\n" end
 local out = {}
-for line in (input:gsub("\r\n", "\n") .. "\n"):gmatch("(.-)\n") do
+for line in body:gmatch("(.-)\n") do
     local hashes = line:match("^[ \t]*(#+)")
     if hashes and #hashes == 1 then
         table.insert(out, line)          -- 已是标题1：保持
@@ -37,6 +40,7 @@ for line in (input:gsub("\r\n", "\n") .. "\n"):gmatch("(.-)\n") do
     end
 end
 local result = table.concat(out, "\n")
+if trailingNL then result = result .. "\n" end
 if crlf then result = result:gsub("\n", "\r\n") end
 
 return result

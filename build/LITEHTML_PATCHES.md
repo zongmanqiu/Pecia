@@ -214,8 +214,50 @@ STAGE parse_done          <- 解析成功
 - `m_box_index` 只在 `new_box()` 的内联分支里赋值；其余路径保持 -1，因此
   非内联元素的行为与上游**逐字一致**。
 - `shift_inline_box()` 越界直接返回，不抛异常、不改容器大小。
+- 索引路径只移动该 item 自己的那一个行内盒，**不再移动 `m_pos`**，也不再
+  移动同一元素在其他行上的盒子。影响面：`apply_vertical_align`
+  （`render_inline_context.cpp`，未打补丁）经 `line_box::y_shift` 命中内联
+  元素时，`vertical-align` 只平移当前行的盒，元素其他行的盒与 `m_pos`
+  不动——跨行内联元素的 vertical-align 行为与上游不同，属已知取舍。
 - 这两个新接口是新增虚函数，不改已有签名，升级上游时冲突面只有这 4 个文件。
 
 > 这 4 个文件 + 上面 `src/el_image.cpp` 共 5 个文件此前只躺在 `patches/` 里被
 > `3_patch.bat` 应用，本文档没有记录（2026-10-24 对照上游 `litehtml-0.10.tar.gz`
 > 逐文件 diff 时才发现）。已按实际差异补齐本节。
+
+## 相邻兄弟选择器 O(1) 回溯 — prev_sibling 链 (2026-10-31, 2026-11-25 补记)
+
+### 动机
+
+`A + B` 选择器原实现从父节点孩子列表**头部**线性扫到 B，一次匹配 O(N)；
+1 MB 文档（`body` 下约 2.3 万个子节点）单条 `body > * + *` 规则耗时 16 s，
+整体 O(N^2)。现让每个 element 记住前一个兄弟，匹配时从 B 往回走一步。
+
+### 改动清单
+
+| 文件 | 改动 |
+|---|---|
+| `include/litehtml/element.h` | 新增 `m_prev_sibling`（weak_ptr）+ `prev_sibling()` 读写口 |
+| `src/html_tag.cpp` | `appendChild()` 挂链；`removeChild()` 线性重建（删除远少于追加）；`find_adjacent_sibling()` 改为回溯链，链脏时（prev 为空但自己不是首孩子）先重建一次 |
+| `src/element.cpp` | `_add_before_after()` 两个分支挂链 |
+| `src/el_style.cpp` | 文本子节点追加分支挂链 |
+
+### 已知边界（诚实声明）
+
+- 链脏的另一形态——`prev_sibling` **非空但指错**——不会触发重建判据，只会
+  让本次 `A + B` 匹配按错误兄弟判定。当前所有 `m_children` 变更入口都已
+  挂链（上面四处），未观察到实际脏源；若未来新增直接改 `m_children` 的
+  代码路径，必须同时维护该链。
+- `clearRecursive()` 只断 parent 不清链：节点树随后整体析构，无观察者。
+
+### 不变量
+
+- 判定语义与上游一致：只看最近一个非 `display_inline_text` 兄弟，不匹配
+  即失败（不再向前继续）。
+- 升级上游时冲突面：`element.h`（此处 + css 共享）、`html_tag.cpp`（此处 +
+  分块渲染）、`element.cpp`（此处 + css 共享）、`el_style.cpp`、`el_image.cpp`。
+
+### 回归保护
+
+`test/test_nest_depth.cpp` / 预览渲染用例覆盖 `body > * + *` 样式生效；
+本链错误会表现为相邻段落间距样式整体丢失或错挂。

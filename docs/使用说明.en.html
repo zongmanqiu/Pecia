@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pecia User Guide</title>
+<style>
+  :root{
+    --bg:#ffffff; --panel:#f0f0f0; --soft:#f1efe8; --frame:#8c8c8c;
+    --text:#000000; --muted:#6b6b6b; --accent:#6a4fb4; --accent-soft:#efeafb;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:15px/1.75 "Segoe UI","Microsoft YaHei UI",sans-serif}
+  /* ---- fixed table of contents ---- */
+  #toc{position:fixed;left:0;top:0;bottom:0;width:236px;overflow-y:auto;
+       background:var(--panel);border-right:1px solid var(--frame);padding:24px 0}
+  #toc h1{font-size:17px;margin:0 20px 18px;letter-spacing:.5px}
+  #toc a{display:block;padding:7px 20px;color:var(--muted);text-decoration:none;
+         border-left:3px solid transparent;font-size:14px}
+  #toc a:hover{background:var(--accent-soft);color:var(--accent)}
+  #toc a.active{border-left-color:var(--accent);background:var(--accent-soft);
+                color:var(--accent);font-weight:600}
+  /* ---- body ---- */
+  main{margin-left:236px;padding:40px 56px 120px;max-width:1080px}
+  section{scroll-margin-top:24px;margin-bottom:56px}
+  h2{font-size:23px;margin:0 0 18px;padding-bottom:8px;border-bottom:2px solid var(--accent)}
+  h3{font-size:17px;margin:26px 0 10px}
+  p{margin:10px 0}
+  ul,ol{margin:10px 0;padding-left:24px}
+  li{margin:6px 0}
+  code{background:var(--soft);border:1px solid #e2e0d8;border-radius:3px;
+       padding:1px 5px;font-family:Consolas,"Courier New",monospace;font-size:13px}
+  a{color:var(--accent)}
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14px}
+  th,td{border:1px solid #d8d8d8;padding:9px 12px;text-align:left;vertical-align:top}
+  th{background:var(--soft);font-weight:600}
+  .lead{font-size:16px;color:#222}
+  .note{background:var(--accent-soft);border-left:3px solid var(--accent);
+        padding:12px 16px;margin:16px 0}
+  .warn{background:#fff4f4;border-left:3px solid #c62828;padding:12px 16px;margin:16px 0}
+  .path{font-family:Consolas,"Courier New",monospace;color:var(--accent)}
+  kbd{background:var(--soft);border:1px solid #d8d8d8;border-bottom-width:2px;
+      border-radius:3px;padding:0 5px;font-family:Consolas,monospace;font-size:13px}
+  /* ---- copyable AI prompt ---- */
+  #toc a.star{color:var(--accent);font-weight:600}
+  .copyhead{display:flex;align-items:center;justify-content:space-between;gap:12px;
+            margin:18px 0 0;padding:10px 14px;background:var(--soft);
+            border:1px solid #e2e0d8;border-bottom:0}
+  .copyhead button{font:inherit;font-size:13px;color:#fff;background:var(--accent);
+            border:1px solid var(--accent);border-radius:3px;padding:5px 14px;cursor:pointer}
+  .copyhead button:hover{filter:brightness(.9)}
+  pre#aiPrompt{white-space:pre-wrap;word-break:break-word;background:#fbfbf9;
+            border:1px solid #e2e0d8;margin:0;padding:16px;
+            font:13px/1.8 Consolas,"Microsoft YaHei UI",monospace}
+  /* placeholders the reader must replace: hard to miss */
+  pre#aiPrompt .ph{color:#c62828;font-weight:600}
+  footer{margin-left:236px;padding:20px 56px 40px;border-top:1px solid #ddd;
+         color:var(--muted);font-size:13px}
+  @media(max-width:820px){
+    #toc{position:static;width:auto;height:auto;border-right:0;border-bottom:1px solid var(--frame)}
+    main,footer{margin-left:0;padding-left:20px;padding-right:20px}
+  }
+  @media (prefers-color-scheme: dark){
+    :root{--bg:#1e1e22; --panel:#26262b; --soft:#2d2d34; --frame:#555;
+          --text:#ddd; --muted:#999; --accent:#b39ddb; --accent-soft:#6a4fb422}
+    .lead,th,td{color:inherit}
+    th,td{border-color:#ffffff26}
+    pre#aiPrompt{background:#232329;border-color:#444}
+    .copyhead{border-color:#444}
+    .warn{background:#c6282818}
+    footer{border-color:#444}
+  }
+</style>
+</head>
+<body>
+
+<nav id="toc">
+  <h1>Pecia User Guide</h1>
+  <a href="#intro">What it is</a>
+  <a href="#who">Who it is for</a>
+  <a href="#features">What it can do</a>
+  <a href="#start">Quick start</a>
+  <a href="#scripts">Built-in scripts</a>
+  <a href="#develop">Writing scripts</a>
+  <a href="#docs">Where the docs live</a>
+  <a href="#ai-write" class="star">&#9733; Put AI to work</a>
+  <a href="#ai">What MCP access can do</a>
+  <a href="#faq">FAQ</a>
+</nav>
+
+<main>
+
+<section id="intro">
+  <h2>What it is</h2>
+  <p class="lead">Pecia is a <strong>lightweight native Markdown editor for Windows</strong>:
+  double-click to run, a single file with no installer, live preview beside your text,
+  and a built-in library of text-processing scripts.</p>
+  <p>It is a <strong>writing and note-taking tool</strong> - not an IDE, not a sync service.
+  Your files stay on your own disk; the preview, the scripts and the AI integration all
+  revolve around the document in front of you.</p>
+  <ul>
+    <li>Fast to open, fast to preview, low footprint - these three are the judge of every design decision.</li>
+    <li>The preview pane is <strong>read-only</strong>: click links, double-click images, drag-select to copy - edit text back in the editor.</li>
+    <li>Embedded Lua 5.5 with the PCRE2 regex library (<code>rex.*</code>); the script bar ships with 90+ official text-processing scripts, ready to use.</li>
+    <li>A built-in AI chat panel (its own column in the main window) for polishing, translating and tidying text - or connect Pecia to an external AI via MCP and let it edit the document directly.</li>
+  </ul>
+</section>
+
+<section id="who">
+  <h2>Who it is for</h2>
+  <table>
+    <tr><th>If you are&hellip;</th><th>What Pecia gives you</th></tr>
+    <tr><td>A note / document writer</td><td>Markdown that opens instantly, an outline side panel, TOC jumps, live tables / math / mermaid.</td></tr>
+    <tr><td>Someone who wrangles text</td><td>Dedupe, numbering, CJK-Latin spacing, regex replace&hellip; pick a script at the bottom bar, the result replaces your selection.</td></tr>
+    <tr><td>A multilingual user</td><td>16 UI languages switchable at runtime, including RTL (Arabic).</td></tr>
+    <tr><td>Someone who wants AI to work</td><td>A standard MCP interface: the AI reads your document, runs scripts and re-checks its own edits. No MCP? Use the built-in chat panel.</td></tr>
+    <tr><td>Someone who knows some Lua</td><td>Drop a <code>.lua</code> into <span class="path">script\</span> and a menu entry appears, with an auto-generated parameter dialog.</td></tr>
+  </table>
+  <div class="note">Pecia works fully offline; only update checks and remote images need the network. Lua scripts are not sandboxed - run only scripts you trust.</div>
+</section>
+
+<section id="features">
+  <h2>What it can do</h2>
+  <h3>Editing</h3>
+  <ul>
+    <li>Multi-tab, draggable editor/preview layout; ratios and window state persist.</li>
+    <li>Line numbers, current-line highlight, long-line ruler, smart CJK-Latin word wrap (never breaks inside a word).</li>
+    <li>Find/replace (regex), go-to-line, undo grouped per operation - one script run = one undo step.</li>
+    <li>Encoding auto-detection (UTF-8/GBK and more) with round-trip saving; Save As can switch encoding and line endings.</li>
+  </ul>
+  <h3>Preview</h3>
+  <ul>
+    <li>Headings/tables/task lists/footnotes/callouts; code blocks, mermaid diagrams and LaTeX math render live.</li>
+    <li>Chunked rendering for large documents - even a 100&nbsp;MB file scrolls smoothly; the TOC button folds into a collapsible outline.</li>
+    <li>"Preview only" mode: editing locks and search runs inside the rendered text - ideal for a final read-through.</li>
+  </ul>
+  <h3>Automation</h3>
+  <ul>
+    <li>Bottom script bar: every <code>.lua</code> in the install folder <span class="path">script\</span> appears grouped (subfolder = submenu).</li>
+    <li>View &gt; AI Chat: its own column in the main window, alongside the Markdown preview - both can be open at once with a draggable divider; selected text goes to it via the right-click "Send to AI"; the panel has just <code>Clear</code> and <code>Send</code>.</li>
+    <li>MCP stdio endpoint: external AI clients read/write the current document, run Lua and query the outline (see the &#9733; section below).</li>
+  </ul>
+</section>
+
+<section id="start">
+  <h2>Quick start</h2>
+  <ol>
+    <li>Start <span class="path">Pecia.exe</span>, drag a <code>.md</code> file into the window (or <kbd>Ctrl+O</kbd>).</li>
+    <li><kbd>Ctrl+Shift+P</kbd> opens the preview; drag the divider to rebalance.</li>
+    <li><kbd>Ctrl+S</kbd> saves. Want a scratch pad at boot? Enable "Fixed startup document" in Settings - Pecia then opens <span class="path">Test.txt</span> on launch.</li>
+    <li>Side panel: a file tree on the left, outline on the right; width is draggable and the panel can hide entirely.</li>
+    <li>Not your colors? Settings &gt; Theme (5 built-in palettes, custom theme .ini files also supported).</li>
+    <li>Settings &gt; Options has four pages: <strong>Editing</strong> (tabs/long-line ruler/search engine/auto-indent/URL detection/paste media - with it on, Ctrl+V turns clipboard images/files into Markdown links; save the document first, and a clipboard that carries text still pastes as text), <strong>Exit &amp; Save</strong> (autosave/temp cleanup/whitespace trimming/tab expansion), <strong>Interface &amp; System</strong> (multi-tab/fixed startup document/open .md behavior/new-text documents/associations), <strong>AI</strong> (API URL, model, API key, context turns - the built-in chat uses exactly this; turns are how much conversation history rides along with each message, default 25, oldest dropped beyond that; the endpoint and model ship pre-filled, and if you clear them the chat says so plainly instead of reporting a network failure). The vertical page rail hugs the left edge, full height, tinted like the menu bar.</li>
+  </ol>
+</section>
+
+<section id="scripts">
+  <h2>Built-in scripts</h2>
+  <p>The script bar collects 90+ official scripts organized by group folder, all pure text processing: select text, click a script, the result replaces the selection.</p>
+  <table>
+    <tr><th>Group</th><th>Typical scripts</th></tr>
+    <tr><td>Numbering / pairing</td><td>add 1. 2. 3. numbering, strip numbering, bracket &amp; quote pairing, renumbering</td></tr>
+    <tr><td>Conversion</td><td>regex replace, full/half width, zh-Hant/zh-Hans helpers, case, date-time insert</td></tr>
+    <tr><td>Line processing</td><td>dedupe, sort, drop empty lines, merge lines, split lines, column alignment</td></tr>
+    <tr><td>Formatting</td><td>automatic CJK-Latin spacing, indentation tidy-up, Markdown table helpers</td></tr>
+  </table>
+  <p>To extend the official set: open the script folder from the bottom of the menu
+  (<span class="path">script\</span>), drop your file in, rescan - it appears in the menu
+  (same-name built-ins get overwritten by official updates; give your own scripts distinct names).</p>
+</section>
+
+<section id="develop">
+  <h2>Writing scripts</h2>
+  <p>Any <code>.lua</code> in <span class="path">script\</span> works; a few header comments are metadata:</p>
+  <pre>--!param mode=d,dropdown|dedupe|sort  target=select?
+local out = rex.gsub(input, "\\s+", " ")   -- input is the selected text
+return out                                  -- the return value replaces the selection</pre>
+  <ul>
+    <li><code>--!param</code> declares parameters; a dialog opens automatically before the run (dropdowns/checkboxes/text, multilingual labels).</li>
+    <li>Four API tables: <code>editor</code> (selection/caret), <code>win</code> (dialogs/clipboard), <code>rex</code> (PCRE2 regex), <code>pecia</code> (host operations: open/save/outline/find&hellip;).</li>
+    <li>The full manual ships as <span class="path">script\lua_api.txt</span> - written for humans and for AI alike.</li>
+  </ul>
+  <div class="warn">Scripts run with your account's full permissions (file I/O, launching programs - all within reach). That is a deliberate trade-off: run only scripts you trust.</div>
+</section>
+
+<section id="docs">
+  <h2>Where the docs live</h2>
+  <p>All in the install folder, plain text, readable in any editor; this page is one of them (<span class="path">docs\使用说明.en.html</span>):</p>
+  <table>
+    <tr><th>File</th><th>Read it for</th></tr>
+    <tr><td><code>docs/MCP接入.md</code></td><td>Connecting Pecia to an AI client: config examples, tool list, behavior boundaries, troubleshooting</td></tr>
+    <tr><td><code>script/lua_api.txt</code></td><td>The complete Lua scripting API (editor / win / rex / pecia + examples)</td></tr>
+    <tr><td><code>docs/history/*.md</code> &middot; <code>HISTORY.md</code></td><td>Release history (Chinese source at the root, translations under docs/history)</td></tr>
+    <tr><td><code>README.*.md</code> &middot; <code>docs/README/</code></td><td>Project overview in 16 languages, with UI screenshots</td></tr>
+  </table>
+  <p>Source and feedback: <a href="https://gitee.com/qiuzongman/pecia">Gitee</a> &middot;
+  <a href="https://github.com/zongmanqiu/Pecia">GitHub</a> (GitHub is an automatic mirror; both stay in sync).</p>
+</section>
+
+<section id="ai-write">
+  <h2>&#9733; Put an AI to work through MCP (copy this and go)</h2>
+  <p class="lead">You do not need to know the MCP protocol or remember tool names. Send the
+  text below to any MCP-capable AI; it will read the shipped docs, connect to Pecia, do the
+  job by the rules and verify its own results.</p>
+  <div class="copyhead">
+    <strong>Text to copy and send to the AI</strong>
+    <button id="copyAiPrompt" type="button">Copy this</button>
+  </div>
+  <pre id="aiPrompt">I have a Pecia editor installed at <span class="ph">&lt;folder containing Pecia.exe&gt;</span>. It is a lightweight Markdown editor for Windows and exposes MCP tools that let you read and write the current document, run built-in Lua scripts, query the outline and more.
+
+First open the install folder and read these documents carefully; follow their rules exactly:
+- docs\使用说明.en.html (overall features)
+- docs\MCP接入.md (how to connect to Pecia's MCP, with config snippets)
+- script\lua_api.txt (full Lua and host-operation API - read before running any script)
+
+Once connected, tell me which tools you can see and what you plan to do, and wait for my confirmation before acting.
+
+The task I want done: <span class="ph">&lt;describe in plain words, as concretely as you can - e.g. "renumber the citation list in the current document and check for orphaned references"&gt;</span>.
+
+Also follow these rules: prefer doc.apply_edit for edits (it refuses non-unique anchors - do not work around it); write complex transforms as Lua scripts and run lua.validate first (compile-only; it returns the line number and Lua's own error), then lua.run on the snapshot; run installed scripts with script.run plus params instead of relying on dialogs; after each step verify with doc.get_text before continuing; when a script needs input, pass parameters in script.run's params (modal dialogs stall the single-request MCP endpoint); if the document is read-only or preview-locked you will get perm_denied - that means protection, not failure; do not retry, ask me. A failed tool call is guaranteed to have changed nothing - fix the arguments and call again.</pre>
+  <div class="note"><strong>The red &lt;...&gt; placeholders are yours to fill in</strong>: the install folder is filled once and reused; the task is whatever you actually want done. Send the rest verbatim. If the AI asks questions first, that is normal - it is confirming the scope.</div>
+  <h3>Why the prompt is shaped this way</h3>
+  <ul>
+    <li>Stating the <strong>doc locations and the read-first rule</strong> keeps the AI from inventing APIs or splitting one replacement into ten calls.</li>
+    <li>Asking for a <strong>plan before action</strong> lets you correct course before any file changes.</li>
+    <li>The <strong>perm_denied semantics</strong> are explained up front: it is the edit lock protecting your document, not a malfunction.</li>
+    <li>Requiring <strong>self-verification</strong> makes the "edit, read back, adjust" loop hands-free.</li>
+  </ul>
+  <p>Connection details live in <span class="path">docs\MCP接入.md</span>; for what the connection can do and where it stops, see the next section.</p>
+</section>
+
+<section id="ai">
+  <h2>What MCP access can do</h2>
+  <p>Pecia ships a <strong>standard MCP stdio endpoint</strong> (<code>Pecia.exe --mcp-stdio</code>)
+  with no fixed client. Any client that speaks MCP stdio and can set a
+  <code>command</code> and <code>args</code> field connects.</p>
+  <ul>
+    <li><strong>Read</strong>: full document or a byte range, state (path/dirty/encoding), outline, search hits, script list.</li>
+    <li><strong>Write</strong>: anchor-based replace, snapshot replace, save, open, switch tabs - all scoped to the active tab and subject to the edit lock.</li>
+    <li><strong>Execute</strong>: <code>lua.validate</code> compiles without running; <code>lua.run</code> executes on a snapshot (a failed run changes nothing; a successful one is a single undo step); <code>script.run</code> runs installed scripts with parameters. PCRE2 regex (<code>rex.*</code>) and host operations (<code>pecia.*</code>) are all available.</li>
+    <li><strong>UI inspection</strong>: script dialogs (parameter prompts, inputs, pickers) are created by the host, so the host publishes their widget tree - <code>ui.inspect</code> reads it, <code>ui.send</code> synthesizes clicks and typing, <code>ui.pixel</code> samples colors off-screen, <code>ui.wait</code> waits for a dialog to appear or vanish. FLTK draws its own widgets, so external accessibility tools cannot see them; this toolset exists mainly for Pecia's own UI regression gates.</li>
+    <li><strong>Drafts land as files</strong>: Lua has no console window anymore (m037) - a draft is just text: <code>console.set</code> writes it, <code>console.get</code> reads it back; <code>console.show</code> opens it as an ordinary editor tab, and <code>script.save</code> turns it into a script that appears in the bottom bar.</li>
+    <li>The tool list, <code>lua_api.txt</code> and <code>pecia.ops()</code> all come from one source - what the AI sees is exactly what runs.</li>
+  </ul>
+  <div class="note">Failed tool results guarantee "nothing changed" (isError) - fix the arguments and retry; when the client disconnects, the Pecia window keeps working as usual.</div>
+  <p>No MCP? Use the <strong>built-in View &gt; AI Chat</strong> panel (its own column, open alongside the preview): select text and use the right-click
+  <strong>Send to AI</strong>; the panel has just <strong>Clear</strong> and <strong>Send</strong>;
+  API URL / model / key live in <strong>Settings &gt; Options</strong>. To move a reply into the document, select and copy it - automatic write-back is the MCP side's job.</p>
+</section>
+
+<section id="faq">
+  <h2>FAQ</h2>
+  <h3>Huge files feel slow?</h3>
+  <p>Very large documents pause visibly on first parse (known design) and then open read-only - choose full editing in the notice.</p>
+  <h3>Math / mermaid not rendering?</h3>
+  <p>First use loads lazily; give it a moment, then Menu &gt; Refresh (<kbd>Ctrl+R</kbd>) forces a rebuild.</p>
+  <h3>Remote images missing?</h3>
+  <p>The preview fetches and caches them; offline you get placeholders. Exporting HTML localizes images into the output folder.</p>
+  <h3>Where are settings stored? How do I move machines?</h3>
+  <p>Everything lives in <span class="path">settings.ini</span> beside the exe (recent files, column ratios, shortcuts) - copy that one file and you have migrated.</p>
+  <h3>Do multiple Pecia instances fight over settings?</h3>
+  <p>No. Settings are shared across instances and sync live; the AI chat is a column of the main window - there are no per-instance subprocesses. The Lua console has no window at all anymore (m037): scripts run from the bottom bar, the draft is a text file <span class="path">script.last.txt</span>, and results appear on the status bar.</p>
+  <h3>Does it work offline?</h3>
+  <p>Yes. Editing, preview, scripts and MCP are all offline; only update checks and remote images touch the network.</p>
+</section>
+
+</main>
+
+<footer>Pecia &middot; a lightweight Markdown editor for Windows x64 &middot; offline handbook, shipped with the program (docs\使用说明.en.html)</footer>
+
+<script>
+(function(){
+  var links = Array.prototype.slice.call(document.querySelectorAll('#toc a[href^="#"]'));
+  var sections = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  function active(){
+    var y = window.scrollY + 120, idx = 0;
+    for (var i=0;i<sections.length;i++){
+      if (sections[i] && sections[i].offsetTop <= y) idx = i;
+    }
+    links.forEach(function(a,i){ a.classList.toggle('active', i===idx); });
+  }
+  window.addEventListener('scroll', active, {passive:true});
+  window.addEventListener('resize', active);
+  active();
+})();
+/* one-click copy of the AI prompt: clipboard API may be unavailable on file://, keep execCommand fallback */
+(function(){
+  var btn = document.getElementById('copyAiPrompt');
+  if (!btn) return;
+  btn.addEventListener('click', function(){
+    var text = document.getElementById('aiPrompt').textContent;
+    function done(ok){
+      var old = btn.textContent;
+      btn.textContent = ok ? 'Copied' : 'Select and copy manually';
+      setTimeout(function(){ btn.textContent = old; }, 1800);
+    }
+    function fallback(){
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch(e) {}
+      document.body.removeChild(ta);
+      done(ok);
+    }
+    if (navigator.clipboard && window.isSecureContext)
+      navigator.clipboard.writeText(text).then(function(){ done(true); }, fallback);
+    else
+      fallback();
+  });
+})();
+</script>
+</body>
+</html>

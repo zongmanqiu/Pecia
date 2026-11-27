@@ -47,8 +47,9 @@ enum class EOL {
 // Validate that a byte sequence is well-formed UTF-8. Returns true iff
 // every byte is part of a valid UTF-8 code point sequence (no overlong
 // encodings, no isolated continuation bytes, no truncated sequences at
-// the end). Used by detectEncoding() to distinguish plain UTF-8 (no BOM)
-// from ANSI.
+// the end). A null buffer with len > 0 is invalid; null/empty with len == 0
+// is trivially valid. Used by detectEncoding() to distinguish plain UTF-8
+// (no BOM) from ANSI.
 bool isValidUtf8(const unsigned char *data, int len);
 
 // Detect the encoding from the first bytes of a file. BOM takes

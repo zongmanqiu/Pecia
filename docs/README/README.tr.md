@@ -1,14 +1,16 @@
-> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
-
 # Pecia — Minimalist Metin Düzenleyici
+> Windows metin düzenleyici: son derece hafif, çoklu sekme, büyük dosyaları anında açma, Lua betik genişletme ve Markdown önizlemesi.
+
+> **🌐 Languages**: [中文](../../README.md) | [繁體中文](README.zh-TW.md) | [English](README.en.md) | [日本語](README.ja.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [한국어](README.ko.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 ---
 
-**[⬇️ 1.1.3 indir (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ 1.1.3 indir (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Gitee Deposu](https://gitee.com/qiuzongman/pecia) ｜ [GitHub Aynası](https://github.com/zongmanqiu/Pecia) | [Bilibili Demosu](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**⬇️ indir 1.2.0: [Gitee](https://gitee.com/qiuzongman/pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
+ ｜ **[GitHub](https://github.com/zongmanqiu/Pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
 
-C++17 + FLTK tabanlı Windows için hafif metin düzenleyici. Çoklu sekme, büyük dosyaları anında açma, çoklu kodlama desteği, Lua betik genişletme desteği. Yeni: yan panel (dosya ağacı/ana hat), yazı tipi seçim iletişim kutusu, pencere gölgeleri; Markdown önizlemesi çok büyük belgeleri bloklar hâlinde işler.
+> Deposu: [Gitee](https://gitee.com/qiuzongman/pecia) | [GitHub](https://github.com/zongmanqiu/Pecia)
 
-> **Platform hedefi**: Yalnızca **Windows x64 (64-bit)** desteklenmektedir. 32-bit sürüm sağlanmamaktadır ve çapraz platform (Linux/mac/32-bit) artık bakılmamaktadır. Derleme betikleri 64-bit doğrulaması içerir (CMakeLists'in üst kısmına bakın), yanlışlıkla 32-bit ayarlanırsa hata verir.
+> Demosu: [Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 ## Yazılım Arayüzü
 
@@ -22,10 +24,6 @@ C++17 + FLTK tabanlı Windows için hafif metin düzenleyici. Çoklu sekme, büy
   - ![3.选项](3.选项.png)
 - Kısayol ayarları
   - ![4.快捷键](4.快捷键.png)
-- AI sohbeti
-  - ![5.AI对话](5.AI对话.png)
-- Lua konsolu
-  - ![6.Lua控制台](6.Lua控制台.gif)
 - Lua betikleri
   - ![7.Lua脚本](7.Lua脚本.gif)
 
@@ -48,7 +46,7 @@ C++17 + FLTK tabanlı Windows için hafif metin düzenleyici. Çoklu sekme, büy
 REM Kaynak kodunu indirdikten sonra, yalnızca bu betiği çift tıklayın.
 REM Sırasıyla şunları çalıştırır: 1 araç zinciri kontrolü → 2 altı üçüncü taraf kütüphanesi indirme → 3 yamaları uygulama →
 REM 4 cargo fetch + iki Rust FFI derleme → 5 FLTK + CMake ile Pecia üçlüsünü derleme →
-REM 33 birim testini çalıştırma.
+REM 36 birim testini çalıştırma.
 REM İlk çalışma süresi internet ve bilgisayara bağlıdır; bundan sonra önbellek kullanılır, artımlı derleme + test yaklaşık 1-2 dakika sürer.
 build\full.bat
 ```
@@ -74,8 +72,8 @@ main/
 ├── core/               Çekirdek saf mantık (UI yok)
 ├── editor/             Düzenleyici bileşeni
 ├── ui/                 Pencere / диалог / araç çubuğu
-├── LuaTool/            PeciaLua bağımsız aracı (pencere / giriş / pipe sunucusu)
-├── AIChat/             PeciaAIChat bağımsız aracı (pencere / giriş)
+├── AIChat/             AI sohbet paneli (kendi sütunu) + sohbet günlüğü
+├── agent/              MCP stdio uç noktası (araç listesi ana kayıttan)
 ├── script/             Lua betik motoru
 ├── DOCS_MANIFEST.md    Belge listesi (kod değişikliği sonrası tek tek kontrol, test_docs kapısı; yalnızca geliştirme amaçlı, exe ile yayınlanmaz)
 ├── image/              Görüntü kaynakları (pecia.ico / ai_bot.ico / lua.ico …)

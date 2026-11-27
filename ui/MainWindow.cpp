@@ -12,7 +12,7 @@
 #include "ui/WindowShadow.h"  // outer glow (View > Window Shadow)
 
 #include "script/LuaEngine.h"
-#include "LuaTool/LuaPipeServer.h"
+#include "AIChat/AIChatPane.h"
 #include "core/Config.h"
 #include "core/Theme.h"
 #include "core/FileManager.h"
@@ -159,6 +159,7 @@ MainWindow::MainWindow(int w, int h, const char *title)
     , m_menu(nullptr)
     , m_tabs(nullptr)
     , m_findBar(nullptr)
+    , m_goToBar(nullptr)
     , m_status(nullptr)
     , m_cfg(new Config())
     , m_titleBar(nullptr)
@@ -199,7 +200,10 @@ MainWindow::MainWindow(int w, int h, const char *title)
     m_titleBar->setOnCloseTab([this](int idx) { closeTab(idx); });
     m_titleBar->setOnSwitchToTab([this](int idx) { switchToTab(idx); });
     m_titleBar->setOnTogglePin([this]() { setAlwaysOnTop(!alwaysOnTop()); });
-    m_titleBar->setOnMinimize([this]() { iconize(); });
+    // Native path (ShowWindow), same as win.minimize: the frame comment at
+    // MainWindow_frame.cpp documents iconize() as unreliable for border(0)
+    // windows - the taskbar button could stay lit while the window hid.
+    m_titleBar->setOnMinimize([this]() { minimizeWindow(); });
     m_titleBar->setOnToggleMaximize([this]() { toggleMaximize(); });
     m_titleBar->setOnCloseWindow([this]() { cbWindowClose(this, this); });
     m_titleBar->setFontSize(m_cfg->getUiFontSize());
@@ -638,9 +642,26 @@ MainWindow::MainWindow(int w, int h, const char *title)
     // Start the auto-save timer. Repeats every getAutoSaveInterval() seconds
     // (0 = off). The callback re-arms itself on each tick.
     scheduleAutoSave();
+
+    // Host capability registry (core/HostOps): single source of truth for
+    // Lua bindings today and the m021 MCP tools projection.
+    registerHostOps();
+
+    // m025: script-facing dialogs come from THIS window's theme, so the
+    // hooks are installed with the registry and cleared in the destructor.
+    installScriptUiHooks();
 }
 
 MainWindow::~MainWindow() {
+    // First act: retire the liveness token. Deferrals whose Fl::add_timeout
+    // data is a heap struct (runScriptDeferred) cannot be revoked by
+    // remove_timeout, so they check this flag instead - and it must already
+    // read false before any member below is torn down.
+    m_alive->store(false);
+
+    unregisterHostOps();   // dispatch must never reach a dying window
+    clearScriptUiHooks();  // same reason for the win:input/select hooks
+
     // Revoke the OLE drop target before the window is destroyed.
     // RevokeDragDrop releases the reference held by OLE; if our
     // m_dropTarget was the last reference, the object deletes itself.
@@ -678,6 +699,23 @@ MainWindow::~MainWindow() {
     Fl::remove_timeout(autoRefreshLoopCb, this);
     Fl::remove_timeout(scrollSyncCb, this);
     Fl::remove_timeout(trimSoonCb, this);
+    // Two more 'this'-capturing deferrals, scheduled by file open and by
+    // theme switching (audit B20): closing the window in the same frame
+    // used to leave them queued against a destroyed MainWindow.
+    // runScriptDeferred is NOT listed here: it carries a heap
+    // DeferredRunScript* (not `this`), so remove_timeout cannot address it -
+    // it now reads the m_alive token cleared above instead.
+    Fl::remove_timeout(autoPreviewCb, this);
+    Fl::remove_timeout(s_applyThemeDeferred, this);
+
+    // Preview teardown: the preview view is a CHILD of this window, so letting
+    // FLTK destroy it together with the window would leave PreviewPanel (its
+    // 30 ms pump timer and its worker thread) alive around a freed widget - the
+    // next tick runs pump() -> Fl_Widget::damage() on that widget and the
+    // process dies with 0xC0000005 in whichever event loop runs next (measured
+    // 2026-11-26 in mainwindow_smoke, several windows after the preview tests).
+    // Same teardown the deferred close uses.
+    shutdownPreview();
 
     for (auto &t : m_tabsList) {
         // Detach the editor from the buffer BEFORE deleting the document:
@@ -690,12 +728,12 @@ MainWindow::~MainWindow() {
     }
     m_tabsList.clear();
 
-    // Free the Lua scripting resources. The Lua tool itself is a separate
-    // process (PeciaLua.exe) - only the engine and the pipe server live
-    // here, and neither touches m_cfg in its destructor. Delete them
-    // BEFORE m_cfg anyway to keep the ordering unambiguous.
-    delete m_luaPipe;
-    m_luaPipe = nullptr;
+    // Free the Lua scripting resources. Since m025 the console and the AI
+    // chat are in-process child windows of this window - delete them here
+    // (their destructors persist the last script). Delete BEFORE m_cfg to
+    // keep the ordering unambiguous.
+    delete m_aiChat;
+    m_aiChat = nullptr;
     delete m_luaEngine;
     m_luaEngine = nullptr;
 

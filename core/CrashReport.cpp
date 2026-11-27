@@ -1,5 +1,5 @@
 // CrashReport.cpp - shared top-level exception handler for all three
-// Pecia executables (Pecia, PeciaLua, PeciaAIChat).
+// Pecia.exe (m025: the Lua console and the AI chat are windows in it).
 //
 // On an unhandled exception it writes, in temp/ next to the executable:
 //   <tag>_crash_YYYYMMDD_HHMMSS.dmp   - MiniDump for offline analysis
@@ -158,50 +158,63 @@ static void pruneOldDumps() {
     swprintf_s(patternW, sizeof(patternW) / sizeof(wchar_t), L"%s\\%hs_crash_*.dmp",
                dirW, g_tagCStr());
 
+    struct DmpFile { wchar_t name[MAX_PATH]; ULONGLONG ft; };
+    DmpFile keep[kMaxDumps];   // newest first, constant memory
+    int keepCount = 0;
     WIN32_FIND_DATAW fd;
     HANDLE hFind = FindFirstFileW(patternW, &fd);
     if (hFind == INVALID_HANDLE_VALUE) return;
-    int count = 0;
-    do {
-        ++count;
-    } while (FindNextFileW(hFind, &fd));
-    FindClose(hFind);
 
-    if (count <= kMaxDumps) return;
-    // 删最旧的（按修改时间升序，删到只剩 kMaxDumps）
-    hFind = FindFirstFileW(patternW, &fd);
-    if (hFind == INVALID_HANDLE_VALUE) return;
-    // 简单方案：收集所有文件，按时间排序后删除最旧
-    struct DmpFile { wchar_t name[MAX_PATH]; ULONGLONG ft; };
-    static DmpFile dumps[64];
-    int dn = 0;
+    // Pass 1: stream every entry, retaining only the newest kMaxDumps. The
+    // old fixed array of 64 stopped after 64 entries, so once more than 64
+    // dumps existed pruning never converged back to 3.
     do {
-        if (dn < 64) {
-            _snwprintf_s(dumps[dn].name, MAX_PATH, _TRUNCATE, L"%s", fd.cFileName);
-            dumps[dn].ft = ((ULONGLONG)fd.ftLastWriteTime.dwHighDateTime << 32)
-                         | fd.ftLastWriteTime.dwLowDateTime;
-            ++dn;
+        DmpFile cur;
+        _snwprintf_s(cur.name, MAX_PATH, _TRUNCATE, L"%s", fd.cFileName);
+        cur.ft = ((ULONGLONG)fd.ftLastWriteTime.dwHighDateTime << 32)
+               | fd.ftLastWriteTime.dwLowDateTime;
+        bool insert = false;
+        int at = 0;
+        if (keepCount < kMaxDumps) { insert = true; at = keepCount; }
+        else if (cur.ft > keep[kMaxDumps - 1].ft) { insert = true; at = kMaxDumps - 1; }
+        if (!insert) continue;
+        keep[at] = cur;   // `at` is either the next free slot or the last slot
+        if (keepCount < kMaxDumps) ++keepCount;
+        // Bubble the new entry toward the front (newest first).
+        for (int i = at; i > 0 && keep[i].ft > keep[i - 1].ft; --i) {
+            DmpFile t = keep[i];
+            keep[i] = keep[i - 1];
+            keep[i - 1] = t;
         }
     } while (FindNextFileW(hFind, &fd));
     FindClose(hFind);
 
-    // 冒泡：按时间升序，删最早的 (count - kMaxDumps) 个
-    for (int i = 0; i < dn - 1; ++i)
-        for (int j = 0; j < dn - 1 - i; ++j)
-            if (dumps[j].ft > dumps[j + 1].ft) {
-                DmpFile t = dumps[j];
-                dumps[j] = dumps[j + 1];
-                dumps[j + 1] = t;
-            }
-    int toDelete = dn - kMaxDumps;
-    for (int i = 0; i < toDelete && i < dn; ++i) {
+    if (keepCount < kMaxDumps) return;   // nothing beyond the keep set
+
+    // Pass 2: delete EVERY file not in the keep set. No count ceiling, no
+    // enumeration-order assumption - converges to exactly kMaxDumps.
+    hFind = FindFirstFileW(patternW, &fd);
+    if (hFind == INVALID_HANDLE_VALUE) return;
+    do {
+        bool inKeep = false;
+        for (int i = 0; i < keepCount; ++i) {
+            if (wcscmp(fd.cFileName, keep[i].name) == 0) { inKeep = true; break; }
+        }
+        if (inKeep) continue;
         wchar_t fullW[MAX_PATH * 2];
-        swprintf_s(fullW, sizeof(fullW) / sizeof(wchar_t), L"%s\\%s", dirW, dumps[i].name);
+        swprintf_s(fullW, sizeof(fullW) / sizeof(wchar_t), L"%s\\%s", dirW, fd.cFileName);
         DeleteFileW(fullW);
-    }
+    } while (FindNextFileW(hFind, &fd));
+    FindClose(hFind);
 }
 
 LONG WINAPI CrashHandler(PEXCEPTION_POINTERS ep) {
+    // The error mode is per-thread: the faulting thread may not be the one
+    // that called install(). Re-assert it here so the OS does not raise the
+    // second, redundant WER "Unknown Hard Error" popup on top of our own
+    // report box (on a stack overflow that popup is all the user would see).
+    SetErrorMode(SEM_NOGPFAULTERRORBOX | SEM_FAILCRITICALERRORS);
+
     unsigned code = (unsigned)ep->ExceptionRecord->ExceptionCode;
     const void *addr = ep->ExceptionRecord->ExceptionAddress;
 
@@ -284,5 +297,10 @@ LONG WINAPI CrashHandler(PEXCEPTION_POINTERS ep) {
 void CrashReport::install(const char *exeTag) {
     if (exeTag)
         snprintf(g_tag, sizeof(g_tag), "%s", exeTag);
+    // We bring our own unhandled-exception filter, so the OS error message box
+    // (and the WER "Unknown Hard Error" dialog behind it) is pure noise: it
+    // either duplicates our report box or hides it. Set it before installing
+    // the filter so even a crash inside install() is quiet.
+    SetErrorMode(SEM_NOGPFAULTERRORBOX | SEM_FAILCRITICALERRORS);
     SetUnhandledExceptionFilter(CrashHandler);
 }

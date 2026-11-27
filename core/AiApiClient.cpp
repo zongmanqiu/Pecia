@@ -135,29 +135,88 @@ static bool jsonDecodeString(const std::string &body, size_t &i, std::string &ou
     return false;
 }
 
-// Extract choices[0].message.content. Skips reasoning_content (present for
-// R1-style models) and returns the LAST message string if several appear.
-static bool extractContent(const std::string &body, std::string &out) {
-    size_t pos = 0;
-    bool found = false;
-    while (true) {
-        size_t k = body.find("\"content\"", pos);
-        if (k == std::string::npos) break;
-        size_t colon = body.find(':', k + 9);
-        if (colon == std::string::npos) break;
-        size_t q = body.find_first_not_of(" \t", colon + 1);
-        if (q == std::string::npos || body[q] != '"') {
-            pos = colon + 1;
+// Index just past the JSON string opened at `i`, or npos on a broken string.
+static size_t skipJsonString(const std::string &body, size_t i) {
+    if (i >= body.size() || body[i] != '"') return std::string::npos;
+    ++i;
+    while (i < body.size()) {
+        if (body[i] == '\\') { i += 2; continue; }
+        if (body[i] == '"') return i + 1;
+        ++i;
+    }
+    return std::string::npos;
+}
+
+// Index of the '}' closing the object opened at `open` (strings skipped so a
+// '}' inside a value never ends the object early).
+static size_t jsonObjectEnd(const std::string &body, size_t open) {
+    if (open >= body.size() || body[open] != '{') return std::string::npos;
+    int depth = 0;
+    size_t i = open;
+    while (i < body.size()) {
+        const char c = body[i];
+        if (c == '"') {
+            const size_t end = skipJsonString(body, i);
+            if (end == std::string::npos) return std::string::npos;
+            i = end;
             continue;
         }
-        std::string val;
-        if (jsonDecodeString(body, q, val)) {
-            out = val;
-            found = true;
-        }
-        pos = q;
+        if (c == '{') ++depth;
+        else if (c == '}') { if (--depth == 0) return i; }
+        ++i;
     }
-    return found;
+    return std::string::npos;
+}
+
+// Index of a direct member's value inside the object [open, close]. Nested
+// objects/arrays are skipped, so a "content" inside tool_calls is not
+// mistaken for message.content.
+static size_t jsonDirectValue(const std::string &body, size_t open, size_t close,
+                              const char *key) {
+    const std::string needle = std::string("\"") + key + "\"";
+    int depth = 0;
+    size_t i = open + 1;
+    while (i < close && i < body.size()) {
+        if (body[i] == '"') {
+            const size_t end = skipJsonString(body, i);
+            if (end == std::string::npos || end > close) return std::string::npos;
+            if (depth == 0 && body.compare(i, needle.size(), needle) == 0) {
+                const size_t colon = body.find(':', end);
+                if (colon == std::string::npos || colon >= close) return std::string::npos;
+                const size_t v = body.find_first_not_of(" \t\r\n", colon + 1);
+                if (v == std::string::npos || v >= close) return std::string::npos;
+                return v;
+            }
+            i = end;
+            continue;
+        }
+        if (body[i] == '{' || body[i] == '[') ++depth;
+        else if (body[i] == '}' || body[i] == ']') --depth;
+        ++i;
+    }
+    return std::string::npos;
+}
+
+// Extract strictly choices[0].message.content. The old code took the LAST
+// "content" anywhere in the reply; with tool_calls enabled that could be a
+// nested function argument and silently replaced the assistant's answer.
+static bool extractContent(const std::string &body, std::string &out) {
+    if (body.empty() || body[0] != '{') return false;
+    const size_t rootEnd = jsonObjectEnd(body, 0);
+    if (rootEnd == std::string::npos) return false;
+    const size_t arr = jsonDirectValue(body, 0, rootEnd, "choices");
+    if (arr == std::string::npos || body[arr] != '[') return false;
+    size_t obj = body.find_first_not_of(" \t\r\n", arr + 1);
+    if (obj == std::string::npos || obj >= rootEnd || body[obj] != '{') return false;
+    const size_t objEnd = jsonObjectEnd(body, obj);
+    if (objEnd == std::string::npos) return false;
+    const size_t msg = jsonDirectValue(body, obj, objEnd, "message");
+    if (msg == std::string::npos || body[msg] != '{') return false;
+    const size_t msgEnd = jsonObjectEnd(body, msg);
+    if (msgEnd == std::string::npos) return false;
+    size_t content = jsonDirectValue(body, msg, msgEnd, "content");
+    if (content == std::string::npos || body[content] != '"') return false;
+    return jsonDecodeString(body, content, out);
 }
 
 // ---------------------------------------------------------------------------
@@ -211,7 +270,9 @@ AiChatResult aiChatCompletion(const std::string &apiKey,
     body += "\"messages\":[";
     for (size_t i = 0; i < messages.size(); ++i) {
         if (i > 0) body += ",";
-        body += "{\"role\":\"" + std::string(messages[i].role) +
+        // role is caller-supplied too: escape it or a quote/backslash in it
+        // breaks the whole request body (content was already escaped).
+        body += "{\"role\":\"" + aiJsonEscape(messages[i].role) +
                 "\",\"content\":\"" + aiJsonEscape(messages[i].content) + "\"}";
     }
     body += "],";
@@ -291,16 +352,32 @@ AiChatResult aiChatCompletion(const std::string &apiKey,
         char buf[16384];
         DWORD read = 0;
         // Hard cap on the response body so a malicious/broken endpoint
-        // cannot exhaust memory (the model output itself is bounded by
-        // max_tokens, but a bad server can stream arbitrary data).
+        // cannot exhaust memory (this client sends no max_tokens, so the
+        // provider's own default bounds the model output; a bad server can
+        // still stream arbitrary data).
         const size_t kMaxReply = 64u << 20;   // 64 MB
-        while (WinHttpReadData(hRequest, buf, sizeof(buf), &read) && read > 0) {
+        while (true) {
+            // Cancel must also fire mid-body: before, the flag was only
+            // consulted around the request phase, so 清除 during a long
+            // generation kept reading the whole reply.
+            if (cancelFlag && cancelFlag->load()) {
+                res.error = "Request cancelled by user";
+                goto done;
+            }
+            BOOL rok = WinHttpReadData(hRequest, buf, sizeof(buf), &read);
+            if (!rok) {
+                // WinHttpReadData returning FALSE is a transport error, not
+                // EOF: a 200 + truncated body used to be reported as success
+                // (same stance as httpDownload() in core/Updater.cpp).
+                res.error = "Connection dropped mid-response";
+                goto done;
+            }
+            if (read == 0) break;             // normal end of response
             if (reply.size() + read > kMaxReply) {
                 res.error = "Response body exceeds 64 MB limit";
                 goto done;
             }
             reply.append(buf, read);
-            read = 0;
         }
         if (res.httpStatus == 200) {
             std::string content;

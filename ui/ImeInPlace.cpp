@@ -40,8 +40,11 @@ std::string utf16ToUtf8(const wchar_t *s) {
     if (!s || !*s) return out;
     int n = WideCharToMultiByte(CP_UTF8, 0, s, -1, nullptr, 0, nullptr, nullptr);
     if (n <= 1) return out;
-    out.resize(n - 1);
+    // WideCharToMultiByte writes n bytes INCLUDING the terminating NUL, so
+    // the buffer must be n bytes; shrink to n-1 only after the conversion.
+    out.resize(n);
     WideCharToMultiByte(CP_UTF8, 0, s, -1, &out[0], n, nullptr, nullptr);
+    out.resize(n - 1);
     return out;
 }
 
@@ -171,13 +174,9 @@ void detach(Host *host) {
 
 void release(Host *host) {
     if (!host) return;
-    for (size_t i = 0; i < g_hosts.size(); ++i) {
-        if (g_hosts[i].host == host) {
-            g_hosts.erase(g_hosts.begin() + static_cast<std::ptrdiff_t>(i));
-            break;
-        }
-    }
-    // Collect the windows this host was attached to before dropping entries.
+    // Collect every window this host was attached to BEFORE dropping entries.
+    // Erasing one entry up front left the collection loop empty (the old
+    // code), so the IME subclass was never uninstalled on release.
     std::vector<HWND> hooked;
     for (size_t i = 0; i < g_hosts.size();) {
         if (g_hosts[i].host == host) {

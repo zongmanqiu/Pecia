@@ -78,8 +78,11 @@ static void test_hash_mixes_dimensions_separately()
     pecia::TextWidthCache::Key b{ "x", 2, 1 };
     CHECK(h(a) != h(b));
 
-    // 相同输入的哈希必须稳定（unordered_map 的前提）
-    CHECK_EQ(h(a), h(a));
+    // 相同输入的哈希必须稳定（unordered_map 的前提）。用两个独立构造的
+    // 等价 Key，避免 CHECK_EQ(h(a), h(a)) 恒真、什么都没测到。
+    pecia::TextWidthCache::Key a2{ std::string("x"), 1, 2 };
+    CHECK(a2 == a);                      // 前提：两者确实等价
+    CHECK_EQ(h(a), h(a2));               // 等价键必须哈希相等
 }
 
 int main()

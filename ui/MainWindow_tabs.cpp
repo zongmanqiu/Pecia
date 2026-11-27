@@ -161,6 +161,19 @@ int MainWindow::addTab(Document *doc, const char * /*label*/) {
                        m_cfg->getTabWidth());
     ed->setDoc(doc);
 
+    // Paste-media skip reasons land on the status line (r042e): the feature
+    // used to skip silently, which read as broken. Same channel the script
+    // result uses (m_scriptNotice), so a tab switch clears it.
+    // The KEY is stored, not the rendered text: a language switch then
+    // re-renders the reason in the new language (the paste notice is
+    // otherwise stuck in the language that was active when it fired).
+    ed->setPasteNotice([this](const char *key) {
+        m_scriptNotice.key = key ? key : "";
+        m_scriptNotice.arg = 0;
+        m_scriptNotice.hasArg = false;
+        updateStatusBar();
+    });
+
     ed->buffer(doc->buffer());
     // Font face comes from the single source of truth `editor_font`
     // (applied via setFontFace below); the legacy font_id key is dead.
@@ -406,6 +419,9 @@ void MainWindow::layoutTabs() {
 // Tab management
 void MainWindow::switchToTab(int index) {
     if (index < 0 || index >= (int)m_tabsList.size()) return;
+    // The last script-run result belongs to the document it ran on; carrying
+    // it over to another tab would be a lie (m037).
+    m_scriptNotice.clear();
     m_tabs->value(m_tabsList[index].page);
     // 仅预览下编辑区是隐藏的：焦点绝不能再落回去 —— FLTK 的键盘派发只看
     // Fl::focus()、不看控件可见性，焦点落回去就会把字打进看不见的文档

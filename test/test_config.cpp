@@ -7,6 +7,14 @@
 
 #include <FL/filename.H>   // FL_PATH_MAX
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>       // GetCurrentProcessId()
+
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -18,8 +26,10 @@ namespace fs = std::filesystem;
 static fs::path g_scratch;
 
 static void makeScratch() {
-    // Unique scratch dir per run under the test executable's directory.
-    g_scratch = fs::temp_directory_path() / "pecia_cfg_test";
+    // PID-keyed scratch dir (same convention as test_ui_smoke) so parallel
+    // ctest runs never wipe each other's settings.ini.
+    g_scratch = fs::temp_directory_path() /
+                ("pecia_cfg_test_" + std::to_string(::GetCurrentProcessId()));
     fs::remove_all(g_scratch);
     fs::create_directories(g_scratch);
 }
@@ -258,8 +268,58 @@ static void test_recent_sync() {
 }
 
 // ---------------------------------------------------------------------------
-// Write whitelist: a restricted Config may only persist its allowed keys
+// The factory AI defaults exist once: the seeding block, the getters'
+// fallbacks and the setters' empty-value substitute all read Config's own
+// constants, so the Options page and the chat pane cannot disagree.
 // ---------------------------------------------------------------------------
+static void test_ai_defaults_single_source() {
+    Config c(g_scratch);
+    char buf[512];
+
+    c.getAiModel(buf, sizeof(buf), nullptr);
+    CHECK(strcmp(buf, Config::kDefaultAiModel) == 0);
+    c.getAiEndpoint(buf, sizeof(buf), nullptr);
+    CHECK(strcmp(buf, Config::kDefaultAiEndpoint) == 0);
+
+    // The keys are seeded into the file, so even a caller that passes its own
+    // fallback gets the factory value back, not its own guess.
+    c.getAiEndpoint(buf, sizeof(buf), "https://elsewhere.test/v1");
+    CHECK(strcmp(buf, Config::kDefaultAiEndpoint) == 0);
+
+    // Clearing the field in Options really stores an empty string: only a
+    // C++ caller that passes nullptr gets the factory value substituted.
+    // The chat pane then says "not configured" instead of silently
+    // re-filling a vendor URL the user just deleted.
+    c.setAiEndpoint("");
+    c.setAiModel("");
+    c.getAiEndpoint(buf, sizeof(buf), "https://elsewhere.test/v1");
+    CHECK(buf[0] == '\0');
+    c.getAiModel(buf, sizeof(buf), "other-model");
+    CHECK(buf[0] == '\0');
+}
+
+// r042d: the context depth ships a factory default of 25 turns and clamps
+// both the setter and the getter to 1..100 - the getter clamp is the second
+// fence, so even a hand-edited settings.ini (ai_context_turns=9999) cannot
+// push an unbounded message list into the request builder.
+static void test_ai_context_turns_clamped() {
+    Config c(g_scratch);
+    CHECK_EQ(c.getAiContextTurns(), Config::kDefaultAiContextTurns);   // 25
+
+    c.setAiContextTurns(0);      CHECK_EQ(c.getAiContextTurns(), 1);    // low clamp
+    c.setAiContextTurns(-7);     CHECK_EQ(c.getAiContextTurns(), 1);
+    c.setAiContextTurns(500);    CHECK_EQ(c.getAiContextTurns(), 100);   // high clamp
+    c.setAiContextTurns(42);     CHECK_EQ(c.getAiContextTurns(), 42);   // in range sticks
+    {
+        // round-trip through the file, then poison it by hand: the getter
+        // must clamp the raw value back into range
+        c.saveAll();
+        std::ofstream(g_scratch / "settings.ini", std::ios::trunc)
+            << "[Settings]\nai_context_turns=9999\n";
+        Config c2(g_scratch);
+        CHECK_EQ(c2.getAiContextTurns(), 100);
+    }
+}
 
 static void test_write_whitelist() {
     Config c(g_scratch);
@@ -337,6 +397,8 @@ static void run_all() {
     test_recent_files_unicode_dir();
     test_recent_sync();
     test_value_trim();
+    test_ai_defaults_single_source();
+    test_ai_context_turns_clamped();
     test_write_whitelist();
     test_merge_preserves_disk();
 }

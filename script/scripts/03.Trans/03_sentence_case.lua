@@ -50,7 +50,8 @@ while i <= #input do
     else
         out[#out + 1] = c
     end
-    if c:match("[%.%?!%。！？]") then
+    -- 整串字面比较：字符集中的全角标点 UTF-8 续字节会误伤汉字（如"一"）
+    if c == "." or c == "!" or c == "?" or c == "。" or c == "！" or c == "？" then
         atStart = true
     end
     i = i + clen

@@ -18,6 +18,8 @@
 #include <cstdlib>    // getenv：PECIA_PROFILE
 #include <cstring>
 #include <fstream>
+#include <limits>
+#include <new>
 #include <sstream>
 #include <thread>
 #include "mmdr_ffi.h"
@@ -171,15 +173,27 @@ static std::string read_file(const char* path)
                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) return {};
 
-    DWORD size = GetFileSize(hFile, NULL);
-    if (size == INVALID_FILE_SIZE || size == 0) {
+    // GetFileSize 用 DWORD 返回值，>4GB 会失败并返回 INVALID_FILE_SIZE。
+    // 改用 GetFileSizeEx；分块读也去掉 ReadFile 单次 DWORD 上限。
+    LARGE_INTEGER fileSize;
+    if (!GetFileSizeEx(hFile, &fileSize) || fileSize.QuadPart <= 0 ||
+        (unsigned long long)fileSize.QuadPart >
+            (unsigned long long)std::numeric_limits<size_t>::max()) {
         CloseHandle(hFile);
         return {};
     }
+    const size_t size = (size_t)fileSize.QuadPart;
 
-    std::string buf((size_t)size, '\0');
-    DWORD read = 0;
-    ReadFile(hFile, &buf[0], size, &read, NULL);
+    std::string buf(size, '\0');
+    size_t total = 0;
+    while (total < size) {
+        const DWORD chunk = (size - total) > 0xFFFFFFFFull
+                            ? 0xFFFFFFFFu : (DWORD)(size - total);
+        DWORD got = 0;
+        if (!ReadFile(hFile, &buf[total], chunk, &got, NULL) || got == 0) break;
+        total += got;
+    }
+    buf.resize(total);
     CloseHandle(hFile);
     return buf;
 }
@@ -943,21 +957,31 @@ Fl_Image* MyContainer::load_image_file(const std::string& path)
                 bool fromStbi = true;
                 if (!no_scale && longer > 200) {
                     float sc = 200.0f / longer;
-                    nw = std::max(1, (int)(iw * sc));
-                    nh = std::max(1, (int)(ih * sc));
-                    auto* dst = new unsigned char[nw * nh * ich]();
-                    for (int y = 0; y < nh; y++) {
-                        int sy = y * ih / nh;
-                        for (int x = 0; x < nw; x++) {
-                            int sx = x * iw / nw;
-                            memcpy(dst + (y * nw + x) * ich,
-                                   data + (sy * iw + sx) * ich, ich);
+                    int tw = std::max(1, (int)(iw * sc));
+                    int th = std::max(1, (int)(ih * sc));
+                    // 乘法一律走 size_t，并先校验溢出；拿不到副本就保留原图，
+                    // 不把错误尺寸交给 Fl_RGB_Image（那会按小缓冲读大图）。
+                    const size_t limit = std::numeric_limits<size_t>::max();
+                    const bool overflow = (size_t)tw > limit / (size_t)th / (size_t)ich;
+                    if (!overflow) {
+                        const size_t bytes = (size_t)tw * (size_t)th * (size_t)ich;
+                        auto* dst = new (std::nothrow) unsigned char[bytes]();
+                        if (dst) {
+                            for (int y = 0; y < th; y++) {
+                                int sy = y * ih / th;
+                                for (int x = 0; x < tw; x++) {
+                                    int sx = x * iw / tw;
+                                    memcpy(dst + ((size_t)y * tw + x) * ich,
+                                           data + ((size_t)sy * iw + sx) * ich, ich);
+                                }
+                            }
+                            stbi_image_free(data);
+                            data = dst;
+                            nw = tw; nh = th;
+                            iw = nw; ih = nh;
+                            fromStbi = false;           // now a new[] buffer
                         }
                     }
-                    stbi_image_free(data);
-                    data = dst;
-                    iw = nw; ih = nh;
-                    fromStbi = false;               // now a new[] buffer
                 }
                 m_owned_pixels.emplace_back(data, fromStbi);
                 img = new Fl_RGB_Image(data, iw, ih, ich);
@@ -1127,7 +1151,12 @@ void MyContainer::draw_image(litehtml::uint_ptr /*hdc*/, const litehtml::backgro
             draw_img = cached;
         } else {
             draw_img = img->copy(bw, bh);
-            insert_scaled(key, draw_img);
+            // copy() 在内存不足/尺寸非法时可能返回 nullptr；insert_scaled 会
+            // 解引用它，draw_img->draw 更是直接崩。缩放副本拿不到就退回原图。
+            if (draw_img)
+                insert_scaled(key, draw_img);
+            else
+                draw_img = img;
         }
     }
     draw_img->draw((int)box.x, (int)box.y);
@@ -2458,7 +2487,8 @@ int ViewWidget::handle(int event)
             int thumb_h = std::max(20, vis_h * vis_h / total_h);
             int max_y_scroll = std::max(1, total_h - vis_h);
             int dy = Fl::event_y() - m_drag_start_y;
-            int delta_scroll = dy * max_y_scroll / (vis_h - thumb_h);
+            // 极小面板 vis_h<=20 时 thumb_h 被钳到 20，分母可能为 0/负数 → 下限 1
+            int delta_scroll = dy * max_y_scroll / std::max(1, vis_h - thumb_h);
             scroll_to(m_drag_start_scroll_y + delta_scroll);
             return 1;
         }
@@ -2471,7 +2501,8 @@ int ViewWidget::handle(int event)
             int thumb_w = std::max(20, vis_w * vis_w / total_w);
             int max_x_scroll = std::max(1, total_w - vis_w);
             int dx = Fl::event_x() - m_drag_start_x;
-            int delta_scroll = dx * max_x_scroll / (vis_w - thumb_w);
+            // 同上：极小宽度面板的分母下限 1
+            int delta_scroll = dx * max_x_scroll / std::max(1, vis_w - thumb_w);
             scroll_to_x(m_drag_start_scroll_x + delta_scroll);
             return 1;
         }

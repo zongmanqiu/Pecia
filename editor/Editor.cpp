@@ -172,16 +172,10 @@ void MainWindow::syncEditMenuReadOnly(bool readOnly)
         else it->activate();
     }
 
-    // Tools > Lua Script... 置灰（脚本改写的正是这份被锁的文档）。脚本栏
-    // 不动 —— 它只是个入口按钮，写入由 executeLuaScript / insertAiText 的
-    // 能力锁兜底，连已打开的 Lua 工具窗口与命名管道（RUN / INS / APPL）
-    // 也一并拦住（2026-11-01 用户定：UI 一律不额外改造）。
-    for (const MenuKeyEntry &e : m_menuKeys) {
-        if (!e.key || strcmp(e.key, "menu.tools.lua") != 0 || !e.item) continue;
-        if (readOnly) e.item->deactivate();
-        else e.item->activate();
-        break;
-    }
+    // (m037) Tools > Lua Script... is gone with the console window, so only the
+    // Edit menu needs the grey-out. The script bar stays as it is - it is just an
+    // entry button, and the write lock in executeLuaScript is what actually blocks
+    // a run against a locked document (2026-11-01 user decision: no UI rework).
 
     m_menu->redraw();
 }
@@ -1359,6 +1353,14 @@ int Editor::handle(int event) {
             else if (key == 'g' && (state & FL_CTRL)) allow = true;
             else if (key == FL_F + 3) allow = true;
             if (!allow) {
+                // Ctrl/Alt combinations (Ctrl+S/O/N/W/F5, Alt+digit ...) are
+                // menu shortcuts, not text input: FLTK stops FL_SHORTCUT
+                // dispatch once a widget consumes FL_KEYBOARD, so returning 1
+                // here silently killed every menu shortcut while the hidden
+                // editor held focus. Let them through; plain keys stay
+                // consumed because Fl_Text_Editor::handle_key writes to the
+                // buffer with no read-only check of its own.
+                if (state & (FL_CTRL | FL_ALT)) return 0;
                 Fl::event_is_click(0);
                 return 1;
             }
@@ -1398,6 +1400,7 @@ int Editor::handle(int event) {
 
             setShiftTab(true);
 
+            buf->undo_begin();   // the whole dedent = one undo step
             for (int i = 0; i < n; ++i) {
                 int pos = insert_position();
                 if (pos <= 0) break;
@@ -1407,6 +1410,7 @@ int Editor::handle(int event) {
                 buf->remove(pos - 1, pos);
                 insert_position(pos - 1);
             }
+            buf->undo_end();
 
             setShiftTab(false);
             show_insert_position();
@@ -1435,12 +1439,18 @@ int Editor::handle(int event) {
                     free(lineText);
                 }
                 int selStart, selEnd;
-                if (buf->selection_position(&selStart, &selEnd)) {
+                bool hadSel = buf->selection_position(&selStart, &selEnd);
+                // remove + insert are two undo records: group them into one
+                // transaction so a single Ctrl+Z reverts the whole newline edit
+                // (same pattern as replaceAll / insertAiText).
+                if (hadSel) buf->undo_begin();
+                if (hadSel) {
                     buf->remove(selStart, selEnd);
                     pos = selStart;
                 }
                 std::string ins = std::string("\n") + lead;
                 buf->insert(pos, ins.c_str());
+                if (hadSel) buf->undo_end();
                 insert_position(pos + (int)ins.size());
                 show_insert_position();
                 set_changed();
@@ -1535,8 +1545,12 @@ static bool shouldLinkOnly(const std::wstring &src, const std::string &targetDir
 // 浏览器里必断（见 mdview/preprocess.cpp 第 7 步）。
 // ---------------------------------------------------------------------------
 bool Editor::pasteMedia() {
+    auto notice = [this](const char *key) {
+        if (m_pasteNotice) m_pasteNotice(key);   // silent when nobody listens (tests)
+    };
     if (!m_settings || !m_settings->getPasteMediaPath()) return false;
-    if (!m_doc || !m_doc->isEditable()) return false;
+    if (!m_doc) { notice("paste.nosave"); return false; }
+    if (!m_doc->isEditable()) { notice("paste.readonly"); return false; }
     if (image_attach::clipboardHasText()) return false;   // 文本优先，绝不抢
 
     // 剪贴板里的两种形态：文件（资源管理器复制）优先，没有文件才取位图
@@ -1546,12 +1560,13 @@ bool Editor::pasteMedia() {
     int imgW = 0, imgH = 0;
     const bool hasBitmap =
         files.empty() && image_attach::clipboardReadImage(bgra, imgW, imgH);
-    if (files.empty() && !hasBitmap) return false;
+    if (files.empty() && !hasBitmap) return false;   // 剪贴板里没有可落盘的东西
 
     const char *docPathRaw = m_doc->filePath();
     if (!docPathRaw || !*docPathRaw) {
         // 未保存的新文档没有"旁边"可放。不偷偷写 exe 目录：那会把同一篇文档
-        // 的图分散到两处，用户再也找不齐。
+        // 的图分散到两处，用户再也找不齐。（r042e：不再静默，状态行说原因）
+        notice("paste.nosave");
         opLog("paste-media: doc has no path, skipped");
         return false;
     }
@@ -1571,6 +1586,7 @@ bool Editor::pasteMedia() {
         std::filesystem::path(image_attach::widen(targetDir)), ec);
     if (ec) {
         opLog("paste-media: mkdir failed: %s", targetDir.c_str());
+        notice("paste.fail");   // r042e: a silent skip reads as "paste broken"
         return false;
     }
 
@@ -1595,10 +1611,14 @@ bool Editor::pasteMedia() {
                 break;
             }
         }
-        if (name.empty()) return false;
+        if (name.empty()) {
+            notice("paste.fail");
+            return false;
+        }
         const std::wstring outPath = image_attach::widen(targetDir + "\\" + name);
         if (!image_attach::writePngBgra(outPath, imgW, imgH, bgra.data())) {
             opLog("paste-media: png write failed (%dx%d)", imgW, imgH);
+            notice("paste.fail");
             return false;
         }
         appendLine(image_attach::imageLink(prefix + name));
@@ -1620,18 +1640,36 @@ bool Editor::pasteMedia() {
             const std::string base = image_attach::sanitizeDirName(stem);
 
             if (shouldLinkOnly(srcW, targetDir)) {
-                appendLine(image_attach::isImageExt(ext)
-                               ? image_attach::imageLink(src)
-                               : image_attach::fileLink(src, srcName));
-                opLog("paste-media: link only (big/dir/inside): %s", src.c_str());
+                // 只有"本来就在素材目录里"的文件能安全地写相对链接。目录、
+                // 超大文件、读不到属性的文件一律不插绝对路径链接：预览/导出
+                // 以文档目录为基准，绝对路径在浏览器里必断（见本函数上方注释）。
+                // 没有新的翻译键，沿用 pasteMedia 现有的失败提示后跳过。
+                const std::string dir = targetDir + "\\";
+                const std::wstring dirW = image_attach::widen(targetDir) + L"\\";
+                if (srcW.size() > dirW.size() &&
+                    _wcsnicmp(srcW.c_str(), dirW.c_str(), dirW.size()) == 0) {
+                    std::string rel = src.substr(dir.size());
+                    for (char &c : rel) if (c == '\\') c = '/';
+                    appendLine(image_attach::isImageExt(ext)
+                                   ? image_attach::imageLink(prefix + rel)
+                                   : image_attach::fileLink(prefix + rel, srcName));
+                    opLog("paste-media: relative link inside asset dir: %s", src.c_str());
+                } else {
+                    opLog("paste-media: skipped (dir/big/unreadable): %s", src.c_str());
+                    notice("paste.fail");
+                }
                 continue;
             }
 
             const std::string dstName = uniqueCopyName(targetDir, base, ext, srcW);
-            if (dstName.empty()) continue;
+            if (dstName.empty()) {
+                notice("paste.fail");
+                continue;
+            }
             const std::wstring dst = image_attach::widen(targetDir + "\\" + dstName);
             if (!CopyFileW(srcW.c_str(), dst.c_str(), FALSE)) {
                 opLog("paste-media: copy failed: %s", src.c_str());
+                notice("paste.fail");
                 continue;
             }
             const std::string rel = prefix + dstName;

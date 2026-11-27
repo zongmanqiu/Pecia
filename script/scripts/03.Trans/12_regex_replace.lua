@@ -100,7 +100,10 @@ if pattern == "" then
     return
 end
 
-local r, err = rex.gsub(input, pattern, replacement)
+-- rex.gsub raises on a bad pattern; pcall turns it into nil,err so the
+-- friendly branch below is actually reachable.
+local ok, r, err = pcall(rex.gsub, input, pattern, replacement)
+if not ok then r, err = nil, r end
 if r == nil then
     if pecia_lang == "zh-CN" then
         print("正则错误: " .. tostring(err))

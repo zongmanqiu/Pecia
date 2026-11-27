@@ -1,14 +1,16 @@
-> **🌐 Languages**: [中文](../../README.md) | [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [繁體中文](README.zh-TW.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
-
 # Pecia — 극소 텍스트 편집기
+> Windows 텍스트 편집기: 극도로 가볍고, 멀티 탭, 대용량 파일 즉시 열기, Lua 스크립트 확장, Markdown 미리보기.
+
+> **🌐 Languages**: [中文](../../README.md) | [繁體中文](README.zh-TW.md) | [English](README.en.md) | [日本語](README.ja.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português-BR](README.pt-BR.md) | [Italiano](README.it.md) | [한국어](README.ko.md) | [العربية](README.ar.md) | [हिन्दी](README.hi.md) | [Indonesia](README.id.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md)
 
 ---
 
-**[⬇️ 1.1.3 다운로드 (Gitee)](https://gitee.com/qiuzongman/pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ **[⬇️ 1.1.3 다운로드 (GitHub)](https://github.com/zongmanqiu/Pecia/releases/download/1.1.3/Pecia_x64_1.1.3.zip)** ｜ [Gitee 저장소](https://gitee.com/qiuzongman/pecia) ｜ [GitHub 미러](https://github.com/zongmanqiu/Pecia) | [Bilibili 데모](https://www.bilibili.com/video/BV144Yo6oEz9/)
+**⬇️ 다운로드 1.2.0: [Gitee](https://gitee.com/qiuzongman/pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
+ ｜ **[GitHub](https://github.com/zongmanqiu/Pecia/releases/download/1.2.0/Pecia_x64_1.2.0.zip)**
 
-C++17 + FLTK 기반 Windows 경량 텍스트 편집기. 멀티 탭, 대용량 파일 즉시 열기, 다중 인코딩 지원, Lua 스크립트 확장. 새 기능: 사이드 패널(파일 트리/개요), 글꼴 선택 대화상자, 창 그림자. Markdown 미리보기는 초대형 문서를 분할 렌더링합니다.
+> 저장소: [Gitee](https://gitee.com/qiuzongman/pecia) | [GitHub](https://github.com/zongmanqiu/Pecia)
 
-> **플랫폼 목표**: **Windows x64(64비트)**만 지원합니다. 32비트 버전은 제공하지 않으며, 크로스 플랫폼(Linux/mac/32비트) 지원도 더 이상 유지하지 않습니다. 빌드 스크립트에 64비트 검증이 내장되어 있습니다(CMakeLists 상단 참조). 32비트로 잘못 설정하면 즉시 오류가 발생합니다.
+> 데모: [Bilibili](https://www.bilibili.com/video/BV144Yo6oEz9/)
 
 ## 소프트웨어 화면
 
@@ -22,10 +24,6 @@ C++17 + FLTK 기반 Windows 경량 텍스트 편집기. 멀티 탭, 대용량 �
   - ![3.选项](3.选项.png)
 - 단축키 설정
   - ![4.快捷键](4.快捷键.png)
-- AI 채팅
-  - ![5.AI对话](5.AI对话.png)
-- Lua 콘솔
-  - ![6.Lua控制台](6.Lua控制台.gif)
 - Lua 스크립트
   - ![7.Lua脚本](7.Lua脚本.gif)
 
@@ -48,7 +46,7 @@ C++17 + FLTK 기반 Windows 경량 텍스트 편집기. 멀티 탭, 대용량 �
 REM 소스 코드를 다운로드한 후 이 스크립트 하나만 더블클릭하면 됩니다.
 REM 순서대로 실행됩니다: 1 도구 체인 검사 → 2 서드파티 라이브러리 6개 다운로드 → 3 패치 적용 →
 REM 4 cargo fetch + Rust FFI 2개 컴파일 → 5 FLTK 컴파일 + CMake로 Pecia 3종 세트 컴파일 →
-REM 단위 테스트 33개 실행.
+REM 단위 테스트 36개 실행.
 REM 최초 소요 시간은 네트워크와 컴퓨터 사양에 따라 다릅니다; 이후 캐시를 재사용하여
 REM 증분 컴파일 + 테스트 시 약 1-2분 소요.
 build\full.bat
@@ -75,8 +73,8 @@ main/
 ├── core/               핵심 순수 로직(UI 없음)
 ├── editor/             에디터 컨트롤
 ├── ui/                 창/다이얼로그/도구 모음
-├── LuaTool/            PeciaLua 독립 도구(창/진입점/파이프 서버)
-├── AIChat/             PeciaAIChat 독립 도구(창/진입점)
+├── AIChat/             AI 채팅 패널(독립 열) + 채팅 로그
+├── agent/              MCP stdio 엔드포인트(도구 목록은 호스트 레지스트리에서)
 ├── script/             Lua 스크립트 엔진
 ├── DOCS_MANIFEST.md    문서 목록(코드 수정 후 항목별 확인, test_docs 게이트; 개발 전용, exe에 포함되지 않음)
 ├── image/              이미지 리소스(pecia.ico / ai_bot.ico / lua.ico …)
